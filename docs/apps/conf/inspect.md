@@ -218,13 +218,22 @@ A site a proxy serves from its own disk has no downstream instance and so no
 line at all — it is the proxy's own configuration, not an edge — which is why
 the picture shows fewer names than the rendered file does.
 
-**A container network is a box inside its machine.** A process sits in the box
-of the first [container network](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#container-networks) it joins,
-in the node's order, and a line runs from it to the box of every further one
-it joins, carrying the address it holds there when that address is fixed; its
-own box names them too. A box has one parent, so a process spanning two
-networks is drawn inside one and reaches the other rather than being drawn
-twice. A container network nothing joins has no box.
+**Container networks are membership areas inside a machine.** Network Services
+shows each process once. Service cards list their network memberships. Network
+outlines remain visible in the overview. Selecting a service emphasizes its
+joined networks and dims the others; unrelated processes are excluded from
+those outlines. Connection labels stay in the selection panel and tooltips
+while tracing a service, keeping the routing channels clear. Services with the
+same set of network memberships are laid out together, leaving shared services
+in distinct overlapping areas and routing space between those areas. A network
+can have separate outline islands rather than enclosing non-members. Double-
+clicking a host title frames its services. Search keeps the current view when
+its result is visible and opens Details only when needed to reveal an
+otherwise hidden result. Network areas share the colors of their corresponding
+filter swatches, including across hosts. Ports and Details keep the process
+contents in its first joined network and show references in further networks,
+with fixed membership addresses on lines. A container network nothing joins
+has no area.
 
 **Every line says which network it runs over,** and the page lists the
 networks as switches: each network in `networks.yaml`, in preference order,
@@ -234,17 +243,18 @@ chosen on, else loopback. Switching one off takes its lines out of the
 picture, and the list can colour the lines by network instead of by kind —
 the question a reader switching networks on and off is usually asking.
 
-**The machines `hosts.yaml` names are drawn too,** each as one shape in a box
-of their own, carrying its network and address. They run no instance, so no
-line reaches them; they are there because they hold addresses on the same
-networks, and a picture of who sits where on a LAN without them would be
-missing the NAS. Each belongs to its network's switch.
+**Declarations from `hosts.yaml` are optional context.** Each is still in the
+API, carrying its network and address, but is hidden initially because it runs
+no instance and has no connection. **Include declarations** shows them in either
+view. Their empty enclosing box is also absent while they are hidden. A runtime
+service with no derived connection stays visible; absence of a line does not
+mean it is just a declaration. Each declaration belongs to its network switch.
 
 Someone with no device file has no node box, so the box standing in for one is
 named after the credential this file authenticates with — the same name the
 secrets tree files it under.
 
-`t` from any view opens it, in a local web page: force-directed, draggable,
+`t` from any view opens it, in a local web page: automatically laid out, pannable,
 and fitted to what it holds. It is `t` for topology because `g` is the first
 row and `w` folds everything, both from the File Explorer's keys.
 
@@ -270,10 +280,23 @@ a picture too dense to trace by eye.
 
 The web page follows the pattern [`geo/gpx`](../geo/gpx.md) already
 establishes: an embedded static bundle and a small JSON API. It draws with
-[Cytoscape.js](https://js.cytoscape.org/), vendored the same way `geo/gpx`
-already vendors MapLibre and uPlot — a static file, no build step. It is the
-established choice for exactly this shape of problem — a node-link graph,
-force-directed by default, with panning, dragging and click events built in.
+[D3.js](https://d3js.org/), vendored and embedded with its licence — a static
+file, no build step or runtime download. D3 owns SVG rendering, panning, zooming and the radial layouts.
+[ELK Layered](https://eclipse.dev/elk/reference/algorithms/org-eclipse-elk-layered.html)
+positions the nested Network boxes and routes their connections through
+horizontal and vertical channels. The unmodified elkjs 0.11.0 bundled library
+is embedded with its EPL-2.0 licence; its source is available from
+[elkjs](https://github.com/kieler/elkjs). No external helper or runtime
+download is used.
+
+The page uses the shared `webui` frame and controls, matching GPX and Doc:
+Inter and shared UI text sizes, the 40px top bar and 22px status bar, GPX mode
+buttons and shared segmented detail controls. Search, filters, selection and
+legend occupy a left sidebar with the shared resizable splitter. Graph actions
+sit in a compact workspace toolbar; counts and keyboard hints stay in the
+status bar. Borders, radii and diagram label sizes use shared tokens. Narrow
+windows scroll toolbars horizontally rather than wrapping the page bars.
+
 
 Unlike `geo/gpx`'s `web/`, which is mapping and GPX editing mixed into one
 bundle nothing else can reuse, the page and its vendored library live in a
@@ -290,55 +313,86 @@ dependency graph — GPX's own stop graph, one day, or something in `cred` —
 imports `webgraph` and writes the same one file, rather than choosing a
 library or building a page again.
 
-### What the picture shows at each size
+### Explicit views and detail
 
-A whole inventory drawn at once is unreadable: a hundred ports and eighty
-lines fitted to one screen is a grey mass, whatever the colours are. So the
-picture has three levels, and which one is drawn follows how far in the
-reader has zoomed.
+Wheel and pinch gestures only change scale; they never change the view or its
+contents. The header has direct buttons for **Network**, **Ring: hosts** and
+**Ring: services**. Network has four explicit detail buttons:
 
-- **Overview.** Each machine is one shape carrying its name, and the lines
-  between machines are one line per pair, labelled with how many connections
-  it stands for. The owner boxes stay, so the small picture still says whose
-  machines these are.
-- **Medium.** Everything is open — processes, ports, every line — with the
-  second line of each label and the words on the lines left off.
-- **Full.** Everything, as authored.
+- **Hosts.** Each machine is one shape. Connections between a directed pair
+  of machines are aggregated and count the currently enabled network lines.
+  Ownership boxes stay around the machines.
+- **Services.** One node per running process, with connections aggregated
+  between processes, inside their host boxes.
+- **Ports.** Processes, ports and individual lines, with secondary labels hidden.
+- **Details.** The same geometry as Ports, with secondary labels shown.
 
-The levels are `webgraph`'s, not this app's: a group carries `collapse`,
-meaning *this box stands for its contents when the picture is small*, and
-this file sets it on the node boxes and on the credential box someone with no
-device file gets instead of one. Which level of its own hierarchy is worth seeing first
-is the caller's decision, and the only thing the page needs to be told.
+A group carries `collapse` when it represents a machine and `summary` when it
+represents a running process. These generic flags let the page draw machine
+and service projections without learning this app's inventory vocabulary.
+Service projection draws each process once rather than once per listening port,
+and preserves client shapes and connections between services on the same host.
+A process shared by multiple rendered instances remains one running component.
+Network Services shows every joined container network as an overlapping area,
+including networks with no exclusive member. One service node can belong to
+several areas. Ports and Details additionally show individual listening ports:
+full contents stay in the first joined network and references show further
+memberships.
 
-The overview is laid out on its own — the shut boxes and the lines between
-them, run through the same force-directed layout — rather than being the
-detailed picture seen from further away, which would be exactly as tangled.
-Both geometries are kept, so moving between levels moves shapes rather than
-re-running a layout, and the zoom is carried across the switch so nothing
-changes size on screen: the reader keeps looking at what they were looking
-at, in more or less detail. A button in the header pins a level for a reader
-who wants the small picture on a big screen.
+Run `make test-webgraph` for the graph regression checks. The frontend suite
+executes the production listeners, renderer, D3 geometry and ELK routes with
+synthetic data. Its DOM and SVG boundary records elements without a browser;
+checks cover views, zoom, search, selection, network regions, filtering,
+declarations, relayout, reload, empty graphs and asynchronous layout failures.
+Browser typography, pixel overlap and native pointer gestures still need visual
+checks.
 
-### Two views of the same graph
+### Connectivity and radial hierarchy
 
-A force-directed picture says where things sit, and with eighty lines in it
-that is most of what it says: the lines themselves stop being followable. So
-the page draws the same graph two ways, and a button in the header switches
-between them.
+Network uses layered layout with explicit spacing for nodes and connection
+channels, including connections crossing nested boxes. Orthogonal routes avoid
+unrelated nodes; bends are rounded locally rather than replaced by a broad
+spline that could cut back through a box. Separate input and output attachment
+points fan multiple connections along the node boundary. High-degree nodes
+receive more height to keep those attachment points legible. The fit includes
+connection bends, so return paths and self-loops are not clipped.
 
-- **Network.** The picture as a picture, at the three levels above.
-- **Ring.** One machine per place on a circle, ordered by the box it belongs
-  to so one owner's machines are neighbours, with the owner's name written
-  outside the ring against its stretch of it. Every line is a chord across
-  the middle, and a line standing for several connections is drawn as thickly
-  as the number it stands for. The ring is always the machine-level picture:
-  a hundred ports on a circle is the tangle it exists to answer.
+Layout runs asynchronously and only the latest requested view is published.
+Failures are shown in the page rather than falling back to crossing straight
+lines. Network nodes and boxes are selected with a click; manual node dragging
+is disabled to preserve the calculated routes. Dragging the background pans.
+Re-layout restores the calculated diagram. Connection labels appear on hover
+or selection, and selected paths stay bright while unrelated paths fade.
+Selecting a component also lists its incoming and outgoing connections.
 
-A ring cannot say where anything is, and it does not try to. What it says is
-who reaches whom, and clicking one machine — which dims everything it is not
-connected to, the same as in the network view — is how a single machine's
-reach is read off it.
+Both rings use [D3 cluster](https://d3js.org/d3-hierarchy/cluster), as in the
+[Radial cluster tree](https://observablehq.com/@d3/radial-cluster/2) example:
+ordered hierarchy branches run from the centre to leaves at the same radius.
+Grey branches mean containment, not connectivity. Ring connection labels stay
+in the sidebar and tooltips so bundled paths do not carry overlapping words.
+Coloured, directed connections follow the hierarchy with [edge bundling](https://observablehq.com/@d3/hierarchical-edge-bundling).
+
+- **Ring: hosts** has machines at the leaves, grouped by ownership. It shows
+  one directed connection per machine pair with a count for multiple lines.
+- **Ring: services** has running components at the leaves. Host sectors have
+  an outline and a host label enclosing the services on that machine. Multiple
+  port connections between the same services are counted together. Connections
+  between different services on one host are retained. Container membership
+  edges stay in Network rather than being presented as service connections.
+
+The rings are sorted by label and ID and do not permit free node dragging.
+Re-layout reconstructs the same radial positions; it cannot scramble the ring.
+Network also keeps its calculated node positions while the viewport is panned. Geometries are cached
+per projection and filter selection. Network filtering recomputes aggregate
+counts, and empty context boxes are removed before layout.
+
+The sidebar searches node and group labels and details. Choosing a result opens
+Network Details, enables its filters and declaration switch when necessary,
+selects it and frames it. Clicking the background or pressing Escape clears
+selection. Double-clicking a machine in Network Hosts opens its contents;
+otherwise double-click frames the component. Nodes are keyboard focusable with
+Enter or Space to select. Zoom buttons, wheel and pinch control scale; `+` and
+`-` zoom, and `F` fits. Resizing preserves the viewport.
 
 Secret values never reach the graph or its API. A node's tooltip names what a
 credential is for, never its value.
@@ -430,7 +484,7 @@ no checkboxes.
 4. **Editing.** `e` on a secret view, the three rules above.
 5. **The graph.** `internal/webgraph` — the embedded page, the vendored
    library, the JSON contract — and the mapping from this inventory onto it.
-   Force-directed, grouped by node, keyed by kind.
+   Laid out with nested groups, keyed by kind.
 
 ## Exporting from the page
 

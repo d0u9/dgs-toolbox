@@ -12,34 +12,74 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="app.css">
 <script type="module" src="/ui/ime.js"></script>
 <script type="module" src="/ui/dialog.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </head>
 <body>
 <header class="topbar">
+  <span class="brand">GRAPH</span>
   <h1 id="title">Graph</h1>
-  <div class="controls">
-    <span id="counts" class="counts numeric muted"></span>
-    <button id="view" class="button" type="button">View: network</button>
-    <button id="detail" class="button" type="button">Detail: auto</button>
-    <button id="relayout" class="button" type="button">Re-layout</button>
-    <button id="fit" class="button" type="button">Fit</button>
-    <button id="reload" class="button" type="button">Reload</button>
-  </div>
+  <span class="ui-mode-group" role="group" aria-label="View">
+    <button class="chip ui-mode" data-view="network" type="button" aria-pressed="true">Network</button>
+    <button class="chip ui-mode" data-view="ring" type="button" aria-pressed="false">Ring: hosts</button>
+    <button class="chip ui-mode" data-view="ring-services" type="button" aria-pressed="false">Ring: services</button>
+  </span>
+  <span class="topbar-spacer"></span>
+  <button id="reload" class="button small-button" type="button">Reload</button>
 </header>
-<main>
-  <div id="graph"></div>
-  <aside id="key" hidden>
+<main class="work">
+  <aside id="key" class="sidebar">
+    <section class="search-panel">
+      <h2 class="panel-head">Explore</h2>
+      <label class="muted" for="search">Find a node or group</label>
+      <input id="search" type="search" placeholder="Search…" autocomplete="off">
+      <div id="results"></div>
+    </section>
+    <section class="options-panel">
+      <label class="filter"><input id="declarations" type="checkbox">Include declarations</label>
+      <p id="ring-help" class="muted" hidden>Grey branches show containment. Coloured arrows show connections. Select a node to trace its paths.</p>
+    </section>
+    <section id="selection" aria-live="polite" hidden></section>
     <section id="filters" hidden></section>
     <section id="legend"></section>
   </aside>
+  <div id="side-splitter" class="splitter col" role="separator" aria-label="Resize sidebar" aria-orientation="vertical"></div>
+  <section class="workspace" aria-label="Graph workspace">
+    <div class="workspace-toolbar">
+      <span class="muted">Detail</span>
+      <div class="segmented-control" role="group" aria-label="Network detail">
+        <button class="chip" data-level="overview" type="button" aria-pressed="true">Hosts</button>
+        <button class="chip" data-level="services" type="button" aria-pressed="false">Services</button>
+        <button class="chip" data-level="medium" type="button" aria-pressed="false">Ports</button>
+        <button class="chip" data-level="full" type="button" aria-pressed="false">Details</button>
+      </div>
+      <span class="topbar-spacer"></span>
+      <button id="relayout" class="button small-button" type="button">Re-layout</button>
+      <button id="zoom-out" class="icon-button" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="zoom-in" class="icon-button" type="button" title="Zoom in" aria-label="Zoom in" data-icon="plus"></button>
+      <button id="fit" class="button small-button" type="button">Fit</button>
+    </div>
+    <div id="graph" tabindex="0" aria-label="Connectivity graph">
+      <p id="layout-state" role="status" hidden>Arranging connections…</p>
+      <p id="empty" hidden>No components match these filters.</p>
+    </div>
+  </section>
 </main>
+<footer class="statusbar" role="status">
+  <span id="view-state" class="status-state">Network</span>
+  <span id="counts" class="status-message numeric"></span>
+  <span class="status-hints">Drag to pan · Scroll to zoom · F fit · Esc clear</span>
+</footer>
+<script type="module">
+import { splitter } from "/ui/splitter.js";
+splitter({handle: document.getElementById("side-splitter"), target: document.getElementById("key"), axis: "x", min: 160, max: () => Math.max(160, window.innerWidth * .45), key: "dgs-graph-sidebar", fallback: 280});
+</script>
 <div id="error" class="error-banner" hidden></div>
-<script src="vendor/cytoscape.min.js"></script>
-<script src="vendor/layout-base.min.js"></script>
-<script src="vendor/cose-base.min.js"></script>
-<script src="vendor/cytoscape-fcose.min.js"></script>
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/elk.bundled.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

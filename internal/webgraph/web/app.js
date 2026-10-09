@@ -1,13 +1,3 @@
-// The page: fetch a graph, draw it, and let it be dragged. Everything about
-// what is being drawn comes from the API — this file knows about groups,
-// nodes, edges and kinds, and nothing about what any of them mean.
-
-// theme is what the drawing paints with, since a canvas cannot read a CSS
-// variable. The values match the shared tokens of /ui/tokens.css.
-function theme() {
-  return { groupFill: "#000000", groupFillOpacity: 0.035, groupLine: "#c2c2c2", groupText: "#636363", edgeText: "#636363", edgeTextBg: "#f7f7f7", selected: "#1a1a1a" };
-}
-
 // The Okabe-Ito qualitative palette, which stays distinguishable under
 // deuteranopia, protanopia and tritanopia. Ordered so the first kinds a
 // caller declares get the pairs that are furthest apart, and so that no two
@@ -26,22 +16,6 @@ const palette = [
 function paletteAt(i) {
   return palette[i % palette.length];
 }
-
-// Colour is never the only difference. A kind also gets a line style and a
-// shape from its position in the palette, so the picture still reads when
-// the hues do not — printed in grey, or by a reader who cannot tell two of
-// them apart. Both lists are shorter than the palette on purpose: they cycle
-// against it, so kind 0 and kind 6 differ in shape even though they are the
-// closest pair of colours.
-const lineStyles = ["solid", "dashed", "dotted"];
-// Every shape here is one a line of text fits inside: a diamond or a plain
-// hexagon wastes its corners and pushes the label over its own outline, so
-// the silhouettes differ along the sides instead.
-const nodeShapes = ["round-rectangle", "round-hexagon", "barrel", "cut-rectangle"];
-
-// Shapes that lose width towards their ends need more room around the label
-// than a rectangle does, or the text runs into the slanted edge.
-const shapePadding = { "round-rectangle": "12px", "round-hexagon": "20px", "barrel": "16px", "cut-rectangle": "16px" };
 
 // indexFor keeps one slot per kind, assigned in the order kinds are first
 // seen, so a graph redrawn after a reload keeps its colours.
@@ -105,14 +79,10 @@ function unionTags(into, tags) {
   return into;
 }
 
+const lineStyles = ["solid", "dashed", "dotted"];
 function lineStyleFor(kind) {
   if (!kind) return "solid";
   return lineStyles[indexFor(kind) % lineStyles.length];
-}
-
-function shapeFor(kind) {
-  if (!kind) return "round-rectangle";
-  return nodeShapes[indexFor(kind) % nodeShapes.length];
 }
 
 function showError(message) {
@@ -122,813 +92,442 @@ function showError(message) {
 }
 
 function elements(graph) {
-  const out = [];
-  for (const g of graph.groups || []) {
-    out.push({
-      data: {
-        id: g.id,
-        parent: g.parent || undefined,
-        label: g.label,
-        detail: g.detail || "",
-        kind: g.kind || "",
-        colour: colourFor(g.kind),
-        tags: g.tags || [],
-        isGroup: true,
-      },
-      classes: g.collapse ? "collapsible" : "",
-    });
-  }
-  for (const n of graph.nodes || []) {
-    out.push({
-      data: {
-        id: n.id,
-        parent: n.group || undefined,
-        label: n.label,
-        detail: n.detail || "",
-        tooltip: n.tooltip || "",
-        kind: n.kind || "",
-        colour: colourFor(n.kind),
-        textColour: textOn(colourFor(n.kind)),
-        shape: shapeFor(n.kind),
-        pad: shapePadding[shapeFor(n.kind)] || "12px",
-        tags: n.tags || [],
-      },
-    });
-  }
-  const standsFor = collapseMap(graph);
-
-  // One stand-in shape per collapsible box. A compound box is not drawn at
-  // all once everything inside it is hidden, so the shut box is a shape of
-  // its own rather than the box itself: it carries the box's name, the count
-  // of what it holds, and the lines that stand for the lines inside.
-  const holds = new Map();
-  for (const [id, box] of standsFor) if (!id.startsWith("stand:")) holds.set(box, (holds.get(box) || 0) + 1);
-  for (const g of graph.groups || []) {
-    if (!g.collapse) continue;
-    const inside = (holds.get(g.id) || 0) - 1;
-    out.push({
-      data: {
-        id: standID(g.id),
-        // The stand-in sits in whatever box the collapsible one sat in, so
-        // the overview still says whose machines these are.
-        parent: g.parent || undefined,
-        label: g.label,
-        detail: g.detail || (inside > 0 ? `${inside} inside` : ""),
-        tooltip: g.detail || "",
-        kind: g.kind || "",
-        colour: colourFor(g.kind),
-        textColour: textOn(colourFor(g.kind)),
-        shape: "round-rectangle",
-        pad: "14px",
-        opens: g.id,
-        tags: g.tags || [],
-      },
-      classes: "stand",
-    });
-  }
-
-  const meta = new Map();
-  for (const e of graph.edges || []) {
-    const from = standsFor.get(e.from) || "";
-    const to = standsFor.get(e.to) || "";
-    out.push({
-      data: {
-        id: `${e.from}->${e.to}:${e.label || ""}`,
-        source: e.from,
-        target: e.to,
-        label: e.label || "",
-        kind: e.kind || "",
-        tags: e.tags || [],
-        colour: edgeColour(e.kind, e.tags),
-        lineStyle: lineStyleFor(e.kind),
-      },
-      // An edge inside one collapsed box has nothing to say once the box is
-      // shut; one that crosses between boxes is said by the meta edge below.
-      classes: from && from === to ? "within" : from || to ? "crossing" : "",
-    });
-    if (!from && !to) continue;
-    if (from === to) continue;
-    const s = from ? standID(from) : e.from;
-    const t = to ? standID(to) : e.to;
-    const key = `${s}|${t}`;
-    const agg = meta.get(key) || { source: s, target: t, count: 0, kinds: new Set(), label: "", tags: [] };
-    agg.count += 1;
-    unionTags(agg.tags, e.tags);
-    agg.kinds.add(e.kind || "");
-    agg.label = e.label || agg.label;
-    meta.set(key, agg);
-  }
-  for (const [key, agg] of meta) {
-    const kind = agg.kinds.size === 1 ? [...agg.kinds][0] : "";
-    out.push({
-      data: {
-        id: `meta:${key}`,
-        source: agg.source,
-        target: agg.target,
-        // One line standing for many says how many; one standing for one
-        // keeps the word the single line carried.
-        label: agg.count > 1 ? `${agg.count}` : agg.label,
-        weight: agg.count,
-        kind: kind,
-        tags: agg.tags,
-        colour: edgeColour(kind, agg.tags),
-        lineStyle: lineStyleFor(kind),
-      },
-      classes: "meta",
-    });
-  }
-  return out;
+  return [...(graph.groups || []).map(g => ({...g, isGroup: true})),
+    ...(graph.nodes || []).map(n => ({...n, parent: n.group})),
+  ].map(n => ({...n, detail: n.detail || "", tags: n.tags || [], colour: colourFor(n.kind), textColour: textOn(colourFor(n.kind))}));
 }
 
-function standID(id) {
-  return `stand:${id}`;
+let graph, all = [], scene, selected = null;
+let view = "network", level = "overview", includeDeclarations = false;
+const layouts = new Map();
+const elk = new ELK();
+let renderRequest = 0;
+const svg = d3.select("#graph").append("svg").attr("aria-label", "Connectivity graph");
+const world = svg.append("g");
+const zoom = d3.zoom().scaleExtent([0.03, 8]).on("zoom", event => world.attr("transform", event.transform));
+svg.call(zoom).on("dblclick.zoom", null).on("click", event => {
+  if (event.target === svg.node()) select(null);
+});
+
+function visibleTags(data) {
+  return !(data.tags || []).length || data.tags.some(tag => filterOn.has(tag));
 }
 
-// collapseMap answers, for every node and group, which collapsible box
-// stands for it when the picture is small — the outermost one it sits in, so
-// a collapsible box inside another closes with its container rather than
-// staying open inside a shut box. Ids not inside one are absent.
-function collapseMap(graph) {
-  const parent = new Map();
-  const collapses = new Set();
-  for (const g of graph.groups || []) {
-    if (g.parent) parent.set(g.id, g.parent);
-    if (g.collapse) collapses.add(g.id);
-  }
-  for (const n of graph.nodes || []) if (n.group) parent.set(n.id, n.group);
-  const standsFor = new Map();
-  const resolve = (id) => {
-    let box = "";
-    for (let at = id; at; at = parent.get(at)) {
-      if (collapses.has(at)) box = at;
+function project(scope) {
+  if (scope === true) scope = "overview";
+  if (scope === false) scope = "full";
+  const originals = new Map(all.map(n => [n.id, n]));
+  const representatives = new Map();
+  for (const n of all) {
+    let at = n, representative = n;
+    while (at) {
+      if (scope === "overview" && at.collapse) representative = at;
+      if (scope === "services" && at.summary) { representative = at; break; }
+      at = originals.get(at.parent);
     }
-    return box;
-  };
-  for (const g of graph.groups || []) {
-    const box = resolve(g.id);
-    if (box) standsFor.set(g.id, box);
+    representatives.set(n.id, representative.id);
   }
-  for (const n of graph.nodes || []) {
-    const box = resolve(n.id);
-    if (box) standsFor.set(n.id, box);
-  }
-  return standsFor;
-}
-
-function styleSheet() {
-  const t = theme();
-  return [
-  {
-    selector: "node",
-    style: {
-      "background-color": "data(colour)",
-      "label": (el) => {
-        const detail = el.data("detail");
-        return detail ? `${el.data("label")}\n${detail}` : el.data("label");
-      },
-      "color": "data(textColour)",
-      "text-wrap": "wrap",
-      "text-valign": "center",
-      "text-halign": "center",
-      "font-size": 11,
-      "line-height": 1.25,
-      "text-max-width": 140,
-      "padding": "data(pad)",
-      "shape": "data(shape)",
-      "corner-radius": 8,
-      "width": "label",
-      "height": "label",
-      // A thin outline in the same hue, so a shape on a pale swatch still
-      // has an edge against the page.
-      "border-width": 1,
-      "border-color": "data(colour)",
-    },
-  },
-  {
-    selector: ":parent",
-    style: {
-      "background-color": t.groupFill,
-      "background-opacity": t.groupFillOpacity,
-      "border-width": 1,
-      "border-color": t.groupLine,
-      "border-style": "dashed",
-      "label": "data(label)",
-      "color": t.groupText,
-      "text-valign": "top",
-      "text-halign": "center",
-      "font-size": 12,
-      "font-weight": 600,
-      "text-margin-y": -4,
-      "padding": "22px",
-      "shape": "round-rectangle",
-      "corner-radius": 12,
-    },
-  },
-  {
-    // A group inside a group: drawn solid and tighter, so the outer box
-    // still reads as the container of the inner ones.
-    selector: ":parent[parent]",
-    style: {
-      "border-style": "solid",
-      "border-color": "data(colour)",
-      "background-opacity": 0,
-      "font-size": 10,
-      "font-weight": 500,
-      "padding": "10px",
-      "color": "data(colour)",
-    },
-  },
-  {
-    selector: "edge",
-    style: {
-      "width": 1.6,
-      "line-color": "data(colour)",
-      "line-style": "data(lineStyle)",
-      "target-arrow-color": "data(colour)",
-      "target-arrow-shape": "triangle",
-      "arrow-scale": 1,
-      // Orthogonal routing: every segment runs horizontal or vertical, so a
-      // dense picture reads as wiring rather than as a bundle of straight
-      // lines crossing at arbitrary angles.
-      "curve-style": "taxi",
-      "taxi-direction": "auto",
-      "taxi-turn": "50%",
-      "taxi-turn-min-distance": 12,
-      "taxi-radius": 8,
-      "label": "data(label)",
-      "font-size": 10,
-      "color": t.edgeText,
-      "text-background-color": t.edgeTextBg,
-      "text-background-opacity": 0.9,
-      "text-background-shape": "roundrectangle",
-      "text-background-padding": 3,
-      // Upright, because a taxi edge's segments are horizontal or vertical
-      // and a rotated label on a vertical one reads sideways.
-      "text-rotation": "none",
-    },
-  },
-  {
-    selector: "node:selected",
-    style: { "border-width": 3, "border-color": t.selected },
-  },
-  {
-    selector: ".faded",
-    style: { "opacity": 0.15 },
-  },
-  // Level of detail. These come last on purpose: a later rule wins, so what
-  // the zoom decides overrides how an element is drawn when it is open.
-  {
-    // Taken out of the picture rather than made invisible: a shut box is
-    // meant to be the size of its own name, and an element that still takes
-    // up space would keep the box as wide as everything inside it.
-    selector: ".lod-hide",
-    style: { "display": "none" },
-  },
-  {
-    // Switched off in the filter list: out of the picture the same way.
-    selector: ".filter-hide",
-    style: { "display": "none" },
-  },
-  {
-    selector: "node.lod-collapsed",
-    style: {
-      "background-color": t.groupFill,
-      "background-opacity": Math.min(1, t.groupFillOpacity * 4),
-      "border-width": 2,
-      "border-style": "solid",
-      "border-color": t.groupLine,
-      "label": "data(label)",
-      "text-valign": "center",
-      "text-halign": "center",
-      "text-margin-y": 0,
-      "font-size": 16,
-      "font-weight": 600,
-      "color": t.groupText,
-      // With nothing visible inside it, a box has no contents to take its
-      // size from, so it is given one.
-      "min-width": 150,
-      "min-height": 56,
-      "padding": "10px",
-      "text-max-width": 170,
-      "text-wrap": "wrap",
-    },
-  },
-  {
-    // One line of text per shape, and no words on the lines between them.
-    selector: "node.lod-terse",
-    style: { "label": "data(label)" },
-  },
-  {
-    selector: "edge.lod-terse",
-    style: { "label": "" },
-  },
-  // The ring view. Its boxes say nothing — the shapes are laid out by whose
-  // they are, so a box drawn around them would only cover the ring — and its
-  // lines are chords, bending towards the middle rather than taking a corner
-  // around the outside of it.
-  {
-    selector: "node.quiet",
-    style: { "background-opacity": 0, "border-width": 0, "label": "" },
-  },
-  {
-    // The name of a box, written outside the ring against the stretch of it
-    // that box holds, since the box itself is not drawn there.
-    selector: "node.ring-label",
-    style: {
-      "background-opacity": 0,
-      "border-width": 0,
-      "label": "data(label)",
-      "color": t.groupText,
-      "font-size": 13,
-      "font-weight": 600,
-      "text-valign": "center",
-      "text-halign": "center",
-      "events": "no",
-    },
-  },
-  {
-    // A line standing for many is drawn as thickly as it stands for, so the
-    // pairs that talk most are the ones the eye lands on.
-    selector: "edge.meta",
-    style: { "width": (el) => 1.4 + Math.min(4, Math.log2(el.data("weight") || 1)) },
-  },
-  {
-    selector: "edge.chord",
-    style: {
-      "curve-style": "unbundled-bezier",
-      "control-point-distances": "data(bend)",
-      "control-point-weights": 0.5,
-      "taxi-turn": 0,
-    },
-  },
-  ];
-}
-
-// The three levels the picture is drawn at, from small to close:
-//
-//   overview  collapsible boxes are shut, and the lines between their
-//             contents are drawn as one line per pair of boxes.
-//   medium    everything is open, with second lines and edge labels off.
-//   full      everything, as authored.
-//
-// The two zoom thresholds carry a margin, so a picture sitting on one of
-// them does not flicker between levels as it is nudged.
-const levelThresholds = { open: 0.5, words: 0.85 };
-const levelMargin = 0.06;
-
-function levelForZoom(zoom, current) {
-  let open = levelThresholds.open;
-  let words = levelThresholds.words;
-  if (current === "overview") open += levelMargin;
-  if (current === "medium") { open -= levelMargin; words += levelMargin; }
-  if (current === "full") words -= levelMargin;
-  if (zoom < open) return "overview";
-  if (zoom < words) return "medium";
-  return "full";
-}
-
-// pinnedLevel is what the button says: a level chosen by hand, or null for
-// one that follows the zoom.
-let pinnedLevel = null;
-let shownLevel = null;
-
-async function applyLevel(level) {
-  if (!cy || level === shownLevel) return;
-  const from = shownLevel;
-  // The scale the reader is looking at, which the switch keeps: the picture
-  // changes, the size things are drawn at does not. It is read before the
-  // level moves, since which level is showing is what makes a zoom a scale.
-  const was = scale();
-  shownLevel = level;
-  const shut = level === "overview";
-  if (shut && from !== "overview") {
-    if (!positions.full) {
-      savePositions("full");
-      spans.full = currentSpan();
-    }
-  }
-  cy.batch(() => {
-    cy.elements().removeClass("lod-hide lod-terse");
-    if (level === "overview") {
-      const shut = cy.nodes(".collapsible");
-      shut.union(shut.descendants()).addClass("lod-hide");
-      cy.edges(".within").addClass("lod-hide");
-      cy.edges(".crossing").addClass("lod-hide");
+  const nodes = all.filter(n => representatives.get(n.id) === n.id && (includeDeclarations || !n.contextOnly)).map(n => {
+    const summary = scope === "overview" && n.collapse || scope === "services" && n.summary;
+    return {...n, isGroup: n.isGroup && !summary, opens: summary ? n.id : undefined};
+  });
+  const byID = new Map(nodes.map(n => [n.id, n]));
+  const shown = n => visibleTags(n) && (!byID.has(n.parent) || shown(byID.get(n.parent)));
+  const shownIDs = new Set(nodes.filter(shown).map(n => n.id));
+  const edges = [];
+  const merged = new Map();
+  for (const [i, edge] of (graph.edges || []).entries()) {
+    if (!visibleTags(edge)) continue;
+    const source = representatives.get(edge.from), target = representatives.get(edge.to);
+    if (!shownIDs.has(source) || !shownIDs.has(target)) continue;
+    if (scope === "services" && view !== "network" && (byID.get(source).isGroup || byID.get(target).isGroup)) continue;
+    const aggregate = scope !== "full" && scope !== "medium";
+    if (aggregate && source === target && edge.from !== edge.to) continue;
+    const key = `${source.length}:${source}${target}`;
+    if (aggregate && merged.has(key)) {
+      const e = merged.get(key); e.weight++; e.labels.push(edge.label || "");
+      unionTags(e.tags, edge.tags); e.label = `${e.weight} connections`;
+      if (e.kind !== (edge.kind || "")) e.kind = "";
     } else {
-      cy.nodes(".stand").addClass("lod-hide");
-      cy.edges(".meta").addClass("lod-hide");
+      const e = {...edge, source, target, id: `edge:${i}`, label: edge.label || "", labels: [edge.label || ""], kind: edge.kind || "", tags: [...(edge.tags || [])], weight: 1};
+      edges.push(e); if (aggregate) merged.set(key, e);
     }
-    if (level !== "full") cy.elements().addClass("lod-terse");
-  });
-  drawDetailButton();
-  if (shut) {
-    // The box holding whatever was in the middle of the screen, so its
-    // stand-in can be put back there once the picture is small.
-    const held = from ? middleOf(cy.nodes(":visible").filter((n) => !n.isParent() || n.hasClass("collapsible"))) : null;
-    const box = held ? (held.hasClass("collapsible") ? held : held.ancestors(".collapsible").first()) : null;
-    if (!restorePositions("overview")) await layOutOverview();
-    else spans.overview = spans.overview || currentSpan();
-    viewport(zoomAtScale(was, "overview"), box && box.length ? cy.$id(standID(box.id())) : null);
-  } else if (from === "overview") {
-    const stand = middleOf(cy.nodes(".stand:visible"));
-    restorePositions("full");
-    viewport(was, stand ? cy.$id(stand.data("opens")) : null);
   }
-}
-
-function levelNow() {
-  return pinnedLevel || levelForZoom(cy ? scale() : 1, shownLevel);
-}
-
-function drawDetailButton() {
-  const button = document.getElementById("detail");
-  if (!button) return;
-  button.disabled = view === "ring";
-  button.textContent = pinnedLevel ? `Detail: ${pinnedLevel}` : `Detail: auto (${shownLevel || "full"})`;
-}
-
-// The button cycles through pinning each level and back to following the
-// zoom, for a reader who wants the small picture on a big screen.
-function cycleDetail() {
-  // In the ring view the level is not the reader's to choose: the ring is
-  // the machine-level picture, and that is what it stays.
-  if (view === "ring") return;
-  const order = [null, "overview", "medium", "full"];
-  pinnedLevel = order[(order.indexOf(pinnedLevel) + 1) % order.length];
-  applyLevel(levelNow());
-  drawDetailButton();
-}
-
-function wireDetail() {
-  let queued = false;
-  cy.on("zoom", () => {
-    if (pinnedLevel || queued || adjusting) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      applyLevel(levelNow());
-    });
-  });
-}
-
-// The two views. The network is the picture as a picture: shapes wherever
-// the forces put them, lines routed around the corners between them. The
-// ring is the same graph read as a table of connections: one machine per
-// place on a circle, ordered by whose it is, and every line a chord across
-// the middle. A ring cannot say where anything is, and it does not try to;
-// what it says is who talks to whom, which is the one thing a tangle of a
-// hundred shapes hides.
-const viewNames = ["network", "ring"];
-let view = "network";
-
-// ringPositions places the shut boxes around a circle, ordered by the box
-// each of them sits in, so one owner's machines are neighbours on the ring.
-function ringPositions() {
-  const tops = topShapes().filter((n) => !n.hasClass("ring-label"));
-  const order = tops.sort((a, b) => {
-    const boxA = a.parent().length ? a.parent().id() : "";
-    const boxB = b.parent().length ? b.parent().id() : "";
-    if (boxA !== boxB) return boxA < boxB ? -1 : 1;
-    return a.data("label") < b.data("label") ? -1 : 1;
-  });
-  // The circle is as big as its contents need: every shape gets its own
-  // width plus a gap of the ring's edge, so nothing on it overlaps.
-  const gap = 40;
-  let around = 0;
-  order.forEach((n) => { around += Math.max(n.outerWidth(), n.outerHeight()) + gap; });
-  const radius = Math.max(around / (2 * Math.PI), 200);
-  const at = new Map();
-  // Where each box's stretch of the ring begins and ends, so its name can be
-  // written against the middle of it.
-  const arcs = new Map();
-  let travelled = 0;
-  order.forEach((n) => {
-    const step = Math.max(n.outerWidth(), n.outerHeight()) + gap;
-    const angle = ((travelled + step / 2) / around) * 2 * Math.PI - Math.PI / 2;
-    at.set(n.id(), { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-    const box = n.parent().length ? n.parent().id() : "";
-    if (box) {
-      const arc = arcs.get(box) || { from: angle, to: angle };
-      arc.from = Math.min(arc.from, angle);
-      arc.to = Math.max(arc.to, angle);
-      arcs.set(box, arc);
+  if (view === "network" && scope === "services") {
+    for (const node of nodes) if (byID.get(node.parent)?.region) {
+      node.regions = [node.parent];
+      node.parent = byID.get(node.parent).parent;
     }
-    travelled += step;
+    for (const edge of edges.filter(e => e.membership)) {
+      const node = byID.get(edge.source);
+      node.regions ||= [];
+      if (!node.regions.includes(edge.target)) node.regions.push(edge.target);
+    }
+    for (let i = edges.length-1; i >= 0; i--) if (edges[i].membership) edges.splice(i, 1);
+  }
+  if (view === "network" && scope !== "overview" && scope !== "services") {
+    const references = new Map();
+    for (const edge of edges.filter(e => e.membership)) {
+      const source = byID.get(edge.source), network = byID.get(edge.target);
+      if (!network.isGroup || source.id === network.id) continue;
+      const key = JSON.stringify([source.id, network.id]);
+      if (!references.has(key)) {
+        const id = `reference:${key}`;
+        const reference = {...source, id, parent: network.id, isGroup: false,
+          reference: source.id, opens: undefined, summary: false, collapse: false,
+          detail: `Reference · ${network.label}`,
+          tooltip: `Same component as ${source.label} in ${byID.get(source.parent)?.label || "its primary group"}.\n${source.detail}`,
+          tags: [],
+        };
+        references.set(key, reference); nodes.push(reference); byID.set(id, reference); shownIDs.add(id);
+      }
+      edge.membershipLabel = network.label;
+      edge.target = references.get(key).id;
+      edge.label = edge.label || `Member of ${network.label}`;
+    }
+  }
+  const needed = new Set([...edges.flatMap(e => [e.source, e.target]), ...nodes.flatMap(n => n.regions || [])]);
+  // Empty container declarations cannot occupy a layout slot on their own.
+  for (const n of nodes) if (!n.isGroup && shownIDs.has(n.id)) needed.add(n.id);
+  for (const id of [...needed]) {
+    for (let n = byID.get(id); n; n = byID.get(n.parent)) needed.add(n.id);
+  }
+  return {nodes: nodes.filter(n => shownIDs.has(n.id) && needed.has(n.id)), edges};
+}
+
+function geometry(scope) {
+  const key = JSON.stringify([view, scope, includeDeclarations, [...filterOn].sort()]);
+  if (!layouts.has(key)) layouts.set(key, buildGeometry(scope));
+  return layouts.get(key);
+}
+
+async function buildGeometry(scope) {
+  const model = project(scope);
+  const byID = new Map(model.nodes.map(n => [n.id, n]));
+  for (const n of model.nodes) n.regionOverlay = view === "network" && scope === "services" && n.region;
+  const roots = [];
+  const degree = d3.rollup(model.edges.flatMap(e => [e.source, e.target]), ids => ids.length, id => id);
+  for (const n of model.nodes) {
+    n.displayLabel = view === "network" && scope === "services" && !n.isGroup ? n.label.split("/").at(-1) : n.label;
+    n.membershipLabel = (n.regions || []).map(id => byID.get(id)?.label || id).join(" · ");
+    n.children = []; n.w = Math.max(110, Math.min(240, (n.displayLabel || "").length * 7 + 28)); n.h = Math.max(52, (degree.get(n.id) || 0)*10+20);
+    if (n.membershipLabel) n.w = Math.max(n.w, 180, n.membershipLabel.length*6+28);
+  }
+  for (const n of model.nodes) {
+    const parent = byID.get(n.parent);
+    if (parent) parent.children.push(n); else roots.push(n);
+  }
+  if (view !== "network") {
+    radialGeometry(model, roots);
+  } else if (model.nodes.length) {
+    await networkGeometry(model, roots, byID);
+    membershipRegions(model);
+  }
+  model.edges.forEach(e => { e.source = byID.get(e.source); e.target = byID.get(e.target); });
+  routeLanes(model.edges);
+  return model;
+}
+
+async function networkGeometry(model, roots, byID) {
+  function node(n) {
+    const value = {id: n.id, width: n.w, height: n.h};
+    if (n.children.length) {
+      const children = n.children.filter(c => !c.regionOverlay);
+      if (children.some(c => c.regions?.length)) {
+        const buckets = d3.group(children, c => [...(c.regions || [])].sort().join("\u0000"));
+        value.children = Array.from(buckets.values(), (members, index) => ({
+          id:`layout-bucket:${n.id}:${index}`, children:members.map(node),
+          layoutOptions:{"elk.padding":"[top=72,left=72,bottom=72,right=72]", "elk.spacing.nodeNode":"64"},
+        }));
+      } else value.children = children.map(node);
+      value.layoutOptions = {"elk.padding": "[top=36,left=24,bottom=24,right=24]"};
+    }
+    return value;
+  }
+  const result = await elk.layout({
+    id: "layout-root", children: roots.filter(n => !n.regionOverlay).map(node),
+    edges: model.edges.map(e => ({id: e.id, sources: [e.source], targets: [e.target]})),
+    layoutOptions: {
+      "elk.algorithm": "layered", "elk.direction": "RIGHT",
+      "elk.edgeRouting": "ORTHOGONAL", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      "elk.spacing.nodeNode": model.nodes.some(n => n.regionOverlay) ? "64" : "40", "elk.layered.spacing.nodeNodeBetweenLayers": model.nodes.some(n => n.regionOverlay) ? "220" : "90",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "24", "elk.spacing.edgeNode": "20",
+      "elk.spacing.edgeEdge": "12", "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.mergeEdges": "false", "elk.randomSeed": "1",
+    },
   });
-  return { at, arcs, radius };
-}
-
-// ringLabels writes each box's name outside the ring, and takes the old ones
-// away first, since a ring drawn again is a ring with other arcs.
-function ringLabels(arcs, radius) {
-  cy.remove(cy.nodes(".ring-label"));
-  const out = radius + 90;
-  const added = [];
-  arcs.forEach((arc, id) => {
-    const box = cy.$id(id);
-    if (!box.length) return;
-    const angle = (arc.from + arc.to) / 2;
-    added.push({
-      group: "nodes",
-      data: { id: `ringlabel:${id}`, label: box.data("label") },
-      position: { x: Math.cos(angle) * out, y: Math.sin(angle) * out },
-      classes: "ring-label",
-      selectable: false,
-      grabbable: false,
-    });
-  });
-  cy.add(added);
-}
-
-// bendOf is how far a chord leaves the straight line between its ends: the
-// distance from the middle of that line to the middle of the ring, which
-// puts every chord's belly towards the centre.
-function bendOf(edge, centre) {
-  const a = edge.source().position();
-  const b = edge.target().position();
-  const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const along = { x: b.x - a.x, y: b.y - a.y };
-  const length = Math.hypot(along.x, along.y) || 1;
-  // The component of "towards the centre" that is square to the line, which
-  // is the number cytoscape wants, signed the way it measures it.
-  const across = { x: -along.y / length, y: along.x / length };
-  const towards = { x: centre.x - middle.x, y: centre.y - middle.y };
-  return Math.round((towards.x * across.x + towards.y * across.y) * 0.55);
-}
-
-async function applyView(next) {
-  if (!cy || next === view) return;
-  view = next;
-  drawViewButton();
-  if (next === "ring") {
-    // The ring is drawn at one level: a hundred ports on a circle is the
-    // tangle it was meant to answer, so it shows the machines.
-    pinnedLevel = "overview";
-    await applyLevel("overview");
-    const ring = ringPositions();
-    cy.batch(() => {
-      ring.at.forEach((p, id) => cy.$id(id).position(p));
-      ringLabels(ring.arcs, ring.radius);
-    });
-    savePositions("ring");
-    cy.batch(() => {
-      cy.nodes(":parent").addClass("quiet");
-      const centre = { x: 0, y: 0 };
-      cy.edges(":visible").forEach((e) => {
-        e.data("bend", bendOf(e, centre));
-        e.addClass("chord");
+  const routes = new Map(model.edges.map(e => [e.id, e]));
+  const origins = new Map();
+  function read(container, ox = 0, oy = 0) {
+    for (const n of container.children || []) {
+      const value = byID.get(n.id), x = ox+n.x, y = oy+n.y;
+      origins.set(n.id, {x,y});
+      if (value) { value.x = x+n.width/2; value.y = y+n.height/2; value.w = n.width; value.h = n.height; }
+      else if (n.id.startsWith("layout-bucket:")) model.membershipBuckets.push({
+        x:x+n.width/2,y:y+n.height/2,w:n.width-100,h:n.height-100,
+        regions:byID.get(n.children[0]?.id)?.regions || [],
       });
-    });
-  } else {
-    cy.batch(() => {
-      cy.remove(cy.nodes(".ring-label"));
-      cy.nodes().removeClass("quiet");
-      cy.edges().removeClass("chord");
-    });
-    pinnedLevel = null;
-    restorePositions("overview");
-  }
-  adjusting = true;
-  cy.fit(undefined, 40);
-  requestAnimationFrame(() => { adjusting = false; });
-  drawDetailButton();
-}
-
-function drawViewButton() {
-  const button = document.getElementById("view");
-  if (button) button.textContent = `View: ${view}`;
-}
-
-function cycleView() {
-  applyView(viewNames[(viewNames.indexOf(view) + 1) % viewNames.length]);
-}
-
-const layout = {
-  name: "fcose",
-  fit: true,
-  quality: "proof",
-  animate: false,
-  randomize: true,
-  nodeSeparation: 120,
-  idealEdgeLength: 140,
-  nodeRepulsion: 14000,
-  // Compounds need their own pull and their own room, or boxes land on top
-  // of each other in a picture with many of them.
-  gravityCompound: 1.4,
-  gravityRangeCompound: 1.2,
-  tile: true,
-  packComponents: true,
-  padding: 30,
-};
-
-// The overview is laid out on its own, on a graph of nothing but the shut
-// boxes and the lines between them. Keeping the detailed geometry and
-// drawing it small does not make it any less tangled: the small picture is
-// tangled because it is the big picture seen from further away. So the two
-// levels get two sets of positions, both kept, and switching between them
-// moves the shapes rather than re-running anything.
-const overviewLayout = {
-  name: "fcose",
-  quality: "proof",
-  animate: false,
-  randomize: true,
-  nodeSeparation: 140,
-  idealEdgeLength: 220,
-  nodeRepulsion: 20000,
-  packComponents: true,
-  padding: 30,
-};
-
-let cy = null;
-
-// Two remembered geometries, by the id of every leaf shape: the one the full
-// layout produced, and the one the overview layout produced. A level change
-// puts the shapes back where that level had them.
-const positions = { full: null, overview: null, ring: null };
-
-// How wide each of those two pictures is, in the graph's own units. The
-// overview is the smaller drawing of the same thing, and the ratio between
-// the two is what makes one zoom comparable with the other: a reader looking
-// at the overview at twice its own scale is looking at the whole thing at
-// twice the scale too, whatever number the viewport happens to hold.
-const spans = { full: 0, overview: 0 };
-
-function currentSpan() {
-  const box = cy.elements(":visible").boundingBox();
-  return Math.max(box.w, box.h, 1);
-}
-
-// scale is the zoom as the full picture would count it, so one threshold
-// reads the same at either level.
-function scale() {
-  const zoom = cy.zoom();
-  if (shownLevel !== "overview" || !spans.full || !spans.overview) return zoom;
-  return zoom * (spans.overview / spans.full);
-}
-
-// zoomAtScale is the inverse: the viewport zoom that shows the level named
-// at the given scale, so switching levels does not change how big anything
-// on screen looks.
-function zoomAtScale(value, level) {
-  if (level !== "overview" || !spans.full || !spans.overview) return value;
-  return value * (spans.full / spans.overview);
-}
-
-// adjusting is on while the page moves the viewport itself, so its own
-// zooming does not read as the reader asking for another level.
-let adjusting = false;
-
-// viewport sets the scale and puts one shape back under the middle of the
-// screen: a level change is the same picture at another level of detail, so
-// the reader should still be looking at what they were looking at.
-function viewport(zoom, onto) {
-  adjusting = true;
-  cy.zoom({ level: zoom, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
-  if (onto && onto.length) cy.center(onto);
-  else cy.center();
-  requestAnimationFrame(() => { adjusting = false; });
-}
-
-// middleOf answers which of the given shapes is nearest the middle of the
-// screen, which is the one the reader is looking at.
-function middleOf(candidates) {
-  const middle = { x: cy.width() / 2, y: cy.height() / 2 };
-  let best = null;
-  let bestAway = Infinity;
-  candidates.forEach((n) => {
-    const at = n.renderedPosition();
-    const away = (at.x - middle.x) ** 2 + (at.y - middle.y) ** 2;
-    if (away < bestAway) {
-      bestAway = away;
-      best = n;
+      read(n, x, y);
     }
-  });
-  return best;
+    for (const e of container.edges || []) {
+      const edge = routes.get(e.id);
+      const origin = origins.get(e.container) || {x:0,y:0};
+      const ex = origin.x, ey = origin.y;
+      edge.points = (e.sections || []).flatMap(section => [section.startPoint, ...(section.bendPoints || []), section.endPoint]
+        .map(p => ({x: ex+p.x, y: ey+p.y})));
+      if (edge.points.length < 2) throw new Error("Layout did not route a connection");
+    }
+  }
+  model.membershipBuckets = [];
+  read(result);
+  for (const e of model.edges) if (!e.points) throw new Error("Layout omitted a connection");
+  model.bounds = model.edges.flatMap(e => e.points.map(p => ({...p, w: 0, h: 0})));
 }
 
-function leafNodes() {
-  return cy.nodes().filter((n) => !n.isParent() && !n.hasClass("ring-label"));
-}
-
-function savePositions(into) {
-  const at = new Map();
-  leafNodes().forEach((n) => at.set(n.id(), { ...n.position() }));
-  positions[into] = at;
-}
-
-function restorePositions(from) {
-  const at = positions[from];
-  if (!at) return false;
-  cy.batch(() => {
-    leafNodes().forEach((n) => {
-      const p = at.get(n.id());
-      if (p) n.position(p);
+// Contours permit overlaps at shared components; non-members are cut out.
+function membershipRegions(model) {
+  model.regions = [];
+  const names = [...new Set((graph.groups || []).filter(g => g.region).map(g => g.label))];
+  for (const region of model.nodes.filter(n => n.regionOverlay)) {
+    const members = model.nodes.filter(n => (n.regions || []).includes(region.id));
+    if (!members.length) continue;
+    const siblings = model.nodes.filter(n => n.regionOverlay && n.parent === region.parent);
+    const padding = 22 + siblings.indexOf(region)*14, step = 4;
+    const x0 = d3.min(members, n => n.x-n.w/2)-padding-step;
+    const y0 = d3.min(members, n => n.y-n.h/2)-padding-step;
+    const width = Math.ceil((d3.max(members, n => n.x+n.w/2)+padding+step-x0)/step);
+    const height = Math.ceil((d3.max(members, n => n.y+n.h/2)+padding+step-y0)/step);
+    const areas = model.membershipBuckets.filter(b => b.regions.includes(region.id));
+    const others = model.nodes.filter(n => !n.isGroup && !(n.regions || []).includes(region.id));
+    const inside = (n, x, y, pad) => Math.abs(x-n.x) <= n.w/2+pad && Math.abs(y-n.y) <= n.h/2+pad;
+    const values = new Uint8Array(width*height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const px = x0+x*step, py = y0+y*step;
+      values[y*width+x] = (areas.length ? areas : members).some(n => inside(n,px,py,padding)) && !others.some(n => inside(n,px,py,8)) ? 1 : 0;
+    }
+    const contour = d3.contours().size([width,height]).thresholds([.5])(values)[0];
+    const projection = d3.geoIdentity().scale(step).translate([x0,y0]);
+    region.path = d3.geoPath(projection)(contour);
+    region.w = width*step; region.h = height*step;
+    region.x = x0+region.w/2; region.y = y0+region.h/2;
+    region.contour = contour; region.grid = {x:x0,y:y0,step};
+    region.labels = contour.coordinates.flatMap(polygon => {
+      const member = members.find(n => d3.polygonContains(polygon[0], [(n.x-x0)/step,(n.y-y0)/step]));
+      return member ? [{label:region.label, x:member.x-member.w/2-padding+4, y:member.y-member.h/2-padding+14}] : [];
     });
+    region.regionColour = filterColour.get(region.colorFilter) || paletteAt(names.indexOf(region.label));
+    model.regions.push(region);
+    model.bounds.push({x:x0+region.w/2,y:y0+region.h/2,w:region.w,h:region.h});
+  }
+}
+
+function radialGeometry(model, roots) {
+  const root = d3.hierarchy({id: "", label: graph.title || "Graph", isGroup: true, children: roots});
+  root.sort((a, b) => d3.ascending(a.data.label, b.data.label) || d3.ascending(a.data.id, b.data.id));
+  const radius = Math.max(240, root.leaves().length * 24 / (2 * Math.PI));
+  d3.cluster().size([2*Math.PI, radius]).separation((a, b) => a.parent === b.parent ? 1 : 2)(root);
+  model.hierarchy = root;
+  model.treeLinks = root.links();
+  root.each(n => {
+    n.data.angle = n.x; n.data.radius = n.y; n.data.hierarchy = n;
+    n.data.x = Math.sin(n.x)*n.y; n.data.y = -Math.cos(n.x)*n.y;
+    n.data.w = n.data.isGroup ? 16 : 12; n.data.h = n.data.w;
   });
+  model.sectors = [];
+  if (view === "ring-services") for (const machine of model.nodes.filter(n => n.collapse && n.isGroup)) {
+    const leaves = machine.hierarchy.leaves().filter(n => !n.data.isGroup);
+    if (!leaves.length) continue;
+    const from = d3.min(leaves, n => n.x), to = d3.max(leaves, n => n.x);
+    const labelWidth = Math.min(240, Math.max(...leaves.map(n => n.data.label.length * 7 + 30)));
+    const sector = {id: machine.id, label: machine.label, from: from-.025, to: to+.025, inner: radius-24, outer: radius+labelWidth, angle: (from+to)/2};
+    sector.path = d3.arc().innerRadius(sector.inner).outerRadius(sector.outer).startAngle(sector.from).endAngle(sector.to)();
+    sector.x = Math.sin(sector.angle)*(radius-38); sector.y = -Math.cos(sector.angle)*(radius-38);
+    model.sectors.push(sector);
+  }
+  const outer = radius + Math.max(40, ...model.nodes.filter(n => !n.isGroup).map(n => Math.min(240, n.label.length*7+24)));
+  model.bounds = [{x: -outer, y: -outer, w: 0, h: 0}, {x: outer, y: outer, w: 0, h: 0}];
+}
+
+// Opposite directions share a pair, so each connection gets a distinct lane.
+function routeLanes(edges) {
+  const pairs = new Map();
+  for (const e of edges) {
+    const [a, b] = [e.source.id, e.target.id].sort();
+    const key = `${a.length}:${a}${b}`;
+    if (!pairs.has(key)) pairs.set(key, []);
+    pairs.get(key).push(e);
+  }
+  for (const group of pairs.values()) group.forEach((e, i) => { e.lane = i-(group.length-1)/2; e.loop = i; });
+
+}
+
+// Circular fillets stay on the routed channel; a spline can cut through boxes.
+function networkRoute(e) {
+  const points = e.points;
+  let path = `M${points[0].x},${points[0].y}`;
+  for (let i = 1; i < points.length-1; i++) {
+    const a = points[i-1], b = points[i], c = points[i+1];
+    const incoming = Math.hypot(b.x-a.x, b.y-a.y), outgoing = Math.hypot(c.x-b.x, c.y-b.y);
+    if (!incoming || !outgoing) continue;
+    const radius = Math.min(10, incoming/2, outgoing/2);
+    const x = b.x+(a.x-b.x)*radius/incoming, y = b.y+(a.y-b.y)*radius/incoming;
+    const tx = b.x+(c.x-b.x)*radius/outgoing, ty = b.y+(c.y-b.y)*radius/outgoing;
+    path += `L${x},${y}Q${b.x},${b.y} ${tx},${ty}`;
+  }
+  const last = points[points.length-1]; path += `L${last.x},${last.y}`;
+  let longest = 0, midpoint = points[0];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i-1], b = points[i], length = Math.hypot(b.x-a.x, b.y-a.y);
+    if (length > longest) { longest = length; midpoint = {x: (a.x+b.x)/2, y: (a.y+b.y)/2}; }
+  }
+  return {path, x: midpoint.x, y: midpoint.y};
+}
+
+function radialRoute(e) {
+  if (e.source === e.target) {
+    const n = e.source, r = 20 + e.loop*8;
+    return `M${n.x},${n.y}c${r},${-r} ${-r},${-r} 0,-8`;
+  }
+  const points = e.source.hierarchy.path(e.target.hierarchy).map(n => [n.x, n.y]);
+  const lane = e.lane*12;
+  for (let i = 1; i < points.length-1; i++) {
+    points[i] = [points[i][0] + lane/Math.max(80, points[i][1]), Math.max(12, points[i][1] + Math.abs(lane))];
+  }
+  // Stop before the dot so the arrowhead stays visible above the hierarchy.
+  points[0][1] -= 8; points[points.length-1][1] -= 10;
+  return d3.lineRadial().angle(p => p[0]).radius(p => p[1]).curve(d3.curveBundle.beta(.72))(points);
+}
+
+function scopeNow() { return view === "ring" ? "overview" : view === "ring-services" ? "services" : level; }
+async function render(fit = false) {
+  if (!graph) return;
+  const request = ++renderRequest;
+  document.getElementById("graph").setAttribute("aria-busy", "true");
+  document.getElementById("layout-state").hidden = false;
+  let next;
+  try { next = await geometry(scopeNow()); }
+  catch (error) { if (request === renderRequest) { showError(`Layout failed: ${error.message}`); document.getElementById("graph").setAttribute("aria-busy", "false"); document.getElementById("layout-state").hidden = true; } return false; }
+  if (request !== renderRequest) return false;
+  scene = next;
+  showError("");
+  const byID = new Map(scene.nodes.map(n => [n.id, n]));
+  const nodes = scene.nodes, edges = scene.edges, radial = view !== "network";
+  world.selectAll("*").remove();
+  world.append("defs").append("marker").attr("id", "arrow").attr("viewBox", "0 -5 10 10").attr("refX", 9).attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto").append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "context-stroke");
+  if (radial) {
+    world.append("g").selectAll("path").data(scene.sectors).join("path").attr("class", "host-sector").attr("d", n => n.path)
+      .attr("role", "button").attr("tabindex", 0).attr("aria-label", n => `${n.label} services`)
+      .on("click", (event, n) => { event.stopPropagation(); select(byID.get(n.id)); })
+      .on("keydown", (event, n) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(byID.get(n.id)); } });
+    world.append("g").selectAll("path").data(scene.treeLinks).join("path").attr("class", "tree-link")
+      .attr("d", d3.linkRadial().angle(n => n.x).radius(n => n.y));
+    world.append("g").selectAll("text").data(scene.sectors).join("text").attr("class", "host-label")
+      .attr("x", n => n.x).attr("y", n => n.y).text(n => n.label);
+  }
+  const regions = world.append("g").selectAll("g").data(scene.regions || []).join("g").attr("class", "membership-region");
+  regions.append("path").attr("d", n => n.path).attr("fill", n => n.regionColour).attr("stroke", n => n.regionColour);
+  regions.selectAll("text").data(n => n.labels.map(label => ({...label, colour:n.regionColour}))).join("text")
+    .attr("x", n => n.x).attr("y", n => n.y).attr("fill", n => n.colour).text(n => n.label);
+  const groups = world.append("g").selectAll("g").data(radial ? [] : nodes.filter(n => n.isGroup && !n.regionOverlay)).join("g").attr("class", "group");
+  groups.attr("tabindex", 0).attr("role", "button").attr("aria-label", n => `${n.label}. Select to show connections.`)
+    .on("dblclick", (event, n) => { event.stopPropagation(); frame([n]); })
+    .on("click", (event, n) => { event.stopPropagation(); select(n); })
+    .on("keydown", (event, n) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(n); } });
+  groups.append("rect").attr("rx", 10).style("fill-opacity", scene.regions?.length ? 0 : null);
+  groups.append("text").attr("class", "group-label").text(n => n.label);
+  const lines = world.append("g").selectAll("g").data(edges).join("g").attr("class", radial ? "edge radial-edge" : "edge");
+  lines.append("path").attr("class", "connection").attr("fill", "none").attr("marker-end", "url(#arrow)").attr("stroke", e => edgeColour(e.kind, e.tags))
+    .attr("stroke-width", e => Math.min(4, 1.25 + Math.log2(e.weight || 1)*.5)).attr("stroke-dasharray", e => ({solid: null, dashed: "7 4", dotted: "2 4"})[lineStyleFor(e.kind)]);
+  lines.append("path").attr("class", "edge-hit").attr("fill", "none").attr("stroke", "transparent").attr("stroke-width", 14);
+  lines.append("title").text(e => `${e.source.label} → ${e.target.label}: ${e.labels.filter(Boolean).join(", ") || e.label}`);
+  lines.append("text").attr("class", "edge-label").text(e => e.label);
+  const shapes = world.append("g").selectAll("g").data(radial ? nodes : nodes.filter(n => !n.isGroup)).join("g").attr("class", n => `node${radial ? " radial-node" : ""}${n.isGroup ? " branch-node" : ""}${n.reference ? " reference-node" : ""}`)
+    .attr("tabindex", 0).attr("role", "button").attr("aria-label", n => `${n.label}. ${n.detail}. Select to show connections.`)
+    .on("click", (event, n) => { event.stopPropagation(); select(n); })
+    .on("keydown", (event, n) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(n); } })
+    .on("dblclick", async (event, n) => { event.stopPropagation(); if (n.opens && !radial) { level = "full"; if (!await render()) return; const target = scene.nodes.find(c => c.id === n.opens); if (target) frame([target]); } else frame([n]); });
+  if (radial) {
+    shapes.append("circle").attr("class", "node-hit").attr("r", 12).attr("fill", "transparent");
+    shapes.append("circle").attr("r", n => n.isGroup ? 3 : 5).attr("fill", n => n.colour);
+    shapes.append("text").attr("fill", "#1a1a1a").text(n => n.isGroup && scene.sectors.some(s => s.id === n.id) ? "" : shorten(n.label, 250))
+      .attr("transform", n => `rotate(${n.angle*180/Math.PI-90+(n.angle >= Math.PI ? 180 : 0)})`)
+      .attr("x", n => n.angle >= Math.PI ? -10 : 10).attr("dy", ".32em").style("text-anchor", n => n.angle >= Math.PI ? "end" : "start");
+  } else {
+    shapes.append("rect").attr("rx", n => 4 + indexFor(n.kind) % 4 * 4).attr("fill", n => n.colour);
+    shapes.append("text").attr("fill", n => n.textColour).text(n => shorten(n.displayLabel || n.label, n.w));
+    shapes.append("text").attr("class", "node-detail").attr("fill", n => n.textColour).text(n => level === "medium" ? "" : shorten(level === "services" && n.regions?.length ? n.membershipLabel : n.detail, n.w));
+
+  }
+  shapes.append("title").text(n => n.tooltip || n.detail || n.label);
+  function draw() {
+    groups.attr("transform", n => `translate(${n.x},${n.y})`);
+    groups.select("rect").attr("x", n => -n.w/2).attr("y", n => -n.h/2).attr("width", n => n.w).attr("height", n => n.h);
+    groups.select("text").attr("x", n => -n.w/2 + 12).attr("y", n => -n.h/2 + 20);
+    shapes.attr("transform", n => `translate(${n.x},${n.y})`);
+    if (!radial) {
+      shapes.select("rect").attr("x", n => -n.w/2).attr("y", n => -n.h/2).attr("width", n => n.w).attr("height", n => n.h);
+      shapes.select("text").attr("y", -2); shapes.select(".node-detail").attr("y", 15);
+    }
+    lines.selectAll("path").attr("d", e => radial ? radialRoute(e) : networkRoute(e).path);
+    lines.select("text").attr("x", e => radial ? (e.source.x+e.target.x)/4 : networkRoute(e).x).attr("y", e => (radial ? (e.source.y+e.target.y)/4 : networkRoute(e).y)-6);
+  }
+  draw();
+  selected = selected ? byID.get(selected.id) || null : null;
+  highlight(); buttons();
+  document.getElementById("empty").hidden = nodes.length > 0;
+  document.getElementById("ring-help").hidden = !radial;
+  document.getElementById("graph").setAttribute("aria-busy", "false");
+  document.getElementById("layout-state").hidden = true;
+  if (fit) frame();
   return true;
 }
 
-// topShapes are what the overview draws: one stand-in per shut box, and
-// every shape that sits in none of them.
-function topShapes() {
-  const stands = cy.nodes(".stand");
-  const loose = leafNodes().filter((n) => !n.hasClass("stand") && n.ancestors(".collapsible").length === 0);
-  return stands.union(loose);
+function shorten(text, width) {
+  const count = Math.floor((width-20)/6);
+  return text.length > count ? text.slice(0, count-1) + "…" : text;
 }
-
-// layOutOverview places the shut boxes on a headless graph of their own and
-// copies the result back. Moving a box moves what is inside it, so the
-// detailed geometry survives inside each box and only the boxes travel.
-function layOutOverview() {
-  const tops = topShapes();
-  const ids = new Set(tops.map((n) => n.id()));
-  const elements = [];
-  // The boxes these shapes sit in come along, so the overview groups them
-  // the way the picture does rather than scattering one owner's machines.
-  const boxes = new Set();
-  tops.forEach((n) => n.ancestors().forEach((a) => boxes.add(a.id())));
-  for (const id of boxes) {
-    const box = cy.$id(id);
-    const parent = box.parent();
-    elements.push({ data: { id: id, parent: parent.length && boxes.has(parent.id()) ? parent.id() : undefined } });
+function select(n) { selected = n; highlight(); }
+function highlight() {
+  const keep = new Set();
+  function include(n) { keep.add(n.id); n.children.forEach(include); if (n.regionOverlay) for (const member of scene.nodes) if ((member.regions || []).includes(n.id)) keep.add(member.id); }
+  if (selected) {
+    include(selected);
+    const canonical = scene.nodes.find(n => n.id === (selected.reference || selected.id));
+    if (canonical && canonical !== selected) include(canonical);
+    for (const n of scene.nodes) if (n.reference === (selected.reference || selected.id)) keep.add(n.id);
   }
-  // Measured now, with the boxes already shut, so the layout works with the
-  // size the overview draws rather than the size the detail needed.
-  tops.forEach((n) => {
-    const parent = n.parent();
-    elements.push({
-      data: {
-        id: n.id(),
-        parent: parent.length && boxes.has(parent.id()) ? parent.id() : undefined,
-        w: Math.max(n.outerWidth(), 40),
-        h: Math.max(n.outerHeight(), 40),
-      },
-      position: { ...n.position() },
-    });
-  });
-  // The lines of the overview: the aggregated ones, plus any ordinary line
-  // that already runs between two shapes it draws.
-  const seen = new Set();
-  cy.edges().forEach((e) => {
-    const [a, b] = [e.source().id(), e.target().id()];
-    if (!ids.has(a) || !ids.has(b) || a === b) return;
-    const key = `${a}|${b}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    elements.push({ data: { id: `o:${key}`, source: a, target: b } });
-  });
-  const head = cytoscape({
-    headless: true,
-    // Without its style a headless graph gives every node a size of one
-    // pixel, and a layout run on it packs boxes that are hundreds of pixels
-    // wide into the same spot.
-    styleEnabled: true,
-    elements: elements,
-    style: [{ selector: "node", style: { width: "data(w)", height: "data(h)" } }],
-  });
-  return new Promise((resolve) => {
-    const run = head.layout(overviewLayout);
-    run.one("layoutstop", () => {
-      cy.batch(() => {
-        head.nodes().forEach((hn) => {
-          if (hn.isParent()) return;
-          const target = cy.$id(hn.id());
-          if (target.length) target.position({ ...hn.position() });
-        });
-      });
-      head.destroy();
-      savePositions("overview");
-      spans.overview = currentSpan();
-      resolve();
-    });
-    run.run();
-  });
+  const direct = new Set(keep);
+  if (selected) for (const e of scene.edges) {
+    if (direct.has(e.source.id) || direct.has(e.target.id)) { keep.add(e.source.id); keep.add(e.target.id); }
+  }
+  world.selectAll(".membership-region").style("opacity", n => selected && !scene.nodes.some(member => direct.has(member.id) && member.regions?.includes(n.id)) ? .2 : 1);
+  world.selectAll(".node").classed("faded", n => selected && !keep.has(n.id)).classed("selected", n => selected && n.id === selected.id);
+  world.selectAll(".group").classed("selected", n => selected && n.id === selected.id);
+  world.selectAll(".edge").classed("faded", e => selected && !direct.has(e.source.id) && !direct.has(e.target.id))
+    .classed("active", e => selected && (direct.has(e.source.id) || direct.has(e.target.id)));
+  world.selectAll(".edge-label").style("display", selected ? "none" : null);
+  const box = document.getElementById("selection"); box.hidden = !selected;
+  const connections = selected ? scene.edges.filter(e => direct.has(e.source.id) || direct.has(e.target.id)) : [];
+  box.textContent = selected ? [selected.label, selected.kind, selected.detail, selected.tooltip,
+    ...(selected.regions || []).map(id => `Network: ${scene.nodes.find(n => n.id === id)?.label || id}`),
+    ...connections.map(e => e.membershipLabel ? `${e.source.label} · member of ${e.membershipLabel}` : `${e.source.label} → ${e.target.label}: ${e.labels.filter(Boolean).join(", ") || e.label}`)].filter(Boolean).join("\n") : "";
 }
-
-// applyFilters hides every element whose tags are all switched off. An
-// element carrying no tag is never hidden by a filter.
-function applyFilters() {
-  if (!cy) return;
-  cy.batch(() => {
-    cy.elements().forEach((el) => {
-      const tags = el.data("tags") || [];
-      const off = tags.length > 0 && !tags.some((t) => filterOn.has(t));
-      if (off) el.addClass("filter-hide");
-      else el.removeClass("filter-hide");
-    });
-  });
+function frame(nodes = scene?.nodes || []) {
+  if (!nodes.length) return;
+  if (nodes === scene.nodes) nodes = [...nodes, ...scene.bounds];
+  const width = svg.node().clientWidth, height = svg.node().clientHeight;
+  const x0 = d3.min(nodes, n => n.x-n.w/2), x1 = d3.max(nodes, n => n.x+n.w/2);
+  const y0 = d3.min(nodes, n => n.y-n.h/2), y1 = d3.max(nodes, n => n.y+n.h/2);
+  const scale = Math.max(.03, Math.min(3, (width-64)/(x1-x0 || 1), (height-64)/(y1-y0 || 1)));
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width/2, height/2).scale(scale).translate(-(x0+x1)/2, -(y0+y1)/2));
 }
-
-function recolourEdges() {
-  if (!cy) return;
-  cy.batch(() => {
-    cy.edges().forEach((e) => e.data("colour", edgeColour(e.data("kind"), e.data("tags"))));
-  });
+function buttons() {
+  document.getElementById("view-state").textContent = view === "network" ? "Network" : view === "ring" ? "Ring · hosts" : "Ring · services";
+  document.querySelectorAll("[data-view]").forEach(button => button.setAttribute("aria-pressed", button.dataset.view === view));
+  document.querySelectorAll("[data-level]").forEach(button => { button.setAttribute("aria-pressed", button.dataset.level === level); button.disabled = view !== "network"; });
 }
-
-// drawFilters writes the filter list above the key: one switch per filter,
-// with the swatch its lines take when coloured by filter, and a switch for
-// that colouring.
+function applyFilters() { render(true); }
+function recolourEdges() { render(); }
 function drawFilters(graph) {
   const filters = graph.filters || [];
   filterColour = new Map(filters.map((f, i) => [f.id, paletteAt(i)]));
@@ -944,7 +543,7 @@ function drawFilters(graph) {
     `<span class="swatch" style="background:${filterColour.get(f.id)}"></span>` +
     `<span>${esc(f.label)}${f.detail ? `<small>${esc(f.detail)}</small>` : ""}</span></label>`
   );
-  box.innerHTML = `<h2>${esc(graph.filterTitle || "Filters")}</h2>${rows.join("")}` +
+  box.innerHTML = `<h2 class="panel-head">${esc(graph.filterTitle || "Filters")}</h2>${rows.join("")}` +
     `<label class="filter colour-by"><input type="checkbox" data-colour-by${colourByFilter ? " checked" : ""}><span>Colour lines by these</span></label>`;
   box.hidden = false;
   box.querySelectorAll("input[data-filter]").forEach((input) => {
@@ -967,106 +566,77 @@ function drawLegend(graph) {
   for (const n of graph.nodes || []) if (n.kind) kinds.set(n.kind, (graph.legend || {})[n.kind] || "");
   for (const e of graph.edges || []) if (e.kind) kinds.set(e.kind, (graph.legend || {})[e.kind] || "");
   if (kinds.size === 0 && !(graph.filters || []).length) {
-    aside.hidden = true;
+    aside.hidden = false;
+    document.getElementById("legend").replaceChildren();
     return;
   }
+  const esc = v => String(v).replace(/[&<>"]/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"})[c]);
   const rows = [...kinds].map(([kind, meaning]) =>
-    `<dt><span class="swatch" style="background:${colourFor(kind)}"></span>${kind}</dt><dd>${meaning}</dd>`
+    `<dt><span class="swatch" style="background:${colourFor(kind)}"></span>${esc(kind)}</dt><dd>${esc(meaning)}</dd>`
   );
-  document.getElementById("legend").innerHTML = `<h2>Key</h2><dl>${rows.join("")}</dl>`;
+  document.getElementById("legend").innerHTML = `<h2 class="panel-head">Key</h2><dl>${rows.join("")}</dl>`;
   aside.hidden = false;
 }
 
-// Clicking a node dims everything it is not connected to, so one shape's
-// reach is readable in a picture too dense to trace by eye. Clicking the
-// background clears it.
-function wireHighlighting() {
-  cy.on("tap", "node", (event) => {
-    const node = event.target;
-    if (node.isParent()) return;
-    const keep = node.closedNeighborhood().union(node.ancestors());
-    cy.elements().addClass("faded");
-    keep.removeClass("faded");
-  });
-  cy.on("tap", (event) => {
-    if (event.target === cy) cy.elements().removeClass("faded");
-  });
-}
+
 
 async function load() {
   showError("");
-  let graph;
   try {
     const response = await fetch("api/graph");
-    graph = await response.json();
-    if (!response.ok) throw new Error(graph.error || response.statusText);
-  } catch (err) {
-    showError(String(err.message || err));
-    return;
-  }
-
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    graph = data;
+  } catch (error) { showError(error.message); return; }
   document.title = `${graph.title || "Graph"} · dgs`;
   document.getElementById("title").textContent = graph.title || "Graph";
-  const counts = [
-    `${(graph.groups || []).length} groups`,
-    `${(graph.nodes || []).length} nodes`,
-    `${(graph.edges || []).length} edges`,
-  ];
-  document.getElementById("counts").textContent = counts.join(" · ");
-
-  // Before the elements are built: a line's colour may come from its filter.
-  drawFilters(graph);
-  if (cy) cy.destroy();
-  cy = cytoscape({
-    container: document.getElementById("graph"),
-    elements: elements(graph),
-    style: styleSheet(),
-    wheelSensitivity: 0.2,
-  });
-  view = "network";
-  positions.ring = null;
-  drawViewButton();
-  wireHighlighting();
-  wireDetail();
-  drawLegend(graph);
-  applyFilters();
-  // The layout runs after the legend, so the container has its final width
-  // before anything is placed, and it is run rather than passed to the
-  // constructor so its stop event is there to listen for.
-  runLayout();
+  document.getElementById("counts").textContent = `${(graph.nodes || []).length} nodes · ${(graph.edges || []).length} edges`;
+  drawFilters(graph); drawLegend(graph);
+  all = elements(graph); layouts.clear(); selected = null; scene = null;
+  await render(true); search();
 }
-
-// The graph fills whatever space it is given, so a resized window re-fits
-// rather than leaving the picture where the old width put it.
-window.addEventListener("resize", () => {
-  if (!cy) return;
-  cy.resize();
-  cy.fit(undefined, 40);
+function search() {
+  const query = document.getElementById("search").value.trim().toLowerCase();
+  const results = document.getElementById("results"); results.replaceChildren(); results.hidden = !query;
+  if (!graph || !query) return;
+  const matches = all.filter(n => `${n.label} ${n.detail}`.toLowerCase().includes(query));
+  if (!matches.length) results.textContent = "No matches";
+  for (const match of matches.slice(0, 30)) {
+    const button = document.createElement("button"); button.className = "text-button"; button.textContent = match.label;
+    button.onclick = async () => {
+      const visible = scene?.nodes.find(n => n.id === match.id);
+      if (visible) { select(visible); frame([visible]); return; }
+      if (match.contextOnly) { includeDeclarations = true; document.getElementById("declarations").checked = true; }
+      const byID = new Map(all.map(n => [n.id, n]));
+      for (let n = match; n; n = byID.get(n.parent)) for (const tag of n.tags) filterOn.add(tag);
+      document.querySelectorAll("input[data-filter]").forEach(input => { input.checked = filterOn.has(input.dataset.filter); });
+      if (!await render()) return;
+      let n = scene.nodes.find(n => n.id === match.id);
+      if (!n) {
+        view = "network"; level = "full";
+        if (!await render()) return;
+        n = scene.nodes.find(n => n.id === match.id);
+      }
+      if (n) { select(n); frame([n]); }
+    };
+    results.append(button);
+  }
+}
+document.getElementById("search").addEventListener("input", search);
+document.getElementById("reload").onclick = load;
+document.getElementById("fit").onclick = () => frame();
+document.getElementById("relayout").onclick = () => { layouts.clear(); render(true); };
+document.querySelectorAll("[data-level]").forEach(button => { button.onclick = () => { level = button.dataset.level; render(true); }; });
+document.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => { view = button.dataset.view; render(true); }; });
+document.getElementById("declarations").onchange = event => { includeDeclarations = event.target.checked; render(true); };
+document.getElementById("zoom-in").onclick = () => svg.call(zoom.scaleBy, 1.4);
+document.getElementById("zoom-out").onclick = () => svg.call(zoom.scaleBy, 1/1.4);
+document.addEventListener("keydown", event => {
+  if (event.target.closest("input, textarea, select")) return;
+  if (event.key === "Escape") select(null);
+  if (event.key === "+" || event.key === "=") svg.call(zoom.scaleBy, 1.4);
+  if (event.key === "-") svg.call(zoom.scaleBy, 1/1.4);
+  if (event.key.toLowerCase() === "f") frame();
 });
-
-function runLayout() {
-  if (!cy) return;
-  // Showing or hiding the key changes the container's width, and the change
-  // lands after this frame; resizing first means the layout and the fit use
-  // the width the graph actually has.
-  requestAnimationFrame(() => {
-    cy.resize();
-    const run = cy.layout({ ...layout, eles: cy.elements().difference(cy.elements(".stand, .meta")) });
-    run.one("layoutstop", () => {
-      cy.resize();
-      cy.fit(undefined, 40);
-      // The fit decides the zoom, and the zoom decides the level, so the
-      // first level is chosen here rather than before anything is placed.
-      shownLevel = null;
-      applyLevel(levelNow());
-    });
-    run.run();
-  });
-}
-
-document.getElementById("reload").addEventListener("click", load);
-document.getElementById("fit").addEventListener("click", () => cy && cy.fit(undefined, 30));
-document.getElementById("relayout").addEventListener("click", runLayout);
-document.getElementById("detail").addEventListener("click", cycleDetail);
-document.getElementById("view").addEventListener("click", cycleView);
+new ResizeObserver(() => { if (scene) svg.attr("viewBox", `0 0 ${svg.node().clientWidth} ${svg.node().clientHeight}`); }).observe(document.getElementById("graph"));
 load();

@@ -88,3 +88,9 @@ test-gpx-web:
 
 test-gpx: test-gpx-web
 	go test ./internal/apps/geo/gpx ./internal/geo/segment
+
+# Embedded connectivity graph geometry and filtering.
+.PHONY: test-webgraph
+test-webgraph:
+	node --test internal/webgraph/*_test.cjs
+	go test ./internal/webgraph/... ./internal/apps/conf

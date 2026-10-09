@@ -6,7 +6,6 @@ package conf
 
 import (
 	"fmt"
-	"github.com/d0u9/rhumb/engine"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/webgraph"
 	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/engine"
 	"github.com/d0u9/rhumb/inventory"
 	"github.com/d0u9/rhumb/topology"
 
@@ -98,23 +98,19 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		if c.Group != "" {
 			label = strings.TrimPrefix(label, c.Group+"-")
 		}
-		// The machine is the level the small picture is drawn at: zoomed
-		// out, this box shuts and the lines between the ports inside it
-		// become lines between machines.
+		// The machine projection closes this box and aggregates the lines
+		// between its ports into connections between machines.
 		g.Groups = append(g.Groups, webgraph.Group{
 			ID: c.ID, Label: label, Detail: strings.Join(parts, " · "), Parent: groupBox(c.Group), Kind: kindNode, Collapse: true,
 		})
-		// A container network is a box inside its machine, holding the
-		// processes that join it first. One joining several sits in the
-		// first, in the node's order, and reaches the others by a line: a
-		// box has one parent, and a process spanning two networks cannot be
-		// drawn inside both.
+		// The first joined network is the stored parent for port views;
+		// Services draws all joined networks as overlapping regions.
 		for _, cn := range nodeContainers(l, c.ID) {
 			if !bridgeUsed(l, c.ID, cn.Name) {
 				continue // a network nothing joins says nothing
 			}
 			g.Groups = append(g.Groups, webgraph.Group{
-				ID: bridgeBox(c.ID, cn.Name), Label: cn.Name, Detail: cn.Subnet, Parent: c.ID, Kind: kindBridge,
+				ID: bridgeBox(c.ID, cn.Name), Label: cn.Name, Detail: cn.Subnet, Parent: c.ID, Kind: kindBridge, Region: true, ColorFilter: filterBridge + cn.Name,
 			})
 		}
 	}
@@ -145,7 +141,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		}
 		seenProcess[procID] = true
 		g.Groups = append(g.Groups, webgraph.Group{
-			ID: procID, Label: label, Detail: detail, Parent: nodeID, Kind: kindProcess, Collapse: collapse,
+			ID: procID, Label: label, Detail: detail, Parent: nodeID, Kind: kindProcess, Collapse: collapse, Summary: !collapse,
 		})
 	}
 
@@ -337,7 +333,7 @@ func bridgeBox(node, network string) string { return node + "/container:" + netw
 func addJoins(g *webgraph.Graph, from, node string, inst inventory.Instance, joined []inventory.ContainerNetwork) {
 	for _, c := range joined[min(1, len(joined)):] {
 		g.Edges = append(g.Edges, webgraph.Edge{
-			From: from, To: bridgeBox(node, c.Name), Label: inst.Containers[c.Name], Kind: kindJoins,
+			From: from, To: bridgeBox(node, c.Name), Label: inst.Containers[c.Name], Kind: kindJoins, Membership: true,
 			Tags: []string{filterBridge + c.Name},
 		})
 	}
@@ -424,7 +420,7 @@ func addHosts(l InspectData, g *webgraph.Graph) {
 			tooltip = append(tooltip, h.MAC)
 		}
 		g.Nodes = append(g.Nodes, webgraph.Node{
-			ID: box + id, Label: id, Group: box, Kind: kindHost,
+			ID: box + id, Label: id, Group: box, Kind: kindHost, ContextOnly: true,
 			Detail: h.Network + " " + h.Address, Tooltip: strings.Join(tooltip, "\n"), Tags: []string{tag},
 		})
 	}
