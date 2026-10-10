@@ -244,15 +244,16 @@ async function networkGeometry(model, roots, byID) {
     }
     return value;
   }
+  const wide = model.nodes.some(n => n.regionOverlay);
   const result = await elk.layout({
     id: "layout-root", children: roots.filter(n => !n.regionOverlay).map(node),
     edges: model.edges.map(e => ({id: e.id, sources: [e.source], targets: [e.target]})),
     layoutOptions: {
       "elk.algorithm": "layered", "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.spacing.nodeNode": model.nodes.some(n => n.regionOverlay) ? "64" : "40", "elk.layered.spacing.nodeNodeBetweenLayers": model.nodes.some(n => n.regionOverlay) ? "220" : "90",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "24", "elk.spacing.edgeNode": "20",
-      "elk.spacing.edgeEdge": "12", "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.spacing.nodeNode": wide ? "96" : "80", "elk.layered.spacing.nodeNodeBetweenLayers": wide ? "260" : "160",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "32", "elk.spacing.edgeNode": "32",
+      "elk.spacing.edgeEdge": "24", "elk.layered.spacing.edgeEdgeBetweenLayers": "24",
       "elk.layered.mergeEdges": "false", "elk.randomSeed": "1",
     },
   });
