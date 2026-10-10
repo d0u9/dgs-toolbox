@@ -484,6 +484,10 @@ function drawPage() {
   $("page-next").hidden = !attached;
   $("open-reader").hidden = !attached;
   $("reveal-pdf").hidden = !hasFile(item,digest);
+  // An in-place tree keeps each file where it is; its path, from the tree
+  // root, can be selected and copied.
+  $("detail-path").textContent = fileOf(item, digest)?.path || "";
+  $("detail-path").hidden = !fileOf(item, digest)?.path;
   $("detail-image").hidden = !hasFile(item,digest);
   $("open-reader").disabled = !attached;
   if (!attached) {
@@ -1155,13 +1159,13 @@ async function drawSupersession(item) {
   $("undo-supersession").hidden = !predecessorID;
   $("retire-form").hidden = !!item.superseded_by;
   $("supersession-form").hidden = true;
-  if (item.type !== "visa" || item.retired || previous) return;
+  if (!(state.capabilities.replacement_any_type || item.type === "visa") || item.retired || previous) return;
   try {
-    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({owner:item.fields.owner || "",country:item.fields.country || "",exclude:item.id})));
+    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({...item.fields,type:item.type,exclude:item.id})));
     const candidates = await response.json();
     if (request !== supersessionRequest || selected?.id !== item.id) return;
     if (!response.ok) throw new Error(candidates.error);
-    $("supersession-choice").replaceChildren(el("option", {value:""}, "Choose an existing visa…"), ...candidates.map((i) => el("option", {value:i.id}, [i.fields.visa_type, i.fields.number || i.id, i.fields.issued].filter(Boolean).join(" · "))));
+    $("supersession-choice").replaceChildren(el("option", {value:""}, "Choose one it replaces…"), ...candidates.map((i) => el("option", {value:i.id}, label(state, i))));
     $("supersession-form").hidden = !candidates.length;
   } catch (err) { if (request === supersessionRequest) say($("retire-message"),err.message,true); }
 }
@@ -1184,34 +1188,58 @@ $("locked").onclick = async () => {
   catch (e) { say($("edit-message"), e.message, true); }
 };
 
+let fileProblems = [];
+const fileCheckTable = listTable($("file-problems"), {
+  key: "dgs-doc-file-check-columns",
+  shown: ["item", "path", "detail", "candidates"],
+  columns: [
+    { id: "item", text: "Item", width: 220, cell: (p) => {
+      // A definition that fails names its Item only by its file name.
+      const id = p.item || (p.Path.match(/([0-9A-Z]{26})\.dgs-item\.yaml$/) || [])[1];
+      const item = state.items.find((i) => i.id === id);
+      return item ? label(state, item) : "—";
+    } },
+    { id: "path", text: "Recorded path", width: 280, cell: (p) => p.confirmed || p.Path },
+    { id: "detail", text: "Result", width: 240, cell: (p) => p.confirmed ? "Recorded" : p.Detail },
+    { id: "candidates", text: "Found paths / Confirm", width: 260, sortable: false, cell: (p) => {
+      const cell = el("td", {});
+      if (p.confirmed) return cell;
+      for (const path of p.candidates || []) {
+        const button = el("button", { className: "button secondary small-button", type: "button", textContent: "Use this path" });
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path });
+            p.confirmed = path;
+            fileCheckTable.draw(fileProblems);
+            await reload();
+          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
+        };
+        cell.append(el("div", { className: "file-check-candidate" }, el("span", {}, path), button));
+      }
+      return cell;
+    } },
+  ],
+  empty: "No files or definitions need attention.",
+});
 $("file-check-close").onclick = () => $("file-check-report").close();
 $("check-files").onclick = async () => {
   $("check-files").disabled = true;
   $("file-check-report").showModal();
-  $("file-problems").replaceChildren();
+  fileProblems = [];
+  $("file-problems").hidden = true;
   say($("file-check-summary"), "Checking recorded files… Unlocked changes will be recorded as new revisions.");
   try {
     const result = await post("/api/files/check", {});
     await reload();
     const problems = result.report.Problems || [];
-    say($("file-check-summary"), (result.recorded?.length || 0) + " revisions recorded; " + problems.length + " files or definitions need attention.");
-    $("file-problems").replaceChildren(...problems.map((p) => {
-      const item = state.items.find((i) => i.id === p.item);
-      const row = el("li", {}, el("p", {}, (item ? label(state, item) + " · " : "") + p.Path + ": " + p.Detail));
-      for (const path of p.candidates || []) {
-        const button = el("button", { className: "button secondary", type: "button", textContent: "Use " + path });
-        button.onclick = async () => {
-          button.disabled = true;
-          try {
-            await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path });
-            row.replaceChildren(el("p", {}, "Recorded " + path));
-            await reload();
-          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
-        };
-        row.append(button);
-      }
-      return row;
-    }));
+    const recorded = result.recorded?.length || 0;
+    say($("file-check-summary"), "Checked " + result.report.Checked + " files in " + result.report.Items + " Items. "
+      + (recorded ? recorded + " changed files recorded as new revisions. " : "")
+      + (problems.length ? problems.length + " need attention." : "All files match."));
+    fileProblems = problems;
+    $("file-problems").hidden = !problems.length;
+    fileCheckTable.draw(fileProblems);
   } catch (e) { say($("file-check-summary"), e.message, true); }
   finally { $("check-files").disabled = false; }
 };

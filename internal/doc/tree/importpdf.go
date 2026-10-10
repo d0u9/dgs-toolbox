@@ -25,6 +25,8 @@ type ImportRequest struct {
 	Source string
 	// Folder is the selected in-place output directory for external files or images.
 	Folder string
+	// PDFName names a generated PDF in an in-place output folder.
+	PDFName string
 	// Path, when set, is where an external file is copied instead, relative
 	// to the root. Nothing may be there yet.
 	Path string

@@ -712,6 +712,7 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 
 type importJSON struct {
 	Folder       string            `json:"folder"`
+	PDFName      string            `json:"pdf_name"`
 	Reuse        string            `json:"reuse"`
 	KeepOriginal *bool             `json:"keep_original"`
 	Pages        []string          `json:"pages"`
@@ -764,7 +765,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req := tree.ImportRequest{
-			Folder: request.Folder, Reuse: request.Reuse, KeepOriginal: s.keepImage(request.KeepOriginal), Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
+			Folder: request.Folder, PDFName: request.PDFName, Reuse: request.Reuse, KeepOriginal: s.keepImage(request.KeepOriginal), Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
 		}
 		req.Replaces = request.Replaces
 		var item tree.Item
@@ -868,6 +869,7 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Folder       string            `json:"folder"`
+		PDFName      string            `json:"pdf_name"`
 		Suffix       string            `json:"suffix"`
 		KeepOriginal *bool             `json:"keep_original"`
 		Pages        []string          `json:"pages"`
@@ -905,7 +907,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	metadata := tree.RevisionMetadata{Folder: request.Folder, Suffix: request.Suffix, Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
+	metadata := tree.RevisionMetadata{Folder: request.Folder, PDFName: request.PDFName, Suffix: request.Suffix, Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
 	var item tree.Item
 	if request.NoPDF {
 		item, err = s.documents.AddWithoutPDF(request.Item, t, request.Fields, metadata, s.now())
@@ -1189,10 +1191,18 @@ func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
+	// The form's fields come as the query's other keys.
+	q := r.URL.Query()
+	typ := q.Get("type")
+	fields := map[string]string{}
+	for key := range q {
+		if key != "type" && key != "exclude" && key != "tree" {
+			fields[key] = q.Get(key)
+		}
+	}
 	result := []tree.Item{}
-	fields := map[string]string{"owner": r.URL.Query().Get("owner"), "country": r.URL.Query().Get("country")}
 	for _, it := range items {
-		if it.ID != r.URL.Query().Get("exclude") && s.documents.ValidateSupersession(it.ID, "visa", fields) == nil {
+		if it.ID != q.Get("exclude") && s.documents.ValidateSupersession(it.ID, typ, fields) == nil {
 			result = append(result, it)
 		}
 	}

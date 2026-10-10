@@ -192,6 +192,15 @@ func inherit(parent, child Template) (Template, error) {
 		child.Defaults = defaults
 	}
 	child.IgnoreDates = append(slices.Clone(parent.IgnoreDates), child.IgnoreDates...)
+	// A child only narrows what replacing asks: it adds fields to its
+	// parent's, never drops one.
+	replaces := slices.Clone(parent.Replaces)
+	for _, key := range child.Replaces {
+		if !slices.Contains(replaces, key) {
+			replaces = append(replaces, key)
+		}
+	}
+	child.Replaces = replaces
 	child.Lineage = append([]string{child.Type}, parent.Lineage...)
 	return child, nil
 }

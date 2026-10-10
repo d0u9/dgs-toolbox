@@ -148,7 +148,7 @@ func TestInPlacePhotoImportHasNoStagingBeforeConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := item.Revisions[0]
-	if r.Path != item.ID+"/"+r.Digest+".pdf" || len(r.Originals) != 1 {
+	if r.Path != "scan.pdf" || len(r.Originals) != 1 {
 		t.Fatalf("photo paths: %+v", r)
 	}
 	original, err := os.ReadFile(st.OriginalPath(item, r.Digest, r.Originals[0]))
@@ -251,7 +251,7 @@ func TestInPlacePhotoImportArchivesInternalOriginalWithoutChangingSource(t *test
 		t.Fatal(err)
 	}
 	r := item.Revisions[0]
-	if len(r.Originals) != 1 || r.Originals[0].Path != item.ID+"/"+r.Originals[0].Digest+".png" {
+	if len(r.Originals) != 1 || r.Originals[0].Path != "page/page.png" {
 		t.Fatal("internal original was relocated")
 	}
 	after, err := os.Stat(inside)

@@ -205,10 +205,24 @@ already refer to them.
 The same owner and country are not enough to infer replacement. The owner
 may need to keep multiple visas in use, so importing a visa never retires
 another automatically. **Replaces** is an explicit, optional choice,
-defaulting to none, on both PDF imports and creation without a PDF. Candidates
-are in-use visas for the same owner and country. The detail panel also lets
-the reader apply the relationship after both Items already exist. This
-feature currently applies to the `visa` type.
+defaulting to none, on both PDF imports and creation without a PDF. The
+detail panel also lets the reader apply the relationship after both Items
+already exist. An in-place tree offers it for every type, an Item replacing
+one of its own type; another tree only for `visa`.
+
+Candidates are in-use Items of the same type that share the fields the
+Template's `replaces` names:
+
+```yaml
+type: visa
+replaces: [owner, country]
+```
+
+Each named field must be given on both and equal; a country field compares
+countries however written (AU, 澳大利亚). A Template without `replaces`
+uses `[owner, country]` for `visa`, as before Templates could say, and
+`[owner]` for any other type, so a licence can replace one from another
+country. A child adds fields to its parent's `replaces`, never drops one.
 
 For example, when visa B replaces visa A:
 
@@ -264,7 +278,9 @@ to the Log filtered to it.
 Expiry is the end of HEAD's `date` when it is a span, read by the server
 (`internal/doc/expiry`): **expired** after that day, **expires soon** within
 [`doc.expiring_within_days`](../../configuration/doc.md) days (90 by default), **valid**, **no end date** for a span
-left open at its end, and nothing for a one-day date or none.
+left open at its end, and nothing for a one-day date or none. A Template
+whose `date` is the issue day keeps the expiry in its own `expires` field
+instead; when that has a value it is read in place of `date`'s end.
 
 ### Deleting
 
@@ -306,7 +322,8 @@ a Template Items use cannot be deleted.
 3. Picking a PDF previews it; the form beside it takes a Template and its
    fields. The Templates are a list, one line each with the type and its
    description, the suggested one marked; past six a filter narrows it, and
-   the chosen one always stays in view. Into shows existing Items of that type as cards, alongside New item;
+   selection stays within its results. With no match, import is disabled.
+   Into shows existing Items of that type as cards, alongside New item;
    choosing an existing Item asks only for its revision fields, while New item
    asks for the distinguishing fields. After
    an import the next PDF not yet imported is picked.
@@ -637,10 +654,10 @@ one; a rule places a tenancy's leases, bills and receipts with
 tells the kinds apart with `about.type`. A document is about one anchor; a
 date two anchors' spans hold, such as a tenancy's and a car's, suggests
 both and leaves the choice.
-- `country` — `options` may give a fixed list of suggestions; other countries
-  can still be typed. Up to six preset options appear as clickable cards
-  beside a free input. Without `options`, the page suggests countries already
-  used in the tree. A country however it is typed: its ISO code (`cn`, `CHN`), its
+- `country` — `options` may give a fixed list: the page then picks from
+  them as from a select, as cards up to six, with no free input. Without
+  `options`, the page suggests countries already used in the tree and any
+  other can be typed. A country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
   `zh` (`中国`, the default), `en` (`China`), `alpha2` (`CN`) or `alpha3`
@@ -1451,7 +1468,11 @@ ImageIO/ColorSync with cgo; other builds clearly refuse unsupported inputs.
 Existing Photo Encode limits still apply (including refusing HDR HEIC).
 
 **Keep original images in the doc tree** defaults to `doc.keep_original`
-(`true`). It also archives each input's bytes as
+(`true`). In an in-place tree, name the generated PDF in **PDF filename**;
+it goes directly in the chosen folder, and retained images keep their filenames
+in a sibling directory named after the PDF without `.pdf`. Existing output
+files or image directories are refused. Conversion stays in memory until
+publication; existing imports are not relocated. In a by-Item tree, it archives each input's bytes as
 `<source-sha256>.<extension>` beside the PDF. Turning it off stores only the
 PDF. In both cases the source folder is untouched; the converted PDF is
 written in a hidden `.dgs-import-*` folder under `items/`, on the tree's own

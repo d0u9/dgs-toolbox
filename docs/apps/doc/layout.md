@@ -347,9 +347,11 @@ a file.
   2026/
     03/
       scan-0012.pdf
-      <item-id>/                 a complex Item's folder, files only
-        <digest>.pdf
-        <digest>.jpg
+      registration.pdf          generated PDF, named at import
+      registration/             retained originals, original filenames
+        1.jpg
+        2.jpg
+        3.jpg
 ```
 
 - **Inside the root stays put.** A file inside the tree's root is recorded
@@ -366,10 +368,13 @@ a file.
 - **Changed in place: by lock.** A file at its recorded path whose digest no
   longer matches is an error for a [locked Item](v2.md#locked-items), and a
   new revision for any other.
-- **A complex Item gets a folder.** A PDF made from photos, with its page
-  images, or an Item with several revisions, is kept in a folder of its own,
-  placed where the owner chooses, holding its PDFs and images named by digest
-  as a by-Item folder does. A single plain file stays a file.
+- **Generated PDFs are named at import.** The PDF goes directly in the
+  selected folder. Retained images go in a sibling directory named after the
+  PDF without `.pdf`, keeping their original filenames. An empty PDF name uses
+  the first image's stem plus `.pdf`. Existing PDFs or original-image folders,
+  and duplicate original filenames, are refused without overwriting.
+  Ordinary file revisions keep their names in the selected destination;
+  a suffix places a copy beside the current file. Recorded files stay put.
 - **One folder for doc's own files.** The marker, the change token, the
   sidecars, the definition folders and the trash are all under `_dgs/`, so
   the root holds only the owner's files and folders. The folder is visible,
@@ -407,11 +412,11 @@ no files. The object is checked again when confirmation arrives. A missing
 or changed object is an error, and an unconfirmed offer writes nothing.
 
 Images use the existing converter, in memory until the digest lookup is done.
-An Item with generated PDFs and retained originals, or a second file revision
-imported through doc, uses `<chosen folder>/<Item ID>/`. Files there are named
-`<digest>.<ext>`; retained originals are verified copies, including internal
-inputs. Recorded files always keep their location and digest, including when an Item
-becomes complex. Only new files written by doc enter the Item folder. A plain file changed in place stays where it is.
+Generated PDFs use `<chosen folder>/<PDF filename>`; retained originals use
+`<chosen folder>/<PDF stem>/<original filename>`, including internal inputs.
+The import form and API accept a PDF filename, defaulting to the first image's
+stem plus `.pdf`. Name conflicts are refused. Recorded files always keep their
+location and digest; existing imports are not moved.
 Reuse keeps the existing object's paths and archived originals.
 
 Copies use source digest verification and independent destination readback

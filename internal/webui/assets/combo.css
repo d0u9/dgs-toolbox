@@ -7,10 +7,11 @@
   background: transparent; color: var(--graphite); cursor: pointer; }
 .combo-arrow::before { content: ""; position: absolute; left: 8px; top: 6px; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .combo-arrow:hover { background: var(--hover); color: inherit; }
-.combo-menu { position: fixed; z-index: 1000; box-sizing: border-box; max-width: min(480px, calc(100vw - 16px)); max-height: 280px; overflow: auto; margin: 0; padding: 3px; list-style: none;
+.combo-menu { position: fixed; z-index: 1000; box-sizing: border-box; width: max-content; max-width: calc(100vw - 16px); max-height: 280px; overflow: auto; margin: 0; padding: 3px; list-style: none;
   background: var(--paper); border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); box-shadow: var(--lift-soft);
   font-size: var(--font-size-sm); line-height: 1.35; }
-.combo-menu li { margin: 0; padding: 2px 7px; border-radius: var(--radius-xs); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Show the full choice; wrap only when it exceeds the window's available width. */
+.combo-menu li { margin: 0; padding: 2px 7px; border-radius: var(--radius-xs); cursor: pointer; overflow-wrap: anywhere; }
 .combo-menu li:hover, .combo-menu li.active { background: var(--selected); }
 .combo-menu li.chosen { font-weight: 600; }
 .combo-menu li.empty { color: var(--graphite); cursor: default; background: none; }

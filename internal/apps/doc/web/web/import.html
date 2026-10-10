@@ -98,7 +98,7 @@
       <section class="detail-section">
         <div class="detail-section-head"><h3>Fields</h3></div>
         <div id="fields"></div>
-        <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing visas in use</option></select></label>
+        <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing ones in use</option></select></label>
         <div class="form-field" id="shared-field" hidden><span>Shared with</span><div id="shared" class="checks" title="Also theirs, such as a letter addressed to both"></div></div>
       </section>
       <section class="detail-section" id="keep-original-field" hidden>
@@ -123,6 +123,7 @@
       </div></div>
       <section id="destination-field" class="detail-section" hidden>
         <div class="detail-section-head"><h3>Store files</h3></div>
+        <div class="form-field" id="pdf-name-field" hidden><label for="pdf-name">PDF filename</label><input id="pdf-name" placeholder="document.pdf"><span class="muted">Original images are kept in a folder with the same name, without .pdf.</span></div>
         <button id="choose-destination" class="button secondary" type="button">Choose folder…</button>
         <p id="destination" class="muted">Choose a folder inside this tree for copies and generated PDFs.</p>
       </section>

@@ -135,8 +135,14 @@ deletion, Templates, Outlines, rules, Snapshots, Cases, exports and merges.
 
 ### Doc 2 in-place trees
 
-Imports and revision imports accept `folder` for verified copies and complex
-Item folders. Item and revision deletion count live references before moving
+Imports and revision imports accept `folder` for verified copies. Generated
+PDFs also accept `pdf_name` (a filename ending in `.pdf`), defaulting to the
+first image stem plus `.pdf`. The PDF goes directly in `folder`; retained
+images keep their filenames under `<folder>/<PDF stem>/`. Existing PDFs or
+original-image folders and duplicate original filenames are refused. External ordinary revision files keep their
+names directly in `folder`, with conflicts refused; `suffix` instead names a
+copy beside the current file. Item and revision deletion count live references
+before moving
 objects to trash. Ordinary files import unchanged; PDF page/text endpoints
 reject other file types. `GET /api/thumbnail?item=…&digest=…` serves a cached
 native JPEG thumbnail, with a clear unsupported response outside macOS/cgo.

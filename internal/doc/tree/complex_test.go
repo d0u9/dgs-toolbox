@@ -66,7 +66,11 @@ func TestInPlaceSecondRevisionKeepsRecordedFileAndDeletesOne(t *testing.T) {
 	if err := os.WriteFile(incoming, []byte("synthetic second version"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	second, err := st.AddRevisionWithMetadata(ctx, first.ID, incoming, req.Template, nil, RevisionMetadata{Folder: st.Root()}, time.Unix(1, 0))
+	folder := filepath.Join(st.Root(), "editions")
+	if err := os.Mkdir(folder, 0755); err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.AddRevisionWithMetadata(ctx, first.ID, incoming, req.Template, nil, RevisionMetadata{Folder: folder}, time.Unix(1, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,12 +78,12 @@ func TestInPlaceSecondRevisionKeepsRecordedFileAndDeletesOne(t *testing.T) {
 		t.Fatal(second)
 	}
 	for index, r := range second.Revisions {
-		expected := first.ID + "/" + r.Digest + ".pdf"
+		expected := "editions/second.pdf"
 		if index == 0 {
 			expected = "first.pdf"
 		}
 		if r.Path != expected {
-			t.Fatal("complex path", r.Path)
+			t.Fatal("revision path", r.Path)
 		}
 		if _, err := st.ReadPDF(second, r.Digest); err != nil {
 			t.Fatal(err)
@@ -87,6 +91,12 @@ func TestInPlaceSecondRevisionKeepsRecordedFileAndDeletesOne(t *testing.T) {
 	}
 	if _, err := os.Stat(firstPath); err != nil {
 		t.Fatal("recorded object moved")
+	}
+	if _, err := os.Stat(filepath.Join(folder, first.ID)); !os.IsNotExist(err) {
+		t.Fatal("unexpected Item folder", err)
+	}
+	if data, err := os.ReadFile(incoming); err != nil || string(data) != "synthetic second version" {
+		t.Fatal("source changed", err)
 	}
 	kept, trash, err := st.TrashRevision(first.ID, first.Current(), time.Unix(2, 0))
 	if err != nil {
@@ -161,7 +171,7 @@ func TestInPlaceTrashRefusesChangedContentBeforeAnyMove(t *testing.T) {
 	}
 }
 
-func TestInPlaceRevisionFailureRestoresMovedFile(t *testing.T) {
+func TestInPlaceRevisionNameConflictLeavesFilesAndSidecarUnchanged(t *testing.T) {
 	st := inPlaceStore(t)
 	ctx := context.Background()
 	source := filepath.Join(st.Root(), "first.pdf")
@@ -177,15 +187,7 @@ func TestInPlaceRevisionFailureRestoresMovedFile(t *testing.T) {
 	if err := os.WriteFile(incoming, []byte("synthetic second"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := FileDigest(incoming)
-	if err != nil {
-		t.Fatal(err)
-	}
-	folder := filepath.Join(st.Root(), first.ID)
-	if err := os.Mkdir(folder, 0700); err != nil {
-		t.Fatal(err)
-	}
-	occupied := filepath.Join(folder, digest+".pdf")
+	occupied := filepath.Join(st.Root(), "second.pdf")
 	if err := os.WriteFile(occupied, []byte("synthetic unrelated occupant"), 0600); err != nil {
 		t.Fatal(err)
 	}
