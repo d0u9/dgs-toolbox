@@ -80,6 +80,8 @@ func (st *Store) AddRevision(ctx context.Context, id string, source string, temp
 // revision. Nil fields preserve the values already on the Item.
 type RevisionMetadata struct {
 	Folder string
+	// PDFName names a generated PDF in an in-place output folder.
+	PDFName string
 	// Suffix places an external file beside the current revision's, named
 	// after it: a.pdf and suffix -1 give a-1.pdf.
 	Suffix string

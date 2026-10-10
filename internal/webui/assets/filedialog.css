@@ -114,9 +114,11 @@
 .file-list:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .file-table th { background: var(--cloud); }
 .file-row { user-select: none; }
-/* Lucide's folder (ISC licence), drawn in the text colour through a mask. */
-.file-folder .file-cell-name::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; background: var(--primary);
+/* Lucide's folder and file (ISC licence), with equal space before each name. */
+.file-row .file-cell-name::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; background: currentColor; }
+.file-folder .file-cell-name::before { background: var(--primary);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E") center / contain no-repeat; }
+.file-file .file-cell-name::before { -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z'/%3E%3Cpath d='M14 2v5a1 1 0 0 0 1 1h5'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z'/%3E%3Cpath d='M14 2v5a1 1 0 0 0 1 1h5'/%3E%3C/svg%3E") center / contain no-repeat; }
 .file-file .file-cell-name { color: var(--charcoal); }
 .file-cell-modified, .file-cell-size { color: var(--graphite); }
 .file-table td.file-cell-size { text-align: right; }
@@ -146,8 +148,8 @@
   font-size: var(--font-size-sm);
 }
 
-/* Leave room for the folder icon; otherwise ellipsis hides the inline input. */
-.file-folder .file-rename { width: calc(100% - 20px); }
+/* Leave room for the row icon; otherwise ellipsis hides the inline input. */
+.file-row .file-rename { width: calc(100% - 20px); }
 
 /* Asked over the dialog when a save names a file that is already there. */
 .file-replace { width: 380px; max-width: 92vw; }

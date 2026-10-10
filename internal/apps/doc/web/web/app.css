@@ -1105,8 +1105,11 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
    that opens the table chooseItem draws, for lists too long to read in a box. */
 .item-finder { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
 .item-finder > .combo { flex: 1; }
+.item-type { flex: none; max-width: 40%; }
+.item-type[hidden] { display: none; }
 .item-browse { flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; }
 .item-browse svg { width: 15px; height: 15px; }
+.item-browse[hidden] { display: none; }
 
 /* The table of Items: a filter, the types as buttons, and rows that scroll
    while the buttons stay in place. The picked row is the blue one. */
@@ -1184,3 +1187,13 @@ details.folder-form:not([open]) > :not(summary) { display: none; }
 .time-clock input::-webkit-inner-spin-button, .time-clock input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 
 .time-zone > select { flex: 0 1 14ch; }
+
+#file-check-report { width: min(1100px, 94vw); max-width: 94vw; max-height: 88vh; box-sizing: border-box; }
+#file-check-report[open] { display: flex; flex-direction: column; gap: var(--space-xs); }
+#file-check-report h3, #file-check-summary, #file-check-report .dialog-buttons { margin: 0; flex: none; }
+.file-check-list { min-height: 0; overflow: auto; }
+.file-check-list .list-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.file-check-candidate { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xxs); }
+.file-check-candidate + .file-check-candidate { margin-top: var(--space-xs); }
+.detail-path { margin: 4px 8px 0; font-size: var(--font-size-xs); color: var(--graphite); overflow-wrap: anywhere; user-select: text; }
+.detail-path[hidden] { display: none; }

@@ -331,20 +331,31 @@ export function inputFor(field, value, placeholder, state, self, type, country =
     // to tell apart Items whose names are alike. pickItem holds the Item picked.
     const pickItem = { value: id || "" };
     const pickRevision = el("select", { hidden: !withRevision });
+    // go opens the linked Item in a new tab, leaving this form as it is.
+    const go = el("a", { className: "button item-browse", target: "_blank", title: "Open this Item", hidden: true });
+    go.innerHTML = iconSvg("square-arrow-out-up-right");
+    // pickType keeps one type first, so a long list of anchors is chosen
+    // in two steps; it shows only when the Items offered differ in type.
+    const pickType = el("select", { className: "item-type", hidden: true });
+    pickType.onchange = () => { if (pickItem.value && all.find((i) => i.id === pickItem.value)?.type !== pickType.value && pickType.value) choose(""); };
     const search = el("input", { type: "text", className: "item-search", autocomplete: "off", spellcheck: false, placeholder: "Type to find an Item…" });
     const shown = () => {
       const item = all.find((i) => i.id === pickItem.value);
       search.value = item ? label(state, item) : pickItem.value;
+      go.hidden = !item;
+      // A revision field opens the revision it names, not HEAD.
+      if (item) go.href = api("/browse/" + (withRevision && pickRevision.value ? "?digest=" + encodeURIComponent(pickRevision.value) : "")) + "#" + item.id;
     };
     // Suggested Items first; each choice ends in its ID, so two alike stay apart.
-    const offered = () => [...items.filter((i) => suggested.includes(i.id)), ...items.filter((i) => !suggested.includes(i.id))];
+    const typed = () => items.filter((i) => !pickType.value || i.type === pickType.value);
+    const offered = () => { const t = typed(); return [...t.filter((i) => suggested.includes(i.id)), ...t.filter((i) => !suggested.includes(i.id))]; };
     let texts = new Map();
     const choices = () => {
       texts = new Map(offered().map((i) => [label(state, i) + (suggested.includes(i.id) ? " · suggested" : "") + " — " + i.id,
         [label(state, i), ...Object.values(i.fields || {}), i.id].join(" ")]));
       return [...texts.keys()];
     };
-    const choose = (next) => { chosen = true; pickItem.value = next; shown(); fill(""); set(); };
+    const choose = (next) => { chosen = true; pickItem.value = next; fill(""); shown(); set(); };
     search.addEventListener("change", () => {
       const typed = search.value.trim();
       const next = typed.split(" — ").pop().trim();
@@ -361,6 +372,11 @@ export function inputFor(field, value, placeholder, state, self, type, country =
       search.focus();
     };
     const draw = (want) => {
+      const types = [...new Set(items.map((i) => i.type))].sort();
+      const wantType = all.find((i) => i.id === pickItem.value)?.type || (types.includes(pickType.value) ? pickType.value : "");
+      pickType.replaceChildren(el("option", { value: "" }, "Any type"), ...types.map((t) => el("option", { value: t }, t)));
+      pickType.value = wantType;
+      pickType.hidden = types.length < 2;
       if (pickItem.value && !items.some((i) => i.id === pickItem.value) && want) pickItem.value = "";
       search.placeholder = want && !items.length ? "(no Item matches)" : "Type to find an Item…";
       if (document.activeElement !== search) shown();
@@ -394,7 +410,7 @@ export function inputFor(field, value, placeholder, state, self, type, country =
       const before = pickItem.value;
       draw(true);
       if (!chosen && !pickItem.value && suggested.length === 1) pickItem.value = suggested[0];
-      if (pickItem.value !== before) { shown(); fill(""); set(); }
+      if (pickItem.value !== before) { fill(""); shown(); set(); }
     };
     const fill = (keep) => {
       const item = items.find((i) => i.id === pickItem.value) || all.find((i) => i.id === pickItem.value);
@@ -411,11 +427,12 @@ export function inputFor(field, value, placeholder, state, self, type, country =
       control.value = !pickItem.value ? "" : !withRevision ? pickItem.value : pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    pickRevision.onchange = set;
-    const finder = el("div", { className: "item-finder" }, suggest(search, choices, { arrow: true, search: (c) => texts.get(c) || c }), browse);
+    pickRevision.onchange = () => { set(); shown(); };
+    const finder = el("div", { className: "item-finder" }, pickType, suggest(search, choices, { arrow: true, search: (c) => texts.get(c) || c }), browse, go);
     const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), finder, pickRevision, control);
     draw(false);
     fill(ref);
+    shown();
     queueMicrotask(() => {
       if (!wrapper.isConnected || !(field.match || field.within)) return;
       narrow();
@@ -459,15 +476,16 @@ export function inputFor(field, value, placeholder, state, self, type, country =
     });
     cards.append(...buttons);
     return el("div", { className: "form-field" }, ...fieldHead(field), control, cards);
-  } else if (field.type === "select") {
+  } else if (field.type === "select" || (field.type === "country" && field.options?.length)) {
+    // A country field given options is picked from them, as a select is.
     const choices = field.options.map((o) => [o, o]);
-    const empty = placeholder && field.type === "select" ? "(" + placeholder + ")" : "";
+    const empty = placeholder ? "(" + placeholder + ")" : "";
     control = el("select", common, el("option", { value: "" }, empty),
       ...choices.map(([v, text]) => el("option", { value: v, selected: v === value }, text)));
     if (value && !choices.some(([v]) => v === value)) {
       control.append(el("option", { value, selected: true }, value));
     }
-    if (field.type === "select" && choices.length > 0 && choices.length <= CARD_OPTIONS && (!value || choices.some(([v]) => v === value))) {
+    if (choices.length > 0 && choices.length <= CARD_OPTIONS && (!value || choices.some(([v]) => v === value))) {
       control.hidden = true;
       const cards = el("div", { className: "field-choice-cards", role: "group" });
       cards.setAttribute("aria-label", field.key);
@@ -596,23 +614,8 @@ export function inputFor(field, value, placeholder, state, self, type, country =
     if (field.type === "date") control.max = "9999-12-31";
     if (field.type === "month") control.max = "9999-12";
     if (field.type === "country") {
-      control.title = "Pick a suggested country, or type any code or name: kept as the Template's format says.";
-      if (field.options?.length && field.options.length <= CARD_OPTIONS) {
-        const cards = el("div", { className: "field-choice-cards", role: "group" });
-        cards.setAttribute("aria-label", field.key);
-        cards.append(...field.options.map((option) => {
-          const button = el("button", { type: "button", className: "button field-choice-card" + tall(option) }, option);
-          button.onclick = () => {
-            control.value = option;
-            control.dispatchEvent(new Event("input", { bubbles: true }));
-            control.dispatchEvent(new Event("change", { bubbles: true }));
-          };
-          return button;
-        }));
-        return el("div", { className: "form-field" }, ...fieldHead(field), cards, control);
-      }
-      // Explicit suggestions stay fixed; otherwise use the tree's countries.
-      return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => field.options?.length ? field.options : countriesOf(state), { arrow: true }));
+      control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
+      return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => countriesOf(state), { arrow: true }));
     }
   }
   return el("label", { className: "form-field" },

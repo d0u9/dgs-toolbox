@@ -2,6 +2,7 @@ package tree_test
 
 import (
 	"dgs-toolbox/internal/doc/tree"
+	"os"
 	"testing"
 	"time"
 )
@@ -10,6 +11,10 @@ func TestVisaSupersession(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now()
 	if err := tree.Init(root, now); err != nil {
+		t.Fatal(err)
+	}
+	visa := "type: visa\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n"
+	if err := os.WriteFile(testStore(t, root).TemplatePath("visa"), []byte(visa), 0600); err != nil {
 		t.Fatal(err)
 	}
 	put := func(id, owner, country string) tree.Item {

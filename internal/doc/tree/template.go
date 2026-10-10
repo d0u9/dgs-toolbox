@@ -203,7 +203,11 @@ type Template struct {
 	Anchor bool `yaml:"anchor,omitempty" json:"anchor,omitempty"`
 	// Single marks a type whose Items never take a second revision: a used
 	// ticket is not reissued. Import offers no Item to add to.
-	Single   bool              `yaml:"single,omitempty" json:"single,omitempty"`
+	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
+	// Replaces are the fields an Item of this type must share with the one
+	// it replaces: [owner, country] lets a visa replace only a visa of the
+	// same owner and country. Left out, it is ReplacesKeys' default.
+	Replaces []string          `yaml:"replaces,omitempty" json:"replaces,omitempty"`
 	Fields   []Field           `yaml:"fields" json:"fields"`
 	Defaults map[string]string `yaml:"defaults" json:"defaults"`
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
@@ -215,6 +219,18 @@ type Template struct {
 	// Lineage is the type and those it extends, nearest first. Resolve
 	// sets it.
 	Lineage []string `yaml:"-" json:"lineage,omitempty"`
+}
+
+// ReplacesKeys are t's Replaces. Naming none, a visa shares its owner and
+// country, as before Templates could say; any other type its owner.
+func (t Template) ReplacesKeys() []string {
+	if len(t.Replaces) > 0 {
+		return t.Replaces
+	}
+	if t.Type == "visa" {
+		return []string{"owner", "country"}
+	}
+	return []string{"owner"}
 }
 
 // NameLanguages are the languages a Template may name its type in.
@@ -397,6 +413,11 @@ func (t Template) Validate() error {
 		}
 		if _, err := t.field(key).clean(value); err != nil {
 			return fmt.Errorf("type %s: default for %s: %w", t.Type, key, err)
+		}
+	}
+	for _, key := range t.Replaces {
+		if !seen[key] {
+			return fmt.Errorf("type %s: replaces %s, which is not a field", t.Type, key)
 		}
 	}
 	for _, d := range t.IgnoreDates {

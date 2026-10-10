@@ -21,6 +21,9 @@ func TestOf(t *testing.T) {
 		{map[string]string{"date": "2020-01-01"}, Status{State: None}},
 		{map[string]string{"date": "2020-01-01/soon-ish"}, Status{State: None}},
 		{map[string]string{"owner": "emma"}, Status{State: None}},
+		{map[string]string{"date": "2020-01-01", "expires": "2026-09-24"}, Status{Date: "2026-09-24", State: Expired, Days: -1}},
+		{map[string]string{"date": "2020-01-01/2036-01-01", "expires": "2026-10-01"}, Status{Date: "2026-10-01", State: Soon, Days: 6}},
+		{map[string]string{"expires": "长期"}, Status{State: Permanent}},
 	} {
 		if got := Of(c.fields, now, DefaultSoon, dates.DMY); got != c.want {
 			t.Errorf("%v: got %+v, want %+v", c.fields, got, c.want)

@@ -150,6 +150,15 @@ func CopyMany(ctx context.Context, request ManyRequest) (Result, []error) {
 	}
 	defer source.Close()
 	opened, err := source.Stat()
+	if err == nil && !SameVersion(info, opened) {
+		// A network filesystem such as SMB may answer the first Lstat of a
+		// file just written from a stale cache, before the server's own
+		// modification time. A second Lstat, taken now the file is open,
+		// must find the very file opened, unchanged, to go on.
+		if again, againErr := os.Lstat(request.Source); againErr == nil && os.SameFile(info, again) && SameVersion(again, opened) {
+			info = again
+		}
+	}
 	if err != nil || !SameVersion(info, opened) {
 		return failAll(errors.New("source changed while opening"))
 	}

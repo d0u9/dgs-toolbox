@@ -14,6 +14,10 @@ import (
 // at its end never lapses; a one-day date has no expiry.
 const Key = "date"
 
+// ExpiresKey is a field that holds the expiry alone, for a Template whose
+// date is the issue day. When it has a value it is read before Key.
+const ExpiresKey = "expires"
+
 // DefaultSoon is how long before its expiry a document counts as expiring
 // soon.
 const DefaultSoon = 90 * 24 * time.Hour
@@ -47,6 +51,9 @@ type Status struct {
 func Of(fields map[string]string, now time.Time, soon time.Duration, order dates.Order) Status {
 	for _, value := range []string{fields[Key]} {
 		_, value, span := strings.Cut(strings.TrimSpace(value), "/")
+		if own := strings.TrimSpace(fields[ExpiresKey]); own != "" {
+			value, span = own, true
+		}
 		if !span {
 			continue
 		}

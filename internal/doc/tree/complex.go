@@ -96,5 +96,5 @@ func (st *Store) addInPlaceRevision(ctx context.Context, id, source string, temp
 			item.Revisions[i].Tags = tag.List(m.RevisionTags)
 		}
 	}
-	return st.importInPlace(ctx, ImportRequest{Source: source, Folder: m.Folder, Path: besides, KeepOriginal: m.KeepOriginal, Now: now}, input, item, digest, nil)
+	return st.importInPlace(ctx, ImportRequest{Source: source, Folder: m.Folder, PDFName: m.PDFName, Path: besides, KeepOriginal: m.KeepOriginal, Now: now}, input, item, digest, nil)
 }

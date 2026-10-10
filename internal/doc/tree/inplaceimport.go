@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"dgs-toolbox/internal/verifiedcopy"
 )
@@ -97,9 +98,9 @@ func (st *Store) importInPlace(ctx context.Context, request ImportRequest, input
 	if err != nil {
 		return Item{}, err
 	}
-	complex := input.generated != nil || len(item.Revisions) > 1
+	generated := input.generated != nil
 	copyFile := rel == "" || input.generated != nil
-	complex = complex && copyFile
+
 	folder := ""
 	if request.Path != "" {
 		if !copyFile || input.generated != nil {
@@ -111,7 +112,6 @@ func (st *Store) importInPlace(ctx context.Context, request ImportRequest, input
 		if _, err := os.Lstat(filepath.Join(st.root, filepath.FromSlash(rel))); !os.IsNotExist(err) {
 			return Item{}, fmt.Errorf("%s already exists", rel)
 		}
-		complex = false
 	}
 	if copyFile && request.Path == "" {
 		if !filepath.IsAbs(request.Folder) {
@@ -132,10 +132,13 @@ func (st *Store) importInPlace(ctx context.Context, request ImportRequest, input
 			return Item{}, fmt.Errorf("output folder is not a directory")
 		}
 		name := input.name
-		if complex {
-			name = digest + filepath.Ext(input.name)
-			if input.generated != nil {
-				name = digest + ".pdf"
+		if generated {
+			name = request.PDFName
+			if name == "" {
+				name = strings.TrimSuffix(input.name, filepath.Ext(input.name)) + ".pdf"
+			}
+			if strings.ContainsAny(name, "/\\\x00") || !strings.EqualFold(filepath.Ext(name), ".pdf") || strings.TrimSuffix(name, filepath.Ext(name)) == "" {
+				return Item{}, fmt.Errorf("PDF name must be a filename ending in .pdf")
 			}
 		}
 
@@ -149,43 +152,41 @@ func (st *Store) importInPlace(ctx context.Context, request ImportRequest, input
 		return Item{}, err
 	}
 	defer root.Close()
-	if complex {
-		folder, err = cleanRecorded(path.Join(folder, item.ID))
+	if generated && request.KeepOriginal {
+		folder, err = cleanRecorded(strings.TrimSuffix(rel, path.Ext(rel)))
 		if err != nil {
 			return Item{}, err
 		}
-		created := false
-		if info, statErr := root.Stat(filepath.FromSlash(folder)); os.IsNotExist(statErr) {
-			if err = root.Mkdir(filepath.FromSlash(folder), 0755); err != nil {
-				return Item{}, err
-			}
-			created = true
-		} else if statErr != nil {
-			return Item{}, statErr
-		} else if !info.IsDir() {
-			return Item{}, fmt.Errorf("Item directory is not a folder")
+		if _, err = st.recordedPath(folder); err != nil {
+			return Item{}, err
+		}
+		if err = root.Mkdir(filepath.FromSlash(folder), 0755); err != nil {
+			return Item{}, fmt.Errorf("create original images folder: %w", err)
 		}
 		defer func() {
-			if err != nil && created {
+			if err != nil {
 				err = errors.Join(err, root.Remove(filepath.FromSlash(folder)))
 			}
 		}()
-		name := digest + filepath.Ext(input.name)
-		if input.generated != nil {
-			name = digest + ".pdf"
-		}
-		rel = path.Join(folder, name)
 	}
+
 	r.Path = rel
 	if request.KeepOriginal {
+		names := map[string]bool{}
 		for i := range input.originals {
 			p, err := st.relativePath(input.sources[i])
 			if err != nil {
 				return Item{}, err
 			}
-			if p == "" || complex {
+			if generated {
+				p = path.Join(folder, filepath.Base(input.sources[i]))
+			} else if p == "" {
 				p = path.Join(folder, input.originals[i].Digest+input.originals[i].Extension)
 			}
+			if generated && names[strings.ToLower(p)] {
+				return Item{}, fmt.Errorf("original images have duplicate filenames")
+			}
+			names[strings.ToLower(p)] = true
 			input.originals[i].Path = p
 		}
 	}

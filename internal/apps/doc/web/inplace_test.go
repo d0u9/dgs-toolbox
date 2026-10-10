@@ -146,7 +146,7 @@ func TestInPlacePhotoImportAPIAndDeferredOperations(t *testing.T) {
 	must(t, png.Encode(&data, image))
 	write(t, filepath.Join(scans, "page.png"), data.String())
 	h := Handler(Settings{Root: root, CacheDir: t.TempDir()})
-	body, _ := json.Marshal(map[string]any{"dir": scans, "path": "page.png", "folder": root, "type": "id_card", "fields": map[string]string{"owner": "alice", "country": "AU"}, "keep_original": true})
+	body, _ := json.Marshal(map[string]any{"dir": scans, "path": "page.png", "folder": root, "pdf_name": "registration.pdf", "type": "id_card", "fields": map[string]string{"owner": "alice", "country": "AU"}, "keep_original": true})
 	rec := do(h, "POST", "/api/import", string(body))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("photo: %d %s", rec.Code, rec.Body.String())
@@ -156,7 +156,7 @@ func TestInPlacePhotoImportAPIAndDeferredOperations(t *testing.T) {
 		t.Fatal("photo metadata")
 	}
 	r := s.Items[0].Revisions[0]
-	if r.Path != s.Items[0].ID+"/"+r.Digest+".pdf" || r.Originals[0].Path == "" {
+	if r.Path != "registration.pdf" || r.Originals[0].Path != "registration/page.png" {
 		t.Fatal("photo paths")
 	}
 	query := "?item=" + s.Items[0].ID + "&digest=" + r.Ref() + "&n=1"

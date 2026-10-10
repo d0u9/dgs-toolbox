@@ -70,8 +70,8 @@ function render() {
   const kept = files.filter((f) => f.item).length;
   $("counts").textContent = dir ? `${files.length} files · ${kept} in tree` : "";
   $("counts").title = $("counts").textContent;
-  // Hidden imported PDFs leave the tree, except the one being looked at.
-  const shown = $("hide-kept").checked ? (sourceChecking ? [] : files.filter((f) => !f.item || f.path === selected)) : files;
+  // Hide imported files even when the last imported file is still selected.
+  const shown = $("hide-kept").checked ? (sourceChecking ? [] : files.filter((f) => !f.item)) : files;
   $("tree").replaceChildren(fileTree(shown, {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
@@ -84,14 +84,16 @@ function render() {
     },
   }));
   if (dir && files.length === 0) say($("list-message"), state.capabilities.all_files?"No files in this folder or under it.":"No PDFs or supported images in this folder or under it.");
-  const file = files.find((f) => f.path === selected);
+  const file = shown.find((f) => f.path === selected);
   $("side").hidden = !file && !noPDF;
   $("side-splitter").hidden = $("side").hidden;
   $("import").hidden = (!noPDF && (sourceChecking && $("hide-kept").checked)) || (!noPDF && (!file || (!!file.item && !state.capabilities.reuse_files))) || !state.tree;
   $("copy-note").hidden = noPDF;
   $("without-pdf").hidden = !state.capabilities.without_file;
   $("destination-field").hidden = !state.capabilities.import_folder || noPDF;
-  if (state.capabilities.import_folder) $("copy-note").textContent = "Files already inside this tree stay in place. External files are copied to the chosen folder and verified before publication. Images become a PDF in an Item folder. Existing content is reused only after confirmation.";
+  $("pdf-name-field").hidden = !state.capabilities.import_folder || noPDF || !file?.image;
+  $("pdf-name").placeholder = (selected.split("/").pop() || "document").replace(/\.[^.]+$/, "") + ".pdf";
+  if (state.capabilities.import_folder) $("copy-note").textContent = "Files already inside this tree stay in place. External files are copied to the chosen folder and verified before publication. Images become a named PDF, with originals in a matching folder. Existing content is reused only after confirmation.";
   $("keep-original-field").hidden = noPDF || !file || !file.image || (!!file.item && !state.capabilities.reuse_files);
   if (!$("keep-original-field").hidden) drawPages();
   $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? (state.capabilities.reuse_files ? "New Item from stored content" : "Already in the tree") : "Import";
@@ -118,6 +120,7 @@ function pick(path) {
     $("shared").replaceChildren();
     metadataItem = "";
     pages = [];
+    $("pdf-name").value = "";
     say($("import-message"), "");
     typeChosen = false;
     $("type-hint").hidden = true;
@@ -216,9 +219,7 @@ $("template-filter").addEventListener("keydown", (event) => {
   event.preventDefault();
   const at = choices.findIndex((c) => c.classList.contains("selected"));
   if (event.key === "Enter") {
-    // One Template besides the picked one matches: Enter takes it.
-    const others = choices.filter((c) => !c.classList.contains("selected"));
-    (others.length === 1 ? others[0] : choices[Math.max(at, 0)]).click();
+    choices[Math.max(at, 0)].click();
     return;
   }
   const next = at < 0 ? 0 : Math.max(0, Math.min(at + (event.key === "ArrowDown" ? 1 : -1), choices.length - 1));
@@ -238,11 +239,12 @@ $("template").addEventListener("keydown", (event) => {
 function drawFields() {
   if (!templateOf(state, selectedTemplate)) selectedTemplate = state.templates[0]?.type || "";
   // One line per Template: its type, what it is for, and a mark on the one
-  // the page suggests. A filter narrows a long list; the chosen one stays.
+  // the page suggests. Selection stays within the filtered results.
   $("template-filter").hidden = state.templates.length <= FILTER_FROM;
   const words = $("template-filter").hidden ? [] : $("template-filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = state.templates.filter((t) => t.type === selectedTemplate ||
+  const shown = state.templates.filter((t) =>
     words.every((w) => (t.type + " " + (t.description || "")).toLowerCase().includes(w)));
+  if (!shown.some((t) => t.type === selectedTemplate)) selectedTemplate = shown[0]?.type || "";
   $("template").replaceChildren(...shown.map((choice) => {
     const button = el("button", { type: "button", title: (choice.description || choice.type) + " (" + choice.kind + ")", className: "template-choice" + (choice.type === selectedTemplate ? " selected" : "") },
       el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind),
@@ -264,7 +266,7 @@ function drawFields() {
     $("tags-field").hidden = true;
     $("revision-tags-field").hidden = true;
     $("notes-field").hidden = true;
-    $("fields").replaceChildren(el("p", { className: "message" }, "No Templates in the tree's templates folder."));
+    $("fields").replaceChildren(el("p", { className: "message" }, state.templates.length ? "No matching Templates." : "No Templates in the tree's templates folder."));
     return;
   }
   const into = $("into");
@@ -311,7 +313,7 @@ function drawFields() {
   if ($("new-revision-field").hidden !== !adding) $("new-revision").checked = false;
   $("new-revision-field").hidden = !adding;
   // Only a copy is named; a file already inside the tree stays as it is.
-  $("suffix-field").hidden = !adding || noPDF || (dir + "/").startsWith(state.root + "/");
+  $("suffix-field").hidden = !adding || noPDF || !!files.find((f) => f.path === selected)?.image || (dir + "/").startsWith(state.root + "/");
   if ($("suffix-field").hidden) $("suffix").value = "";
   if (metadataItem !== into.value) {
     const item = state.items.find((i) => i.id === into.value);
@@ -337,7 +339,7 @@ function drawFields() {
       " marks no field per_revision. To keep a renewed card's own number and expiry, add per_revision: true to them on the Templates page."));
   }
   for (const input of $("fields").querySelectorAll(".field-input")) {
-    if (["owner", "country"].includes(input.name)) { input.addEventListener("input", drawReplaces); input.addEventListener("change", drawReplaces); }
+    input.addEventListener("input", drawReplaces); input.addEventListener("change", drawReplaces);
     // The owner chosen is left out of the people it is shared with.
     if (input.name === "owner") for (const on of ["input", "change"]) input.addEventListener(on, () => drawShared(t, adding));
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
@@ -464,6 +466,7 @@ function markImported(item, paths) {
 
 $("import").onsubmit = async (event) => {
   event.preventDefault();
+  if (!templateOf(state, selectedTemplate)) return;
   tags.commit();
   $("import-button").disabled = true;
   say($("import-message"), noPDF ? "Saving…" : "Copying and reading back…");
@@ -471,13 +474,14 @@ $("import").onsubmit = async (event) => {
     let imported;
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      imported = (await post("/api/revisions", { folder: outputFolder, suffix: $("suffix").value.trim(), keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+      imported = (await post("/api/revisions", { folder: outputFolder, pdf_name: $("pdf-name-field").hidden ? "" : $("pdf-name").value.trim(), suffix: $("suffix").value.trim(), keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get(), new_revision: $("new-revision").checked })).item;
       $("new-revision").checked = false;
     } else {
       const body = { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
         revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() };
       body.folder = outputFolder;
+      body.pdf_name = $("pdf-name-field").hidden ? "" : $("pdf-name").value.trim();
       let saved;
       if (state.capabilities.import_folder) {
         const response = await fetch(api("/api/import"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -511,7 +515,7 @@ $("import").onsubmit = async (event) => {
   } catch (err) {
     say($("import-message"), err.message, true);
   } finally {
-    $("import-button").disabled = false;
+    $("import-button").disabled = !templateOf(state, selectedTemplate);
   }
 };
 
@@ -569,22 +573,15 @@ async function drawReplaces() {
   const visible = (state.capabilities.replacement_any_type || selectedTemplate === "visa") && (!$("into").value || $("into-field").hidden);
   $("replaces-field").hidden = !visible;
   const previous = $("replaces").value;
-  $("replaces").replaceChildren(el("option", { value: "" }, "None — keep existing visas in use"));
+  $("replaces").replaceChildren(el("option", { value: "" }, "None — keep existing ones in use"));
   if (!visible) return;
-  const fields = fieldsOf($("fields"));
-  if(state.capabilities.replacement_any_type){
-    const candidates=state.items.filter(i=>i.type===selectedTemplate&&!i.retired&&!i.superseded_by&&i.fields.owner===fields.owner&&i.fields.country===fields.country);
-    $("replaces").append(...candidates.map(i=>el("option",{value:i.id},label(state,i))));
-    if(candidates.some(i=>i.id===previous))$("replaces").value=previous;
-    return;
-  }
-  if (!fields.owner || !fields.country) return;
+  // The server answers which Items the Template's replaces allows.
   try {
-    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({ owner: fields.owner, country: fields.country })));
+    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({ ...fieldsOf($("fields")), type: selectedTemplate })));
     const candidates = await response.json();
     if (request !== replacesRequest) return;
     if (!response.ok) throw new Error(candidates.error);
-    $("replaces").append(...candidates.map((i) => el("option", { value: i.id }, [i.fields.visa_type, i.fields.number || i.id, i.fields.issued].filter(Boolean).join(" · "))));
+    $("replaces").append(...candidates.map((i) => el("option", { value: i.id }, label(state, i))));
     if (candidates.some((i) => i.id === previous)) $("replaces").value = previous;
   } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
 }
