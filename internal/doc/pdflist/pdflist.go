@@ -23,7 +23,7 @@ type File struct {
 // Extensions are case insensitive. Hidden files and folders — a leading dot — are
 // skipped, which keeps out macOS's ._ files and the part files a copy leaves
 // behind. A folder that cannot be read is skipped rather than ending the list.
-func List(fsys fs.FS) ([]File, error) {
+func List(fsys fs.FS, all ...bool) ([]File, error) {
 	var files []File
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
 		if name != "." && strings.HasPrefix(path.Base(name), ".") {
@@ -41,7 +41,10 @@ func List(fsys fs.FS) ([]File, error) {
 			}
 			return nil
 		}
-		if !entry.Type().IsRegular() || !docfile.Importable(name) {
+		if strings.HasSuffix(name, ".dgs-part") {
+			return nil
+		}
+		if !entry.Type().IsRegular() || (!docfile.Importable(name) && !(len(all) > 0 && all[0])) {
 			return nil
 		}
 		info, err := entry.Info()

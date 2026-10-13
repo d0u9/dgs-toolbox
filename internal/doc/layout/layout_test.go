@@ -44,3 +44,21 @@ func TestByItemSidecars(t *testing.T) {
 		t.Fatalf("sidecars = %v", got)
 	}
 }
+
+func TestInPlacePathsAndSidecars(t *testing.T) {
+	l := RecordedPaths()
+	item := Item{ID: "alice", Paths: map[string]string{"digest": "Books/card.pdf", "image": "Books/card.jpg"}}
+	if _, ok := l.(Folders); ok {
+		t.Fatal("in-place implements Folders")
+	}
+	if l.Sidecar(item.ID) != filepath.Join("items", "alice.dgs-item.yaml") || l.PDF(item, "digest") != filepath.Join("Books", "card.pdf") || l.Image(item, "digest", "image", "jpg") != filepath.Join("Books", "card.jpg") {
+		t.Fatal("paths")
+	}
+	found, err := l.Sidecars(fstest.MapFS{"items/alice.dgs-item.yaml": {}, "items/.pending.dgs-item.yaml": {}, "items/bob/item.dgs-item.yaml": {}, "Books/card.pdf": {}})
+	if err != nil || len(found) != 1 || found[0] != l.Sidecar(item.ID) {
+		t.Fatalf("sidecars: %v %v", found, err)
+	}
+	if !l.Owned("Books/card.pdf", item) || l.Owned("unimported.pdf", item) || l.Moves(item, item) != nil {
+		t.Fatal("ownership/moves")
+	}
+}

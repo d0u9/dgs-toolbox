@@ -19,7 +19,9 @@ of every cache. The cache is a copy that can always be thrown away:
   migration code.
 - A write goes to the sidecar first. Only once the sidecar write has
   succeeded is the cache brought up to date, and only then does the page hear
-  that the write succeeded — so the next question sees it.
+  that the write succeeded — so the next question sees it. New imports
+  refresh only the new Item and, when superseding another, the replaced Item;
+  they do not reread unrelated sidecars.
 - A write from the page checks the Item against the others — a unique
   field, a link, a PDF already kept — against the cache, once the change
   mark has confirmed it current, so a write reads the Item's own sidecar and
@@ -43,7 +45,10 @@ original images are truth in the document tree, not part of this cache.
 
 ## What it answers
 
-The cache holds each Item as its sidecar says, and indexes kept alongside:
+The cache holds each Item as its sidecar says, including in-place paths.
+Cache format version 5 discards earlier caches and rebuilds from sidecars;
+in-place path validation also applies when a disk cache is read.
+The indexes kept alongside are:
 
 | Index | Answers |
 | --- | --- |
@@ -97,3 +102,29 @@ a sidecar edited by hand. Two things notice it:
 
 The mark is not proof the cache is right; only reading the sidecars is.
 `dgs doc verify` reads them and does not use the cache.
+
+Version 6 also retains the in-place Item lock, revision file-loss markers,
+and revision/original sizes; earlier caches are discarded and rebuilt from sidecars.
+
+Doc 2 native thumbnails reuse the page-image cache with size `file`, keyed by
+recorded content digest. Cached JPEGs are decoded before use; corrupt entries
+are regenerated from a source whose digest is checked. Thumbnails remain
+outside the document tree and introduce no additional cache configuration.
+
+The Import page keeps the opened source listing and its content digests. After a
+successful import, it marks the imported paths and matching content from the
+returned Item, without rescanning or rehashing the entire source directory.
+Reopening the directory reads current files and digests again; external file
+changes are reflected then. Import still validates the selected files normally.
+
+Opening an Import source directory first shows its names and sizes, without
+waiting for content digests. Existing-import detection then runs in the
+background and updates the listing. With Hide imported enabled, unchecked files
+remain hidden and selection waits until detection completes. Switching directories cancels that scan;
+an import completed during it retains its new markers. Submission still
+checks source content and duplicates before publication.
+
+In-place source listing shares an NFC directory-name index within that scan,
+instead of rereading each parent directory for every file. The index is
+discarded after listing; each path still resolves symlinks and checks tree
+boundaries. Subsequent imports resolve their source paths afresh.

@@ -98,7 +98,7 @@ func hasDigest(item tree.Item, digest string) bool {
 // Compute is what merging src into the tree at root would do.
 func Compute(st *tree.Store, src Source) (Plan, error) {
 	plan := Plan{New: []Change{}, Changed: []Change{}, Templates: []string{}, Outlines: []string{}, Conflicts: []Conflict{}, Problems: []string{}}
-	if err := st.Require(); err != nil {
+	if err := st.RequireFileWrites(); err != nil {
 		return plan, err
 	}
 	items, err := st.LoadItems()
@@ -364,6 +364,9 @@ type Result struct {
 // never names a PDF that is not there. Templates come first, so an Item is
 // never written before its type is known.
 func Apply(ctx context.Context, st *tree.Store, src Source, plan Plan, choices map[string]string, now time.Time) (Result, error) {
+	if err := st.RequireFileWrites(); err != nil {
+		return Result{}, err
+	}
 	var result Result
 	if len(plan.Problems) > 0 {
 		return result, errors.New("the merge has problems no choice resolves; nothing was changed")

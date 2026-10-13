@@ -11,6 +11,7 @@ import (
 // Metadata sets only fields whose pointers are present. Empty values clear a
 // field. All changes validate in memory before one sidecar publication.
 type Metadata struct {
+	Locked       *bool     `json:"locked,omitempty"`
 	Notes        *string   `json:"notes,omitempty"`
 	Tags         *[]string `json:"tags,omitempty"`
 	SharedWith   *[]string `json:"shared_with,omitempty"`
@@ -27,6 +28,15 @@ func (s *Store) SetMetadata(id, digest string, m Metadata, now time.Time) (Item,
 	item, err := s.GetItem(id)
 	if err != nil {
 		return Item{}, err
+	}
+	if m.Locked != nil {
+		if !s.InPlace() {
+			return Item{}, unsupportedLayout()
+		}
+		if item.Locked != *m.Locked {
+			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "set_locked", Changes: map[string][2]string{"locked": {fmt.Sprint(item.Locked), fmt.Sprint(*m.Locked)}}})
+			item.Locked = *m.Locked
+		}
 	}
 	if m.RevisionTags != nil && digest == "" {
 		return Item{}, fmt.Errorf("revision_tags requires digest")

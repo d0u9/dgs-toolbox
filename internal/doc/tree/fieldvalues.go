@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// FieldValues lists distinct saved values for one type and country across revisions, including
-// retired Items. Sidecars remain the only source; empty values are omitted.
+// FieldValues lists distinct current values for one type and country, including
+// retired Items. Earlier revisions are history, not suggestions: a value
+// rewritten everywhere stops being offered. Sidecars remain the only source; empty values are omitted.
 func FieldValues(items []Item, typ, nation, key string) []string {
 	normalized, valid := country.Normalize(nation, country.Format("alpha2"))
 	if !valid {
@@ -20,7 +21,7 @@ func FieldValues(items []Item, typ, nation, key string) []string {
 }
 
 // TypeValues lists distinct saved values of key for one type, whatever the
-// country, across revisions and retired Items; empty values are omitted.
+// country, from current fields of all Items, retired ones too; empty values are omitted.
 func TypeValues(items []Item, typ, key string) []string {
 	return typeValues(items, typ, key, func(map[string]string) bool { return true })
 }
@@ -36,17 +37,31 @@ func typeValues(items []Item, typ, key string, keep func(map[string]string) bool
 		if item.Type == typ {
 			add(item.Fields)
 		}
-		for _, revision := range item.Revisions {
-			revisionType := revision.Type
-			if revisionType == "" {
-				revisionType = item.Type
-			}
-			if revisionType == typ {
-				add(item.FieldsAt(revision.Ref()))
+	}
+	values := make([]string, 0, len(seen))
+	for value := range seen {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
+// TypeFieldValues returns individual suggestions for a multiple field,
+// while preserving commas in ordinary text fields.
+func TypeFieldValues(items []Item, typ string, field Field) []string {
+	values := TypeValues(items, typ, field.Key)
+	if !field.Multiple {
+		return values
+	}
+	seen := map[string]bool{}
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				seen[part] = true
 			}
 		}
 	}
-	values := make([]string, 0, len(seen))
+	values = make([]string, 0, len(seen))
 	for value := range seen {
 		values = append(values, value)
 	}

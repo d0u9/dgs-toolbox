@@ -3,11 +3,17 @@
 // the tree's: every Outline naming it, and every Snapshot taken from it
 // after, sees the change. Outlines put rules and Snapshots together.
 import { $, address, scrollBack, api, el, loadState, post, label, templateOf, inputFor, fieldInputs, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
-import * as which from "/layoutform.js";
+
 import { outlineTree, unplaced, resizable, whyText } from "/outlinetree.js";
 
 // PREVIEW is the name the rule is planned under.
 const PREVIEW = "preview";
+const initialState=await loadState();
+if(initialState.outlines===2){
+  const {startSkeleton}=await import("/skeletonui.js");
+  await startSkeleton(initialState,"rules");
+}else{
+const which=await import("/layoutform.js");
 let state = { templates: [], items: [] };
 let rules = [];
 let used = {}; // the Outlines using each rule
@@ -348,3 +354,5 @@ reload().then(() => {
   state.error = err.message;
   frame(state);
 });
+
+}

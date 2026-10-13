@@ -192,6 +192,15 @@ func inherit(parent, child Template) (Template, error) {
 		child.Defaults = defaults
 	}
 	child.IgnoreDates = append(slices.Clone(parent.IgnoreDates), child.IgnoreDates...)
+	// A child only narrows what replacing asks: it adds fields to its
+	// parent's, never drops one.
+	replaces := slices.Clone(parent.Replaces)
+	for _, key := range child.Replaces {
+		if !slices.Contains(replaces, key) {
+			replaces = append(replaces, key)
+		}
+	}
+	child.Replaces = replaces
 	child.Lineage = append([]string{child.Type}, parent.Lineage...)
 	return child, nil
 }
@@ -203,6 +212,9 @@ func override(typ string, p, c Field) (Field, error) {
 	rest := c
 	rest.Required, rest.Distinguishing, rest.PerRevision, rest.Description = false, false, false, ""
 	rest.Shape, rest.Pattern, rest.Patterns = nil, "", nil
+	if len(p.When) == 0 {
+		rest.When = nil
+	}
 	text := p.Type == "" || p.Type == FieldText
 	if text && c.Suggest {
 		rest.Suggest, rest.Options = false, nil
@@ -211,7 +223,7 @@ func override(typ string, p, c Field) (Field, error) {
 		rest.Type = ""
 	}
 	if !reflect.DeepEqual(rest, Field{Key: c.Key}) {
-		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape, described, or, as text, given suggestions; not changed", typ, c.Key)
+		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape, described, asked only when, or, as text, given suggestions; not changed", typ, c.Key)
 	}
 	f := p
 	f.Required = p.Required || c.Required
@@ -219,6 +231,9 @@ func override(typ string, p, c Field) (Field, error) {
 	f.PerRevision = p.PerRevision || c.PerRevision
 	if c.Description != "" {
 		f.Description = c.Description
+	}
+	if len(c.When) > 0 {
+		f.When = c.When
 	}
 	if c.Pattern != "" || len(c.Patterns) > 0 {
 		f.Pattern, f.Patterns = c.Pattern, c.Patterns

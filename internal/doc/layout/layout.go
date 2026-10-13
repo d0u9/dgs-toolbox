@@ -3,6 +3,7 @@
 package layout
 
 import (
+	"golang.org/x/text/unicode/norm"
 	"io/fs"
 	"path"
 	"path/filepath"
@@ -18,6 +19,7 @@ const SidecarName = "item.dgs-item.yaml"
 type Item struct {
 	ID     string
 	Fields map[string]map[string]string
+	Paths  map[string]string
 }
 
 // A Move renames one file, both paths relative to the root.
@@ -39,7 +41,8 @@ type Layout interface {
 	Moves(before, after Item) []Move
 	// Owned tells whether a path is one the layout places, so check can
 	// report the rest as loose.
-	Owned(rel string) bool
+	Owned(rel string, items ...Item) bool
+	ReportsLooseFiles() bool
 }
 
 // Folders is a Layout that gives every Item a folder of its own, holding all
@@ -79,7 +82,43 @@ func (byItem) Sidecars(tree fs.FS) ([]string, error) {
 	return out, nil
 }
 
-func (byItem) Owned(rel string) bool {
+func (byItem) Owned(rel string, _ ...Item) bool {
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	return strings.HasPrefix(rel, "items/")
 }
+
+// RecordedPaths records files where their owner keeps them; it has no Item folders.
+func RecordedPaths() Layout { return inPlace{} }
+
+type inPlace struct{}
+
+func (inPlace) Sidecar(id string) string            { return filepath.Join("items", id+".dgs-item.yaml") }
+func (inPlace) PDF(item Item, digest string) string { return filepath.FromSlash(item.Paths[digest]) }
+func (inPlace) Image(item Item, _ string, image, _ string) string {
+	return filepath.FromSlash(item.Paths[image])
+}
+func (inPlace) Moves(Item, Item) []Move { return nil }
+func (inPlace) Sidecars(tree fs.FS) ([]string, error) {
+	found, err := fs.Glob(tree, "items/*.dgs-item.yaml")
+	out := found[:0]
+	for _, f := range found {
+		if !strings.HasPrefix(path.Base(f), ".") {
+			out = append(out, filepath.FromSlash(f))
+		}
+	}
+	return out, err
+}
+func (inPlace) Owned(rel string, items ...Item) bool {
+	rel = norm.NFC.String(filepath.ToSlash(rel))
+	for _, item := range items {
+		for _, p := range item.Paths {
+			if norm.NFC.String(p) == rel {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (byItem) ReportsLooseFiles() bool  { return true }
+func (inPlace) ReportsLooseFiles() bool { return false }

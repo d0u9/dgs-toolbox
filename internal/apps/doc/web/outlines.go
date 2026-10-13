@@ -98,7 +98,7 @@ func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	g, err := outline.Group(o, in.snapshots, in.items, in.names)
+	g, err := outline.GroupAt(o, in.snapshots, in.items, in.names, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -120,7 +120,7 @@ func (s server) outlineExplain(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	xs, err := outline.Explain(request.Outline, in.snapshots, in.items, in.names, request.Item)
+	xs, err := outline.ExplainAt(request.Outline, in.snapshots, in.items, in.names, request.Item, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -146,7 +146,38 @@ type planned struct {
 // planning checks o, its rules HEAD-only unless they say, and loads what
 // it is planned over; when it cannot, it has answered w.
 func (s server) planning(w http.ResponseWriter, o *outline.Outline) (planned, bool) {
+	if s.documents.OutlineVersion() == 2 {
+		if o.Mount == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "doc 2 Outline needs mount"})
+			return planned{}, false
+		}
+		rules, err := outline.LoadRules(s.documents)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return planned{}, false
+		}
+		// The Rules page previews an unsaved rule; supplied definitions win.
+		for _, r := range o.Rules {
+			rules[r.Name] = r
+		}
+		o.Rules = nil
+		seen := map[string]bool{}
+		for _, m := range o.Mount {
+			if m.Rule != "" && !seen[m.Rule] {
+				r, ok := rules[m.Rule]
+				if !ok {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no such rule"})
+					return planned{}, false
+				}
+				o.Rules = append(o.Rules, r)
+				seen[m.Rule] = true
+			}
+		}
+	}
 	for i := range o.Rules {
+		if o.Rules[i].Folders != nil {
+			continue
+		}
 		if o.Rules[i].Selection == "" {
 			o.Rules[i].Selection = view.Head
 		}

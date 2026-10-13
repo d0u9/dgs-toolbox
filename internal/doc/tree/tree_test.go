@@ -610,14 +610,12 @@ func withMandatory(given map[string]string) map[string]string {
 	return out
 }
 
-func TestEveryTemplateRequiresOwnerAndCountry(t *testing.T) {
+func TestEveryTemplateRequiresOwner(t *testing.T) {
 	owner := Field{Key: "owner", Required: true}
 	country := Field{Key: "country", Type: FieldCountry, Required: true}
 	for name, fields := range map[string][]Field{
 		"no owner":             {country},
-		"no country":           {owner},
 		"optional owner":       {{Key: "owner"}, country},
-		"optional country":     {owner, {Key: "country", Type: FieldCountry}},
 		"country as free text": {owner, {Key: "country", Required: true}},
 	} {
 		for _, kind := range []Kind{KindDocument, KindRecord} {
@@ -626,8 +624,10 @@ func TestEveryTemplateRequiresOwnerAndCountry(t *testing.T) {
 			}
 		}
 	}
-	if err := (Template{Type: "x", Kind: KindRecord, Fields: []Field{owner, country}}).Validate(); err != nil {
-		t.Fatal(err)
+	for _, fields := range [][]Field{{owner, country}, {owner}, {owner, {Key: "country", Type: FieldCountry}}} {
+		if err := (Template{Type: "x", Kind: KindRecord, Fields: fields}).Validate(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

@@ -50,7 +50,9 @@
     <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
     <div id="filter-steps" class="filter-steps" aria-label="Filters"></div>
     <button id="filter-add" class="chip" type="button" aria-haspopup="true" aria-controls="facets" title="Narrow by a field, one step after another">+ Filter</button>
+    <span id="filter-quick" class="segmented" role="group" aria-label="Filter by"><button class="chip" type="button" data-facet="owner" title="Filter by owner">Owner</button><button class="chip" type="button" data-facet="country" title="Filter by country">Country</button><button class="chip" type="button" data-facet="type" title="Filter by type">Type</button><button class="chip" type="button" data-facet="issuer" title="Filter by issuer">Issuer</button><button class="chip" type="button" data-facet="about" title="Filter by the Item it is about">About</button></span>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent"><span data-icon="star"></span> Frequent</button>
+    <button id="check-files" class="chip" type="button" hidden>Check files</button>
     <div class="filter-result">
       <span id="count" class="numeric"></span>
       <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
@@ -65,6 +67,7 @@
       <label class="filter"><span>Sort</span>
         <select id="view-sort">
           <option value="added">date added</option>
+          <option value="modified">date modified</option>
           <option value="expiry">expiry</option>
           <option value="name">name</option>
           <option value="type">type</option>
@@ -90,6 +93,12 @@
     <p id="facet-empty" class="muted facet-empty" hidden>Nothing left to tell these Items apart by.</p>
   </dialog>
 </nav>
+<dialog id="file-check-report" class="dialog" aria-labelledby="file-check-title">
+  <h3 id="file-check-title">File check</h3>
+  <p id="file-check-summary" class="message" role="status"></p>
+  <div id="file-problems" class="file-check-list"></div>
+  <div class="dialog-buttons"><button id="file-check-all" class="button secondary" type="button" hidden>Use all single matches</button><button id="file-check-close" class="button" type="button">Close</button></div>
+</dialog>
 <main class="work">
   <section id="items-pane" class="browse-pane" aria-label="Items">
     <p id="unread" class="message" hidden><span id="unread-count"></span>
@@ -128,6 +137,7 @@
   <aside id="side" class="side editor detail" hidden>
     <header class="detail-head">
       <h2 id="detail-head"></h2>
+      <button id="locked" class="chip" type="button" aria-pressed="false" hidden title="Changed files are errors while locked">Locked</button>
       <button id="frequent" class="chip" type="button" aria-pressed="false" title="Frequent Items come first on Browse"><span data-icon="star"></span> Frequent</button>
       <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close"><span data-icon="x"></span></button>
     </header>
@@ -145,6 +155,7 @@
           <button id="attach-pdf" class="button secondary small-button" type="button" hidden>Attach PDF…</button>
         </span>
       </div>
+      <p id="detail-path" class="detail-path" title="Path from the tree root" hidden></p>
     </div>
     <div id="picture-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
     <div class="detail-scroll">
@@ -231,7 +242,7 @@
     <section class="detail-section">
       <div class="detail-section-head"><h3>Retire</h3></div>
       <div id="supersession-links"></div>
-      <form id="supersession-form" hidden><label class="form-field"><span>Replaces</span><select id="supersession-choice"></select></label><button class="button secondary" type="submit">Replace selected visa</button></form>
+      <form id="supersession-form" hidden><label class="form-field"><span>Replaces</span><select id="supersession-choice"></select></label><button class="button secondary" type="submit">Replace selected</button></form>
       <button id="undo-supersession" class="button secondary" type="button" hidden>Undo replacement</button>
       <p id="retire-note" class="danger-note"></p>
       <form id="retire-form" class="retire-form">
@@ -246,7 +257,7 @@
     </div></div>
     <section class="detail-section danger-zone">
       <h3>Delete</h3>
-      <p class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
+      <p id="delete-note" class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
       <div class="detail-actions"><button id="delete" class="button danger" type="button">Delete Item…</button></div>
       <p id="delete-message" class="message"></p>
     </section>

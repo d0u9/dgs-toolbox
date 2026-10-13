@@ -64,6 +64,9 @@ func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, sou
 		next := Revision{ID: ref, Paper: paper, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)}
 		for _, r := range item.Revisions {
 			if r.Digest == digest && digest != "" {
+				next.Path = r.Path
+				next.Size = r.Size
+				next.Lost, next.LossAccepted = r.Lost, r.LossAccepted
 				next.SourceDigests = slices.Clone(r.SourceDigests)
 				next.Originals = slices.Clone(r.Originals)
 				break

@@ -30,7 +30,6 @@ import (
 	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pagecache"
-	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
 	"dgs-toolbox/internal/doc/textcache"
 	"dgs-toolbox/internal/doc/textread"
@@ -108,14 +107,17 @@ type sourceFileJSON struct {
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
 	// Item is the Item already keeping this PDF, when one does.
-	Item string `json:"item,omitempty"`
+	Item   string `json:"item,omitempty"`
+	Digest string `json:"digest,omitempty"`
 	// Image is set for an image, which an import makes a PDF page of.
 	Image bool `json:"image,omitempty"`
 }
 
 type stateJSON struct {
-	KeepOriginal bool   `json:"keepOriginal"`
-	Root         string `json:"root"`
+	Capabilities   tree.Capabilities `json:"capabilities"`
+	OutlineVersion int               `json:"outlines"`
+	KeepOriginal   bool              `json:"keepOriginal"`
+	Root           string            `json:"root"`
 	// Name is the tree's name in doc.trees, empty for --root or the working
 	// directory.
 	Name string `json:"name"`
@@ -250,7 +252,11 @@ func (s server) api() http.Handler {
 		s.definitionHandler(w, r)
 	})
 	mux.HandleFunc("POST /api/items/meta", s.setMetadata)
+	mux.HandleFunc("POST /api/files/check", s.checkFiles)
+	mux.HandleFunc("POST /api/files/confirm", s.confirmFilePath)
+	mux.HandleFunc("POST /api/files/accept-loss", s.acceptLostFile)
 	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("POST /api/init", s.initialize)
 	mux.HandleFunc("GET /api/issuers", s.issuers)
 	mux.HandleFunc("GET /api/values", s.values)
 	mux.HandleFunc("GET /api/source", s.sourceList)
@@ -261,6 +267,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/text", s.text)
 	mux.HandleFunc("POST /api/ahead", s.ahead)
 	mux.HandleFunc("GET /api/pages", s.pages)
+	mux.HandleFunc("GET /api/thumbnail", s.fileThumbnail)
 	mux.HandleFunc("GET /api/page", s.page)
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
@@ -313,6 +320,8 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 	var problems []string
 	if err := s.requireTree(); err == nil {
 		out.Tree = true
+		out.Capabilities = s.documents.Capabilities()
+		out.OutlineVersion = s.documents.OutlineVersion()
 		if out.Templates, err = s.templates(); err != nil {
 			problems = append(problems, err.Error())
 			out.Templates = []tree.Template{}
@@ -346,12 +355,16 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "open a folder by its full path"})
 		return
 	}
-	files, err := pdflist.List(os.DirFS(dir))
+	files, err := s.documents.ImportFiles(dir)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	items, _ := s.items.Items()
+	metadataOnly := r.URL.Query().Get("metadata") == "1"
+	var items []tree.Item
+	if !metadataOnly {
+		items, _ = s.items.Items()
+	}
 	kept := map[string]string{}
 	for _, item := range items {
 		for _, r := range item.Revisions {
@@ -363,14 +376,18 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []sourceFileJSON{}
 	for _, f := range files {
+		if r.Context().Err() != nil {
+			return
+		}
 		full := filepath.Join(dir, filepath.FromSlash(f.Path))
 		// The tree's own files are not offered for import.
 		if rel, err := filepath.Rel(s.root, full); err == nil && within(s.root, full) && s.documents.Owned(rel) {
 			continue
 		}
 		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified, Image: docfile.IsImage(f.Path)}
-		if len(kept) > 0 {
+		if !metadataOnly {
 			if digest, err := tree.FileDigest(full); err == nil {
+				entry.Digest = digest
 				entry.Item = kept[digest]
 			}
 		}
@@ -382,32 +399,6 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 func within(parent, path string) bool {
 	rel, err := filepath.Rel(parent, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// sourcePath is the file a request names: a PDF under an opened folder, by a
-// relative path that cannot climb out of it, and not hidden or linked. Only
-// what pdflist would list is accepted.
-func sourcePath(dir, path string) (string, error) {
-	if !filepath.IsAbs(dir) {
-		return "", errors.New("open a folder by its full path")
-	}
-	if !fs.ValidPath(path) || path == "." || !docfile.Importable(path) {
-		return "", errors.New("not a PDF or image in the opened folder")
-	}
-	for _, part := range strings.Split(path, "/") {
-		if strings.HasPrefix(part, ".") {
-			return "", errors.New("not a PDF in the opened folder")
-		}
-	}
-	full := filepath.Join(dir, filepath.FromSlash(path))
-	info, err := os.Lstat(full)
-	if err != nil {
-		return "", err
-	}
-	if !info.Mode().IsRegular() {
-		return "", errors.New("not a regular file")
-	}
-	return full, nil
 }
 
 // sourceFile serves a PDF under an opened folder for preview.
@@ -432,6 +423,10 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	if !docfile.IsPDF(path) {
+		http.Error(w, "this file is not a PDF; show it in Finder", http.StatusUnsupportedMediaType)
+		return
+	}
 	servePDF(w, r, path)
 }
 
@@ -449,7 +444,8 @@ func (s server) revisionPath(id, digest string) (string, int, error) {
 		}
 		for _, rev := range item.Revisions {
 			if (rev.Ref() == digest || rev.Digest == digest) && rev.Digest != "" {
-				return s.documents.PDF(item, rev.Digest), 0, nil
+				p, err := s.documents.ReadPDF(item, rev.Digest)
+				return p, http.StatusNotFound, err
 			}
 		}
 	}
@@ -471,6 +467,9 @@ func (s server) originalPath(id, digest string) (string, int, error) {
 			for _, o := range rev.Originals {
 				if o.Digest == digest {
 					if path := s.documents.OriginalPath(item, rev.Digest, o); path != "" {
+						if _, err := os.Stat(path); err != nil {
+							return "", http.StatusNotFound, fmt.Errorf("Item %s: file is not at its recorded location: %s: %w", item.ID, o.Path, err)
+						}
 						return path, 0, nil
 					}
 				}
@@ -512,7 +511,7 @@ func (s server) reveal(w http.ResponseWriter, r *http.Request) {
 	var status int
 	var err error
 	if body.Item == "" {
-		path, err = sourcePath(body.Dir, body.Path)
+		path, err = s.documents.ImportSource(body.Dir, body.Path)
 		status = http.StatusNotFound
 	} else if body.Original != "" {
 		path, status, err = s.originalPath(body.Item, body.Original)
@@ -642,7 +641,7 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 	}
 	var paths []string
 	for _, p := range request.Paths {
-		if full, err := sourcePath(request.Dir, p); err == nil {
+		if full, err := tree.SourcePath(request.Dir, p, false); err == nil {
 			paths = append(paths, full)
 		}
 	}
@@ -678,7 +677,11 @@ func (s server) pdfPath(ctx context.Context, query url.Values) (string, error) {
 	}
 	for _, rev := range item.Revisions {
 		if rev.Ref() == query.Get("digest") && rev.Digest != "" {
-			return s.documents.PDF(item, rev.Digest), nil
+			p, err := s.documents.ReadPDF(item, rev.Digest)
+			if err == nil && !docfile.IsPDF(p) {
+				return "", fmt.Errorf("this file is not a PDF; page views and text are unavailable")
+			}
+			return p, err
 		}
 	}
 	return "", errors.New("no such revision")
@@ -702,6 +705,9 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 type importJSON struct {
+	Folder       string            `json:"folder"`
+	PDFName      string            `json:"pdf_name"`
+	Reuse        string            `json:"reuse"`
 	KeepOriginal *bool             `json:"keep_original"`
 	Pages        []string          `json:"pages"`
 	Replaces     string            `json:"replaces"`
@@ -753,8 +759,9 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req := tree.ImportRequest{
-			KeepOriginal: s.keepImage(request.KeepOriginal), Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
+			Folder: request.Folder, PDFName: request.PDFName, Reuse: request.Reuse, KeepOriginal: s.keepImage(request.KeepOriginal), Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
 		}
+		req.Replaces = request.Replaces
 		var item tree.Item
 		if request.NoPDF {
 			item, err = s.documents.CreateWithoutPDF(req)
@@ -762,7 +769,12 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			item, err = s.documents.Import(r.Context(), req)
 		}
 		if err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			var offer *tree.ReuseFile
+			if errors.As(err, &offer) {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "reuse": offer})
+			} else {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			}
 			return
 		}
 		if request.Replaces != "" {
@@ -779,7 +791,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 
 // source is the PDF an import names, or false with the response written.
 func (s server) source(w http.ResponseWriter, dir, path string) (string, bool) {
-	full, err := sourcePath(dir, path)
+	full, err := s.documents.ImportSource(dir, path)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return "", false
@@ -804,7 +816,7 @@ func (s server) pagesOf(w http.ResponseWriter, dir string, pages []string) ([]st
 // sourcePaths is the files a preview query names: path under dir, then the
 // images of more pages after it, pages, a JSON list.
 func sourcePaths(query url.Values) ([]string, error) {
-	first, err := sourcePath(query.Get("dir"), query.Get("path"))
+	first, err := tree.SourcePath(query.Get("dir"), query.Get("path"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -817,7 +829,7 @@ func sourcePaths(query url.Values) ([]string, error) {
 		return nil, fmt.Errorf("pages: %w", err)
 	}
 	for _, p := range pages {
-		full, err := sourcePath(query.Get("dir"), p)
+		full, err := tree.SourcePath(query.Get("dir"), p, false)
 		if err != nil {
 			return nil, err
 		}
@@ -850,6 +862,9 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 // and moves HEAD to it.
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
+		Folder       string            `json:"folder"`
+		PDFName      string            `json:"pdf_name"`
+		Suffix       string            `json:"suffix"`
 		KeepOriginal *bool             `json:"keep_original"`
 		Pages        []string          `json:"pages"`
 		NoPDF        bool              `json:"no_pdf"`
@@ -886,7 +901,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	metadata := tree.RevisionMetadata{Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
+	metadata := tree.RevisionMetadata{Folder: request.Folder, PDFName: request.PDFName, Suffix: request.Suffix, Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
 	var item tree.Item
 	if request.NoPDF {
 		item, err = s.documents.AddWithoutPDF(request.Item, t, request.Fields, metadata, s.now())
@@ -1170,10 +1185,18 @@ func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
+	// The form's fields come as the query's other keys.
+	q := r.URL.Query()
+	typ := q.Get("type")
+	fields := map[string]string{}
+	for key := range q {
+		if key != "type" && key != "exclude" && key != "tree" {
+			fields[key] = q.Get(key)
+		}
+	}
 	result := []tree.Item{}
-	fields := map[string]string{"owner": r.URL.Query().Get("owner"), "country": r.URL.Query().Get("country")}
 	for _, it := range items {
-		if it.ID != r.URL.Query().Get("exclude") && s.documents.ValidateSupersession(it.ID, "visa", fields) == nil {
+		if it.ID != q.Get("exclude") && s.documents.ValidateSupersession(it.ID, typ, fields) == nil {
 			result = append(result, it)
 		}
 	}
@@ -1187,7 +1210,24 @@ func (s server) values(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, tree.TypeValues(items, r.URL.Query().Get("type"), r.URL.Query().Get("key")))
+	templates, err := s.templates()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	typ, key := r.URL.Query().Get("type"), r.URL.Query().Get("key")
+	for _, template := range templates {
+		if template.Type != typ {
+			continue
+		}
+		for _, field := range template.Fields {
+			if field.Key == key {
+				writeJSON(w, http.StatusOK, tree.TypeFieldValues(items, typ, field))
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, tree.TypeValues(items, typ, key))
 }
 
 // issuers returns suggestions only for the requested type and country.

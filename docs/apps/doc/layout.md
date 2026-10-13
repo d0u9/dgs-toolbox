@@ -1,7 +1,8 @@
 # Storage Layouts
 
-A doc tree stores its originals in one of two layouts, chosen when the tree is
-created and kept for its life:
+A doc tree stores its originals in a layout chosen when the tree is created
+and kept for its life. Two are described here; a third, [In place](#in-place),
+leaves imported files where they are:
 
 - **By Item** — the layout every tree has today: one folder per Item, named by
   its ID, holding its sidecar and its PDFs. It remains the default.
@@ -166,8 +167,9 @@ same answers as using it.
 
 `tree.Open(root)` is the only public entry point for an existing tree. It reads
 and checks the marker before returning a Store. A marker without `layout`
-selects `layout.ByItem()`; any supplied layout is refused as unsupported until
-step 2. `Init` continues to write the original marker with no layout.
+selects `layout.ByItem()`; `layout: in-place` selects the in-place layout.
+By-fields patterns, empty values and unknown names remain unsupported.
+`Init` continues to write the original marker with no layout.
 
 Domain operations and CLI actions pass the opened `*tree.Store` through every
 layer. Store methods own sidecar reads, writes, imports, metadata, trash and
@@ -193,6 +195,7 @@ package layout
 type Item struct {
 	ID     string
 	Fields map[string]map[string]string
+	Paths  map[string]string // PDF or original digest to recorded path, in place only
 }
 
 // A Layout places an Item's files under a tree's root. Every path is
@@ -211,7 +214,7 @@ type Layout interface {
 	Moves(before, after Item) []Move
 	// Owned tells whether a path is one the layout places, so check can
 	// report the rest as loose.
-	Owned(rel string) bool
+	Owned(rel string, items ...Item) bool
 }
 
 // A Move renames one file, both paths relative to the root.
@@ -234,19 +237,18 @@ package tree
 type Marker struct {
 	Version int `yaml:"version"`
 	CreatedAt string `yaml:"created_at"`
-	Layout *LayoutPatterns `yaml:"layout,omitempty"`
-}
-type LayoutPatterns struct {
-	Path string `yaml:"path"`
-	File string `yaml:"file"`
+	Layout *string `yaml:"layout,omitempty"`
 }
 
-// Open checks the marker and refuses every supplied layout for now.
+// Open checks the marker and selects ByItem or InPlace; other layouts are refused.
 func Open(root string) (*Store, error)
 
 // Init creates the marker and initial Template. Optional observers receive
 // the same report paths the CLI previously computed, after successful init.
 func Init(root string, now time.Time, report ...func(string)) error
+
+// InitWithLayout selects in-place with the name "in-place".
+func InitWithLayout(root string, now time.Time, name string, report ...func(string)) error
 
 func (s *Store) Root() string
 func (s *Store) Sidecar(id string) string
@@ -305,8 +307,185 @@ func (s *Store) WriteItem(item Item) error
   layout. Trees with different layouts are not merged.
 - Existing trees stay by Item. Nothing converts them.
 
+## In place
+
+Doc 2.0: a large change, developed on its own branch.
+
+Its aim is in [Doc 2.0](v2.md#aim).
+
+V1 supports creating and reading this layout; V2 adds new-Item import:
+
+```sh
+dgs doc init --layout in-place ./documents
+```
+
+Omitting the flag creates a by-Item tree with its original marker bytes.
+By-fields patterns, empty layouts and unknown names remain unsupported.
+Browse, the Item page, PDF preview and export read the recorded paths.
+Import records internal PDFs, copies external PDFs into a chosen folder and
+converts images into PDFs there. Items without a PDF, such as a trip an
+anchor stands for, are created as in any tree: only the sidecar is written.
+Attachment changes, replacement imports, deletion and merge remain refused
+before writes.
+
+A third layout, for a tree made over files that are already organised: an
+import leaves the file where it is, under its own name, and the Item records
+where that is. Nothing is computed from fields, so editing a field never moves
+a file.
+
+```text
+<root>/
+  _dgs/                          everything doc keeps; the rest is the owner's
+    tree.yaml                    the marker, layout: in-place
+    changed                      the change token
+    items/
+      <item-id>.dgs-item.yaml    every sidecar, naming each file's digest and path
+    templates/ outlines/ rules/ snapshots/ cases/ trash/
+  Books/
+    中文/
+      a-book.pdf                 where it was before the import
+  2026/
+    03/
+      scan-0012.pdf
+      registration.pdf          generated PDF, named at import
+      registration/             retained originals, original filenames
+        1.jpg
+        2.jpg
+        3.jpg
+```
+
+- **Inside the root stays put.** A file inside the tree's root is recorded
+  where it is. A file from outside is copied, with the verified copy every
+  import uses, to a folder chosen at import; the source is left alone.
+- **The path is stored.** The sidecar names each PDF by digest and by its path
+  relative to the root. This is the one layout where a path is truth, not
+  computed.
+- **New PDFs go where the owner says.** A PDF the import makes, such as one
+  from photos, is written to a folder chosen at import.
+- **Moved by hand: reported, then confirmed.** A PDF missing from its recorded
+  path is looked for by digest; where it is found, the new path is reported,
+  and the sidecar is updated only after the owner confirms.
+- **Changed in place: by lock.** A file at its recorded path whose digest no
+  longer matches is an error for a [locked Item](v2.md#locked-items), and a
+  new revision for any other.
+- **Generated PDFs are named at import.** The PDF goes directly in the
+  selected folder. Retained images go in a sibling directory named after the
+  PDF without `.pdf`, keeping their original filenames. An empty PDF name uses
+  the first image's stem plus `.pdf`. Existing PDFs or original-image folders,
+  and duplicate original filenames, are refused without overwriting.
+  Ordinary file revisions keep their names in the selected destination;
+  a suffix places a copy beside the current file. Recorded files stay put.
+- **One folder for doc's own files.** The marker, the change token, the
+  sidecars, the definition folders and the trash are all under `_dgs/`, so
+  the root holds only the owner's files and folders. The folder is visible,
+  not `.dgs`, so a copy made by hand keeps it; the leading `_` sorts it first.
+  An in-place tree is recognised by `_dgs/tree.yaml`; a by-Item tree keeps
+  `dgs-doctree.yaml` and its folders at the root, unchanged.
+- **`_dgs/items/` holds only descriptions.** Every sidecar, plain or complex,
+  is `_dgs/items/<item-id>.dgs-item.yaml`, and nothing else is there, so the
+  owner can keep `_dgs/` (without `trash/`) under Git while the large files
+  stay out of it. Finding an Item by ID is reading one file.
+- **A plain file edited in place stays a file.** If the owner records the
+  changed file as a new revision, the earlier revision keeps its fields and
+  digest and is marked as having lost its PDF.
+- **Not only PDFs.** An object may be any file. Images may be made into a
+  PDF, as photo imports are. Other files, such as video and audio, are stored
+  as they are, with only basic handling: a thumbnail where the platform can
+  make one natively (QuickLook on macOS; none elsewhere), kept in the local
+  cache outside the tree, and a button that shows the file in Finder. Page
+  text, search within the text and page views remain PDF-only.
+- **Shared files allowed.** Several Items may name the same file.
+- **Deletion counts references.** Deleting an Item moves its sidecar to the
+  trash, and each of its files too once no other Item names it.
+
+### Import in V2
+
+The Import page opens the owner's existing folders. A PDF already under the
+root stays where it is: only its new sidecar is written. An external PDF
+keeps its original basename in the selected folder inside the root; an
+occupied name is refused. The source stays untouched. The same path
+validation as V1 applies to sources and destinations.
+
+If a sidecar already names the input's digest, Import offers to reuse that
+object. Confirmation creates a new Item naming the existing path; it copies
+no files. The object is checked again when confirmation arrives. A missing
+or changed object is an error, and an unconfirmed offer writes nothing.
+
+Images use the existing converter, in memory until the digest lookup is done.
+Generated PDFs use `<chosen folder>/<PDF filename>`; retained originals use
+`<chosen folder>/<PDF stem>/<original filename>`, including internal inputs.
+The import form and API accept a PDF filename, defaulting to the first image's
+stem plus `.pdf`. Name conflicts are refused. Recorded files always keep their
+location and digest; existing imports are not moved.
+Reuse keeps the existing object's paths and archived originals.
+
+Copies use source digest verification and independent destination readback
+before publication. Temporary files stay beside the destination. A failed
+import removes only its own published files. `items/` continues to contain only sidecars.
+
+### Replacement and deletion in V4
+
+Replaces accepts a new Item of the same type and owner/country; it marks its
+predecessor superseded without moving either plain file. Deletion reads live
+sidecars to count references. It moves the sidecar and only objects with no
+remaining reference into a new trash folder. Revision deletion keeps other
+snapshots and restores HEAD when necessary. Changed content is refused before
+moves; failed writes reverse completed moves. No file bytes are deleted.
+
+### Other files in V5
+
+In-place imports accept regular files of any type, preserving bytes and the
+extension. PDF pages, text and search reject or skip non-PDF files. Browse uses
+macOS QuickLook thumbnails from the local cache and Show in Finder for any
+file. Other platforms and builds without cgo report thumbnail unavailability.
+Attachment changes and merge remain deferred.
+
+### Recorded paths in V1
+
+A revision names its PDF with `digest` and `path`; each retained original
+image also has a `path`. By-Item sidecars omit paths and keep their existing
+meaning. For example, a manually written `items/alice.dgs-item.yaml`:
+
+```yaml
+id: alice
+type: id_card
+kind: document
+fields: { owner: alice }
+revisions:
+  - digest: '<SHA-256 of Books/card.pdf>'
+    path: Books/card.pdf
+    added: '2026-10-07T00:00:00Z'
+```
+
+- Within one Item, every snapshot naming the same digest must name the same
+  path. Reads and writes reject conflicting paths. A field correction keeps
+  the PDF path and original-image paths on the new snapshot.
+- Paths use `/` and NFC Unicode normalization. Resolution accepts the actual
+  NFC or NFD filename on disk without renaming it; a normalized-name collision
+  is an error. Paths must be relative, nonempty and stay inside the root.
+- Paths cannot enter `_dgs/`. Resolved symlink targets
+  must also stay inside the root and outside these reserved locations.
+- A file missing from its recorded location stays missing; V1 does not search
+  or update its path. Preview and export report "file is not at its recorded
+  location" with the Item and recorded path. Export checks selected sources
+  before changing the target and uses verified copy before publication.
+- `check` checks referenced files. Unreferenced files are normal in an
+  in-place tree and are not reported as loose files or errors.
+
 ## Open
 
 - Where a PDF goes when a key its `path` needs is empty and not in brackets:
   refused at import, or a fallback such as the import date, as Box places a
   scan with no event date.
+
+### Independent Outline format and file sizes
+
+At init, `--layout=in-place` selects recorded paths; omitting it selects by
+Item. `--outlines=paths|folders` selects Doc 1 rules or folder skeletons independently,
+with paths as the default. The page's Initialize form offers both settings. The
+marker omits default choices, preserving the original marker bytes.
+
+Revisions and retained originals may record `size` in bytes beside `digest`.
+Imports write it; field corrections preserve it; recording changed content
+writes its new size. Moved-file lookup hashes only matching-size candidates.
+Old sidecars without a size retain the complete-search fallback.
