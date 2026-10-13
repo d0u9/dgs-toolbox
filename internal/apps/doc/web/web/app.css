@@ -48,6 +48,8 @@ body { display: flex; flex-direction: column; }
   background: none; border: 0; border-bottom: 1px solid var(--hairline); line-height: 24px;
 }
 .template-choice:last-child { border-bottom: 0; }
+.template-group { flex: none; padding: 6px 10px 2px; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite); text-transform: uppercase; letter-spacing: 0.04em; }
+.template-group ~ .template-choice { padding-left: 24px; }
 .template-choice:hover { background: var(--hover); }
 .template-choice.selected { background: var(--selected); }
 .template-choice.selected::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 0 2px 2px 0; background: var(--primary); }
@@ -62,6 +64,8 @@ body { display: flex; flex-direction: column; }
   font-size: 10px; color: var(--primary); background: var(--primary-soft, #c9e0fc);
 }
 .into-choices { max-height: 146px; }
+#into-filter { margin: 4px 0; width: 100%; }
+#into-filter[hidden], .into-choice[hidden] { display: none; }
 #new-revision-field { margin-top: var(--space-xxs); }
 .form-field .checks label { display: inline-flex; flex-direction: row; gap: 6px; white-space: nowrap; }
 .form-field .checks input[type="checkbox"], .side.editor .form-field .checks input[type="checkbox"] { width: auto; margin: 0; flex: none; }
@@ -191,6 +195,8 @@ body { display: flex; flex-direction: column; }
 .action.quiet { color: var(--error); background: var(--paper); border: 1px solid var(--error); }
 .problem { margin: var(--space-xs) 14px; padding: var(--space-xs) 12px; border-radius: var(--radius-md); background: var(--primary-soft); }
 .problem ul { margin: 4px 0 0; padding-left: 18px; }
+.outside { margin: var(--space-xs) 14px; color: var(--graphite); }
+.outside ul { margin: 4px 0 0; padding-left: 18px; }
 .message.ok { margin: var(--space-xs) 14px; color: var(--charcoal); }
 textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-xs) 14px 0; resize: vertical; box-sizing: border-box; }
 .form-field select.suggested { background: var(--primary-soft); }
@@ -254,7 +260,7 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .filter > span { font-weight: 600; white-space: nowrap; }
 .filter-x { margin-left: -4px; padding: 0 4px; color: var(--graphite); }
 .filter-search { width: 16em; flex: 0 1 16em; min-width: 8em; }
-#filter-add, #filter-frequent, .filter-result, .filter-view { flex: none; white-space: nowrap; }
+#filter-add, #filter-quick, #filter-frequent, .filter-result, .filter-view { flex: none; white-space: nowrap; }
 /* The steps taken, as chips in one row; too many scroll sideways. */
 .filter-steps { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 10em; overflow-x: auto; scrollbar-width: thin; }
 .filter-steps:empty { display: none; }
@@ -689,6 +695,8 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .segmented .chip:focus-visible { outline: 2px solid var(--primary-soft, #c9e0fc); outline-offset: 1px; }
 .segmented .icon-chip { display: inline-flex; align-items: center; justify-content: center; width: 30px; padding: 0; }
 .segmented .icon-chip svg { display: block; }
+/* Quick filters read as words, in the page font, not the key font. */
+#filter-quick .chip { font-family: inherit; font-size: var(--font-size-sm); }
 
 .detail-picture.without-pdf { flex: none; height: auto !important; min-height: 0; }
 .detail-picture.without-pdf .detail-frame { display: none; }
@@ -993,6 +1001,11 @@ body.list-shut .outline-list { display: none; }
 .template-tree .template-meta { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
 .template-tree .template-sub { grid-column: auto; white-space: nowrap; }
 .template-tree .ft-name { font-family: var(--font-mono); font-weight: 600; }
+/* The title and path wrap together before the description and actions. */
+.template-edit > .template-bar { flex-wrap: wrap; }
+.template-edit .template-title { flex: 1 1 100%; flex-wrap: wrap; }
+.template-edit .template-title h2 { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.template-edit .file-chip { max-width: 100%; box-sizing: border-box; }
 .template-description { margin: 0; font-size: var(--font-size-xs); flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .template-bar .file-chip { flex: none; }
 .cond-bubble .cond-more { min-width: 2ch; max-width: 2ch; color: var(--graphite); text-align: center; }
@@ -1096,8 +1109,11 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
    that opens the table chooseItem draws, for lists too long to read in a box. */
 .item-finder { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
 .item-finder > .combo { flex: 1; }
+.item-type { flex: none; max-width: 40%; }
+.item-type[hidden] { display: none; }
 .item-browse { flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; }
 .item-browse svg { width: 15px; height: 15px; }
+.item-browse[hidden] { display: none; }
 
 /* The table of Items: a filter, the types as buttons, and rows that scroll
    while the buttons stay in place. The picked row is the blue one. */
@@ -1120,5 +1136,68 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .item-dialog-id { font-family: var(--font-mono); color: var(--steel); }
 .item-dialog-count { margin-right: auto; color: var(--steel); font-size: var(--font-size-xs); }
 
-/* An Item choice ends in its ID: wrap it rather than cut it. */
-.combo-menu li { white-space: normal; overflow-wrap: anywhere; padding-block: 4px; }
+/* Folder-based Rules and Outlines use the same form and file-tree rows. */
+.skeleton-form .vf-stack { align-items: stretch; }
+details.folder-form { display: block; }
+details.folder-form > :not(summary) { margin-top: 10px; }
+.folder-form { display: flex; flex-direction: column; gap: 10px; padding: 10px 0; border-top: 1px solid var(--hairline); }
+.folder-heading { cursor: pointer; font-size: var(--font-size-xs); font-weight: 600; color: var(--graphite); }
+details.folder-form:not([open]) > :not(summary) { display: none; }
+.outline-tree .file-tree .ft-name { min-width: 0; }
+.outline-tree .file-tree .ft-row.ft-file > .ft-extras { flex: none; overflow: visible; align-items: center; gap: 4px; }
+.outline-tree .file-tree .ft-extras .ft-reveal { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; }
+.outline-number { display: flex; flex: none; align-items: center; font-size: var(--font-size-xs); color: var(--graphite); }
+.outline-number .vf-label { display: none; }
+.outline-number input { width: 5em; min-width: 0; height: 24px; padding: 0 4px; font-size: var(--font-size-xs); text-align: center; }
+
+/* Compact rule editor: each nested folder continues its parent guide line. */
+.rule-folders { font-size: var(--font-size-xs); gap: 4px; }
+.rule-folders .folder-form { padding: 4px 0; }
+.rule-folders .folder-form > :not(summary) { margin-top: 4px; }
+.folder-branch { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--hairline-strong); }
+.folder-branch > .rule-folders { margin-top: 6px; }
+.rule-folders .vf { grid-template-columns: 80px 1fr; gap: 6px; min-height: 24px; }
+.rule-folders .vf-label { font-size: inherit; }
+.rule-folders input, .rule-folders select, .rule-folders .button { font-size: inherit; min-height: 24px; height: 24px; padding: 0 6px; }
+.rule-folders .folder-heading { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; list-style: none; }
+.rule-folders .folder-heading::-webkit-details-marker { display: none; }
+.rule-folders .folder-heading::before { content: "▸"; flex: none; width: 16px; text-align: center; }
+.rule-folders details[open] > .folder-heading::before { content: "▾"; }
+.rule-folders .folder-name { flex: 1; min-width: 0; font-weight: 600; border-color: transparent; background: transparent; box-shadow: none; }
+.rule-folders .folder-name:hover, .rule-folders .folder-name:focus { border-color: var(--hairline-strong); background: var(--paper); }
+.folder-actions { display: flex; flex: none; align-items: center; gap: 4px; font-weight: normal; }
+
+.folder-fields { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.folder-fields > .vf-stack { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 24px; }
+.folder-fields > .vf-stack > .vf { grid-template-columns: max-content minmax(100px, 140px); gap: 8px; }
+.folder-fields > .vf-stack select { width: 100%; }
+
+/* A time field: the time and its zone side by side, never wrapped. */
+.time-zone { display: flex; gap: 8px; align-items: center; }
+.time-zone > * { flex: 1 1 0; min-width: 0; width: auto; }
+
+.time-clock {
+  display: flex; align-items: center; gap: 4px;
+  box-sizing: border-box; height: var(--control-height); padding: 0 var(--control-pad-x);
+  border: 1px solid var(--hairline-strong); border-radius: var(--radius-md);
+  background: var(--paper); font-size: var(--font-size-sm);
+}
+.time-clock:focus-within { outline: 2px solid var(--primary); outline-offset: 1px; }
+.form-field .time-clock input[type="number"] {
+  flex: none; width: 3ch; min-width: 0; height: 100%; padding: 0;
+  border: 0; border-radius: 0; background: transparent; outline: none;
+  text-align: center; font-variant-numeric: tabular-nums; appearance: textfield;
+}
+.time-clock input::-webkit-inner-spin-button, .time-clock input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+
+.time-zone > select { flex: 0 1 14ch; }
+
+#file-check-report { width: min(1100px, 94vw); max-width: 94vw; max-height: 88vh; box-sizing: border-box; }
+#file-check-report[open] { display: flex; flex-direction: column; gap: var(--space-xs); }
+#file-check-report h3, #file-check-summary, #file-check-report .dialog-buttons { margin: 0; flex: none; }
+.file-check-list { min-height: 0; overflow: auto; }
+.file-check-list .list-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.file-check-candidate { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xxs); }
+.file-check-candidate + .file-check-candidate { margin-top: var(--space-xs); }
+.detail-path { margin: 4px 8px 0; font-size: var(--font-size-xs); color: var(--graphite); overflow-wrap: anywhere; user-select: text; }
+.detail-path[hidden] { display: none; }

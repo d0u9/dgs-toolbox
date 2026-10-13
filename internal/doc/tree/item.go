@@ -29,7 +29,13 @@ type Revision struct {
 	Type   string `yaml:"type,omitempty" json:"type,omitempty"`
 	ID     string `yaml:"id,omitempty" json:"id,omitempty"`
 	Digest string `yaml:"digest" json:"digest"`
-	Added  string `yaml:"added" json:"added"`
+	Size   *int64 `yaml:"size,omitempty" json:"size,omitempty"`
+	Path   string `yaml:"path,omitempty" json:"path,omitempty"`
+	Lost   bool   `yaml:"lost,omitempty" json:"lost,omitempty"`
+	// LossAccepted marks a lost file the owner chose to forget: checks stop
+	// reporting it unless its bytes turn up again.
+	LossAccepted bool   `yaml:"loss_accepted,omitempty" json:"loss_accepted,omitempty"`
+	Added        string `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
@@ -63,6 +69,7 @@ type Item struct {
 	// Frequent marks one of the few Items the owner opens often. Browse puts
 	// them first and can show them alone.
 	Frequent bool `yaml:"frequent,omitempty" json:"frequent,omitempty"`
+	Locked   bool `yaml:"locked,omitempty" json:"locked,omitempty"`
 	// Retired marks an Item no longer used — a card for a place or an
 	// organisation the owner has left — though it has not expired. Browse
 	// shows it faded and last; exports are not affected. RetiredReason is
@@ -206,6 +213,9 @@ func (st *Store) readItem(path string) (*Item, error) {
 	if item.ID == "" || st.Sidecar(item.ID) != path {
 		return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
 	}
+	if err := st.ValidateItemPaths(&item); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	// A sidecar from before revisions were told from snapshots is read by
 	// its history; that is written the next time the sidecar is.
 	item.settlePapers()
@@ -216,6 +226,12 @@ func (st *Store) readItem(path string) (*Item, error) {
 // so a reader sees the old sidecar or the new one and never half of either.
 func (st *Store) WriteItem(item Item) error {
 	item.Revisions = slices.Clone(item.Revisions)
+	for i := range item.Revisions {
+		item.Revisions[i].Originals = slices.Clone(item.Revisions[i].Originals)
+	}
+	if err := st.ValidateItemPaths(&item); err != nil {
+		return err
+	}
 	item.settlePapers()
 	data, err := yaml.Marshal(item)
 	if err != nil {

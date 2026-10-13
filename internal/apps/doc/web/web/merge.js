@@ -134,6 +134,7 @@ const back = history.state || {};
 loadState().then(async (s) => {
   state = s;
   frame(state);
+  if (!state.capabilities.merge) { $("open").disabled = true; $("merge").disabled = true; say($("message"), "Merge is not supported in in-place trees yet."); return; }
   if (!back.merge || !back.merge.dir) return draw();
   await planFor(back.merge.dir);
   if (plan) for (const c of plan.conflicts) if (back.merge.choices[c.id]) choices[c.id] = back.merge.choices[c.id];

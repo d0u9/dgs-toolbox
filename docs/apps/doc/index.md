@@ -26,8 +26,8 @@ browser's history entry for the page, beside what its address already holds.
 
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
-[`../../web.md`](../../web.md) before changing either. The parts, in order, are
-in [`roadmap.md`](roadmap.md).
+[`../../web.md`](../../web.md) before changing either. Open decisions are recorded in
+[Doc 2.0](v2.md#deferred).
 
 The questions the page asks while a form is filled in are answered from a
 local cache of the tree, kept as [`cache.md`](cache.md) says.
@@ -103,7 +103,8 @@ drawn as the shared tag pills, on one line cut at the column's edge. A field's d
 Along the top, in one row whatever is chosen, are search (fields, tags and
 the text on the page; a field linking to another Item matches by that Item's
 name too, so a plate finds every document about the car), the filter steps,
-a **+ Filter** chip, a **★ Frequent** chip that shows only the frequent
+a **+ Filter** chip, **Owner**, **Country**, **Type**, **Issuer** and **About** chips that open
+the dialog at that field's values, a **★ Frequent** chip that shows only the frequent
 Items, the count, and the layout and sort. Filtering is walked into one step
 after another, as Values lists a field's values: + Filter opens a large dialog over the
 page, the steps so far and how many Items they leave at its top, and two
@@ -125,8 +126,9 @@ step offers only what the Items left hold. Clicking a bubble goes back to that
 step: the steps after it are taken away and its key is offered again. Its ×
 takes only that step away. Bubbles that do not fit scroll sideways; the row
 never wraps. The steps are kept when the page is left and come Back. The
-Items sort by date added, expiry, name or type; frequent Items always come first
-and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
+Items sort by date added, expiry, name or type; in the default date-added
+order frequent Items come first and retired ones last; any other sort is by its
+column alone. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
 its middle. A card's name wraps to a second line before it is cut short.
 Picking one opens a detail panel beside the cards. At its top,
@@ -205,10 +207,24 @@ already refer to them.
 The same owner and country are not enough to infer replacement. The owner
 may need to keep multiple visas in use, so importing a visa never retires
 another automatically. **Replaces** is an explicit, optional choice,
-defaulting to none, on both PDF imports and creation without a PDF. Candidates
-are in-use visas for the same owner and country. The detail panel also lets
-the reader apply the relationship after both Items already exist. This
-feature currently applies to the `visa` type.
+defaulting to none, on both PDF imports and creation without a PDF. The
+detail panel also lets the reader apply the relationship after both Items
+already exist. An in-place tree offers it for every type, an Item replacing
+one of its own type; another tree only for `visa`.
+
+Candidates are in-use Items of the same type that share the fields the
+Template's `replaces` names:
+
+```yaml
+type: visa
+replaces: [owner, country]
+```
+
+Each named field must be given on both and equal; a country field compares
+countries however written (AU, 澳大利亚). A Template without `replaces`
+uses `[owner, country]` for `visa`, as before Templates could say, and
+`[owner]` for any other type, so a licence can replace one from another
+country. A child adds fields to its parent's `replaces`, never drops one.
 
 For example, when visa B replaces visa A:
 
@@ -264,7 +280,9 @@ to the Log filtered to it.
 Expiry is the end of HEAD's `date` when it is a span, read by the server
 (`internal/doc/expiry`): **expired** after that day, **expires soon** within
 [`doc.expiring_within_days`](../../configuration/doc.md) days (90 by default), **valid**, **no end date** for a span
-left open at its end, and nothing for a one-day date or none.
+left open at its end, and nothing for a one-day date or none. A Template
+whose `date` is the issue day keeps the expiry in its own `expires` field
+instead; when that has a value it is read in place of `date`'s end.
 
 ### Deleting
 
@@ -306,7 +324,8 @@ a Template Items use cannot be deleted.
 3. Picking a PDF previews it; the form beside it takes a Template and its
    fields. The Templates are a list, one line each with the type and its
    description, the suggested one marked; past six a filter narrows it, and
-   the chosen one always stays in view. Into shows existing Items of that type as cards, alongside New item;
+   selection stays within its results. With no match, import is disabled.
+   Into shows existing Items of that type as cards, alongside New item;
    choosing an existing Item asks only for its revision fields, while New item
    asks for the distinguishing fields. After
    an import the next PDF not yet imported is picked.
@@ -556,10 +575,10 @@ and the fields it asks for. Adding a PDF means picking a Template and answering
 only what it asks. Nothing is filed automatically: the page may suggest a
 Template (see [Suggesting a type](#suggesting-a-type)), and the owner picks.
 
-Every document has a type, an owner and a country. A Template must list
-`owner` and `country` (of type `country`) as `required` fields, for records
-as for documents; a Template without them is refused when it is loaded or
-saved.
+Every document has a type and an owner. A Template must list `owner` as a
+`required` field, for records as for documents; a Template without it is
+refused when it is loaded or saved. `country` is optional; where a Template
+has it, it is of type `country`.
 
 A field has a `type`, which checks its value and chooses the control the page
 shows for it:
@@ -569,6 +588,15 @@ shows for it:
   date the text holds (see [Dates in the text](#dates-in-the-text)).
 - `month` — `YYYY-MM`, entered with a month control. An expiry month remains
   valid through its last day.
+- `time` — a time of day and the IANA time zone it was read in, kept as
+  `15:30 Asia/Shanghai` or `15:30:05 Asia/Shanghai`. The page enters it with a
+  24-hour hour/minute/second numeric inputs and a zone list: the field's `options`, which must be IANA
+  zones, else the browser's own zone. Unique city names omit the region in
+  the displayed choices; repeated city names retain the full path. Saved values
+  always retain the full IANA zone. For a time without a saved zone, country
+  China defaults to Shanghai and Australia to Sydney. Changing country updates
+  this automatic default until a zone is chosen manually; saved zones stay intact.
+  Other countries retain the offered default. A full-width colon is taken as a colon.
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
   page picks it from the Items. A rule's layout may use the linked Item's
@@ -628,13 +656,32 @@ one; a rule places a tenancy's leases, bills and receipts with
 tells the kinds apart with `about.type`. A document is about one anchor; a
 date two anchors' spans hold, such as a tenancy's and a car's, suggests
 both and leaves the choice.
-- `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
+- `country` — `options` may give a fixed list: the page then picks from
+  them as from a select, as cards up to six, with no free input. Without
+  `options`, the page suggests countries already used in the tree and any
+  other can be typed. A country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
   `zh` (`中国`, the default), `en` (`China`), `alpha2` (`CN`) or `alpha3`
   (`CHN`). A name dgs does not know is refused. Two documents whose country
   is written differently, `AU` in an older sidecar and `澳大利亚` now, are
   the same document. The table is ISO 3166-1, in `internal/doc/country`.
+
+A field may carry `when`, naming other fields of the form and the values
+for which it is asked:
+
+```yaml
+- key: category
+  required: true
+  when: {form: [发票, 收据, 小票]}
+```
+
+The field is asked for only while every named field holds one of its listed
+values; a multiple field holds one when any of its values is listed. The page
+hides it otherwise, and saving drops its value and does not require it, so a
+receipt's `回执` needs no category. The page shows it just
+below the field its `when` names first. A child Template may add `when` to an
+inherited field that has none.
 
 A field of a document may be `per_revision: true`: Import asks for it again
 when recording a renewal. Every snapshot stores all fields, including the
@@ -647,7 +694,9 @@ On Browse, picking a revision shows its fields; saving edits creates a new
 snapshot of that revision. Everything else — the page's list, a rule's `if` — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
-names the document, so it cannot be per_revision, and a record has one issue,
+names the document, so it cannot be per_revision; it may be optional, and
+then empty is a value of its own, so a clean copy and an annotated one are two
+documents. A record has one issue,
 so its fields cannot be either. A value a sidecar keeps at the Item for a key
 made per_revision later stands for every revision without its own, until that
 revision's fields are saved.
@@ -1437,7 +1486,11 @@ ImageIO/ColorSync with cgo; other builds clearly refuse unsupported inputs.
 Existing Photo Encode limits still apply (including refusing HDR HEIC).
 
 **Keep original images in the doc tree** defaults to `doc.keep_original`
-(`true`). It also archives each input's bytes as
+(`true`). In an in-place tree, name the generated PDF in **PDF filename**;
+it goes directly in the chosen folder, and retained images keep their filenames
+in a sibling directory named after the PDF without `.pdf`. Existing output
+files or image directories are refused. Conversion stays in memory until
+publication; existing imports are not relocated. In a by-Item tree, it archives each input's bytes as
 `<source-sha256>.<extension>` beside the PDF. Turning it off stores only the
 PDF. In both cases the source folder is untouched; the converted PDF is
 written in a hidden `.dgs-import-*` folder under `items/`, on the tree's own
@@ -1597,13 +1650,21 @@ fields:
 
 The file is named after its `type`. `description` is a short explanation shown
 on the Import card and in the Templates list; older Templates may omit it.
+A Template marked `single: true` has Items that never take a second revision,
+such as a used ticket: Import offers no Item to add the PDF to, a revision of
+one is refused, and a PDF whose distinguishing fields match an Item already
+filed is told apart by those fields instead. It is not inherited.
 A `select` field lists its allowed values under `options`. With `multiple: true` it
 holds several, kept in the options' order joined by `, ` (`电, 水`), each
-toggled on the page; its options may not hold a comma. A rule writes the
+toggled on the page; its options may not hold a comma. A text field with
+`multiple: true` holds several values the same way, in the order typed
+(`alice, bob`), each a bubble on the page as tags are, with its options and
+saved values offered. A rule writes the
 joined value, and a condition asks for one of them with `is` (`service is
 水`). A text field with `suggest: true` offers, as it is typed,
-the values Items of the same type have saved for it, in any country and
-revision, retired Items among them; any other value can still be typed.
+the values Items of the same type hold for it now, in any country,
+retired Items among them; values only earlier revisions hold are history and
+are not offered. Any other value can still be typed.
 Its `options`, when it lists any, are offered first, before the values
 saved: `{key: driver, suggest: true, options: [alice, bob]}` offers alice
 and bob from the start and still takes carol. A field's `description` says

@@ -36,7 +36,10 @@ const (
 // names them; an Outline written before rules were shared holds them itself,
 // which Load still reads and Migrate splits.
 type Outline struct {
-	Name string `yaml:"name" json:"name"`
+	Defaults view.Defaults       `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Mount    []Assembly          `yaml:"mount,omitempty" json:"mount"`
+	Pins     map[string]view.Pin `yaml:"pins,omitempty" json:"pins,omitempty"`
+	Name     string              `yaml:"name" json:"name"`
 	// About says what it is for: "read on the phone".
 	About string `yaml:"about,omitempty" json:"about,omitempty"`
 	// Folder is where it is exported unless another is chosen then. A
@@ -72,6 +75,9 @@ var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Validate reports the first thing wrong with o.
 func (o Outline) Validate() error {
+	if o.Mount != nil {
+		return o.validateSkeleton()
+	}
 	if !namePattern.MatchString(o.Name) {
 		return fmt.Errorf("outline %q: use lowercase letters, digits, _ and -", o.Name)
 	}
@@ -181,6 +187,9 @@ func decodeStrict(n *yaml.Node, out any) error {
 // withHead fills what a rule file may leave out, and names its orders as
 // they are named now.
 func withHead(r view.View) view.View {
+	if r.Folders != nil {
+		return r
+	}
 	if r.Selection == "" {
 		r.Selection = view.Head
 	}
@@ -208,12 +217,45 @@ func LoadRules(st *tree.Store) (map[string]view.View, error) {
 }
 
 func ruleKind() tree.DefinitionKind[view.View] {
-	return tree.DefinitionKind[view.View]{Dir: RulesDir, Name: func(r view.View) string { return r.Name }, Validate: func(_ *tree.Store, r view.View) error { return r.Validate() }, Decode: func(_ *tree.Store, data []byte) (view.View, error) {
+	return tree.DefinitionKind[view.View]{Dir: RulesDir, Name: func(r view.View) string { return r.Name }, Validate: func(st *tree.Store, r view.View) error {
+		if (st.OutlineVersion() == 2) != (r.Folders != nil) {
+			return fmt.Errorf("rule format does not match the tree Outline version")
+		}
+		return r.Validate()
+	}, Encode: func(r view.View) ([]byte, error) {
+		if r.Folders != nil {
+			return yaml.Marshal(struct {
+				Name     string        `yaml:"name"`
+				Folders  []view.Folder `yaml:"folders"`
+				Defaults view.Defaults `yaml:"defaults,omitempty"`
+			}{r.Name, r.Folders, r.Defaults})
+		}
+		return yaml.Marshal(r)
+	}, Decode: func(store *tree.Store, data []byte) (view.View, error) {
+		if store.OutlineVersion() == 2 {
+			var raw struct {
+				Name     string        `yaml:"name"`
+				Folders  []view.Folder `yaml:"folders"`
+				Defaults view.Defaults `yaml:"defaults,omitempty"`
+			}
+			d := yaml.NewDecoder(strings.NewReader(string(data)))
+			d.KnownFields(true)
+			if err := d.Decode(&raw); err != nil {
+				return view.View{}, err
+			}
+			if raw.Folders == nil {
+				return view.View{}, fmt.Errorf("doc 2 rule needs folders; doc 1 rules are not read here")
+			}
+			return view.View{Name: raw.Name, Folders: raw.Folders, Defaults: raw.Defaults}, nil
+		}
 		var r view.View
 		d := yaml.NewDecoder(strings.NewReader(string(data)))
 		d.KnownFields(true)
 		if err := d.Decode(&r); err != nil {
 			return r, err
+		}
+		if r.Folders != nil {
+			return r, fmt.Errorf("folder skeleton rules require outlines: folders")
 		}
 		return withHead(r), nil
 	}}
@@ -265,7 +307,7 @@ func load(st *tree.Store) ([]Outline, map[string]bool, error) {
 	}
 	whole := map[string]bool{}
 	out, err := tree.ListDefinitions(st, tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ *tree.Store, data []byte) (Outline, error) {
-		o, inline, err := parse(data, rules)
+		o, inline, err := parseFor(st, data, rules)
 		whole[o.Name] = inline
 		return o, err
 	}})
@@ -282,7 +324,7 @@ func ReadFile(st *tree.Store, path string, rules map[string]view.View) (Outline,
 func readFile(st *tree.Store, path string, rules map[string]view.View) (Outline, bool, error) {
 	var inline bool
 	k := tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ *tree.Store, data []byte) (Outline, error) {
-		o, whole, err := parse(data, rules)
+		o, whole, err := parseFor(st, data, rules)
 		inline = whole
 		return o, err
 	}}
@@ -296,6 +338,17 @@ func readFile(st *tree.Store, path string, rules map[string]view.View) (Outline,
 // another Outline, is moved to the trash after. Each file is written through a
 // temporary file and a rename.
 func Save(st *tree.Store, previous string, o Outline, now time.Time) error {
+	if st.OutlineVersion() == 2 {
+		return saveSkeleton(st, previous, o, now)
+	}
+	if o.Mount != nil {
+		return fmt.Errorf("folder skeleton Outlines require outlines: folders")
+	}
+	for _, r := range o.Rules {
+		if r.Folders != nil {
+			return fmt.Errorf("folder skeleton rules require outlines: folders")
+		}
+	}
 	for i := range o.Rules {
 		o.Rules[i] = withHead(o.Rules[i])
 	}
@@ -342,6 +395,9 @@ func Fresh(st *tree.Store, names []string) error {
 // must not replace a rule; with previous another name, that rule is
 // renamed first, in every Outline naming it.
 func SaveRule(st *tree.Store, previous string, r view.View, now time.Time) error {
+	if (st.OutlineVersion() == 2) != (r.Folders != nil) {
+		return fmt.Errorf("rule format does not match the tree Outline version")
+	}
 	r = withHead(r)
 	if err := r.Validate(); err != nil {
 		return errors.New(strings.Replace(err.Error(), "view ", "rule ", 1))
@@ -395,6 +451,12 @@ func RenameRule(st *tree.Store, from string, to string, now time.Time) error {
 		for i := range o.Rules {
 			if o.Rules[i].Name == from {
 				o.Rules[i].Name, uses = to, true
+			}
+		}
+		for i := range o.Mount {
+			if o.Mount[i].Rule == from {
+				o.Mount[i].Rule = to
+				uses = true
 			}
 		}
 		if uses {
@@ -466,8 +528,9 @@ type Node struct {
 // in the Outline.
 type Grouping struct {
 	view.Combined
-	Lost []snapshot.Lost `json:"lost"`
-	Root *Node           `json:"root"`
+	Lost     []snapshot.Lost `json:"lost"`
+	Root     *Node           `json:"root"`
+	Unplaced []string        `json:"unplaced,omitempty"`
 }
 
 // Complete reports whether nothing stops the tree being exported.
@@ -478,6 +541,12 @@ func (g Grouping) Complete() bool { return g.Combined.Complete() && len(g.Lost) 
 // with its name, as a rule's are with the rule's. Folders and files sort by
 // name, which keeps numbered ones in their order.
 func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types) (Grouping, error) {
+	return GroupAt(o, snapshots, items, names, time.Now())
+}
+func GroupAt(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types, now time.Time) (Grouping, error) {
+	if o.Mount != nil {
+		return groupSkeleton(o, snapshots, items, names, now)
+	}
 	fixed, lost, err := Mounted(o, snapshots, items)
 	if err != nil {
 		return Grouping{}, err
@@ -499,6 +568,47 @@ func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names vi
 // each rule, planned with its Snapshots as Group plans them, and by each
 // Snapshot holding it.
 func Explain(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types, id string) ([]view.Explanation, error) {
+	return ExplainAt(o, snapshots, items, names, id, time.Now())
+}
+func ExplainAt(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types, id string, now time.Time) ([]view.Explanation, error) {
+	if o.Mount != nil {
+		g, err := GroupAt(o, snapshots, items, names, now)
+		if err != nil {
+			return nil, err
+		}
+		var out []view.Explanation
+		for _, f := range g.Files {
+			if f.Item == id {
+				out = append(out, view.Explanation{Rule: f.View, Item: id, Digest: f.Digest, Revision: f.Revision, Result: view.Placed, Path: f.Path, Layout: f.Node})
+			}
+		}
+
+		for name, plan := range g.Plans {
+			for _, m := range plan.Missing {
+				if m.Item == id {
+					out = append(out, view.Explanation{Rule: name, Item: id, Digest: m.Digest, Revision: m.Revision, Result: view.Lacking, Lacking: m.Keys})
+				}
+			}
+			for _, c := range plan.Clashes {
+				for _, f := range c.Files {
+					if f.Item == id {
+						out = append(out, view.Explanation{Rule: name, Item: id, Digest: f.Digest, Revision: f.Revision, Result: view.Clashing, Path: c.Path, Clash: c.Files})
+					}
+				}
+			}
+		}
+		for _, c := range g.Clashes {
+			for _, f := range c.Files {
+				if f.Item == id {
+					out = append(out, view.Explanation{Rule: f.View, Item: id, Digest: f.Digest, Revision: f.Revision, Result: view.Clashing, Path: c.Path, Clash: c.Files})
+				}
+			}
+		}
+		if len(out) == 0 {
+			out = append(out, view.Explanation{Item: id, Result: view.NotSelected})
+		}
+		return out, nil
+	}
 	fixed, _, err := Mounted(o, snapshots, items)
 	if err != nil {
 		return nil, err
@@ -550,6 +660,11 @@ func find(n *Node, p string) *Node {
 func SnapshotUsers(outlines []Outline) map[string][]string {
 	used := map[string][]string{}
 	for _, o := range outlines {
+		for _, m := range o.Mount {
+			if m.Snapshot != "" {
+				used[m.Snapshot] = append(used[m.Snapshot], o.Name)
+			}
+		}
 		for _, m := range o.Snapshots {
 			used[m.Name] = append(used[m.Name], o.Name)
 		}
@@ -586,6 +701,12 @@ func RenameSnapshot(st *tree.Store, from string, to string, now time.Time) error
 		for i := range o.Snapshots {
 			if o.Snapshots[i].Name == from {
 				o.Snapshots[i].Name, uses = to, true
+			}
+		}
+		for i := range o.Mount {
+			if o.Mount[i].Snapshot == from {
+				o.Mount[i].Snapshot = to
+				uses = true
 			}
 		}
 		if uses {

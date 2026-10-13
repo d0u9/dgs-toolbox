@@ -18,7 +18,7 @@ const ChangeMarkName = "dgs-doctree.changed"
 
 // ReadChangeMark is the token in root's change mark; none yet is "".
 func (st *Store) ReadChangeMark() (string, error) {
-	data, err := os.ReadFile(filepath.Join(st.root, ChangeMarkName))
+	data, err := os.ReadFile(st.changeMarkPath())
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
@@ -36,7 +36,7 @@ func (st *Store) WriteChangeMark() (string, error) {
 		return "", err
 	}
 	token := hex.EncodeToString(b[:])
-	return token, WriteFileAtomic(filepath.Join(st.root, ChangeMarkName), []byte(token+"\n"))
+	return token, WriteFileAtomic(st.changeMarkPath(), []byte(token+"\n"))
 }
 
 // LoadItem reads the Item id's sidecar; none there is nil and no error.
@@ -78,4 +78,12 @@ func cloneSlice[T any](s []T) []T {
 		return nil
 	}
 	return append(make([]T, 0, len(s)), s...)
+}
+
+// changeMarkPath is MetaDir/changed in an in-place tree, else ChangeMarkName.
+func (st *Store) changeMarkPath() string {
+	if st.meta != st.root {
+		return filepath.Join(st.meta, "changed")
+	}
+	return filepath.Join(st.root, ChangeMarkName)
 }

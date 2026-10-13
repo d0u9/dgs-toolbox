@@ -69,7 +69,7 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 func TestCountryField(t *testing.T) {
 	tpl := Template{Type: "passport", Kind: KindDocument, Fields: []Field{
 		{Key: "owner", Required: true, Distinguishing: true},
-		{Key: "country", Type: FieldCountry, Format: "alpha3", Required: true, Distinguishing: true},
+		{Key: "country", Type: FieldCountry, Format: "alpha3", Required: true, Distinguishing: true, Options: []string{"cn", "aus"}},
 	}}
 	if err := tpl.Validate(); err != nil {
 		t.Fatal(err)
@@ -78,6 +78,12 @@ func TestCountryField(t *testing.T) {
 		got, err := CleanFields(tpl, map[string]string{"owner": "emma", "country": typed})
 		if err != nil || got["country"] != "CHN" {
 			t.Errorf("%q: %v %v", typed, got, err)
+		}
+	}
+	for typed, want := range map[string]string{"aus": "AUS", "us": "USA"} {
+		got, err := CleanFields(tpl, map[string]string{"owner": "emma", "country": typed})
+		if err != nil || got["country"] != want {
+			t.Errorf("manual country %q: %v %v", typed, got, err)
 		}
 	}
 	if _, err := CleanFields(tpl, map[string]string{"owner": "emma", "country": "Atlantis"}); err == nil {

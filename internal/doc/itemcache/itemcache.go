@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the cache file's format. A file of any other is rebuilt.
-const Version = 3
+const Version = 6
 
 // Cache is one tree's Items. Its methods are safe to call at once; a
 // rebuild and a write never overlap, so a write is never lost to a rebuild
@@ -167,6 +167,11 @@ func (c *Cache) readFile(token string) {
 	var kept onDisk
 	if json.Unmarshal(data, &kept) != nil || kept.Version != Version || kept.Root != c.root || kept.Token != token {
 		return
+	}
+	for i := range kept.Items {
+		if err := c.store.ValidateItemPaths(&kept.Items[i]); err != nil {
+			return
+		}
 	}
 	c.items, c.token, c.loaded = kept.Items, kept.Token, true
 }

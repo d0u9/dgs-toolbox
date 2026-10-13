@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"dgs-toolbox/internal/doc/tree"
 	"encoding/json"
 	"io"
 	"log"
@@ -17,13 +18,14 @@ import (
 // cache cannot name and reads them all again.
 var (
 	readOnly = map[string]bool{
+		"/api/init":  true,
 		"/api/links": true, "/api/items/reload": true, "/api/ahead": true, "/api/reveal": true, "/api/read-all": true,
 		"/api/outlines/group": true, "/api/snapshots/names": true,
 		"/api/export/plan": true, "/api/merge/plan": true, "/api/cases/export/plan": true,
 	}
 	oneItem = map[string]bool{
 		"/api/revisions": true, "/api/head": true, "/api/revisions/delete": true, "/api/fields": true,
-		"/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
+		"/api/files/confirm": true, "/api/files/accept-loss": true, "/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
 	}
 	notItems = map[string]bool{
 		"/api/rules/layout": true, "/api/rules/if": true, "/api/snapshots/take": true,
@@ -53,6 +55,22 @@ func (s server) followWrites(next http.Handler) http.Handler {
 			switch {
 			case notItems[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/api/defs/"):
 				err = s.items.Marked()
+			case r.URL.Path == "/api/import":
+				var saved struct {
+					Item tree.Item `json:"item"`
+				}
+				var request struct {
+					Replaces string `json:"replaces"`
+				}
+				if json.Unmarshal(answer.Body.Bytes(), &saved) == nil && saved.Item.ID != "" && json.Unmarshal(body, &request) == nil {
+					ids := []string{saved.Item.ID}
+					if request.Replaces != "" {
+						ids = append(ids, request.Replaces)
+					}
+					err = s.items.Wrote(ids...)
+				} else {
+					err = s.items.Wrote()
+				}
 			case oneItem[r.URL.Path] && json.Unmarshal(body, &named) == nil && named.Item != "":
 				err = s.items.Wrote(named.Item)
 			default:

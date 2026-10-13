@@ -140,9 +140,17 @@ export function tagPills(tags, wrap = false) {
   return el("span", { className: "tag-pills" + (wrap ? " wrap" : "") }, ...tags.map((tag) => el("span", { className: "tag-pill", title: tag }, tag)));
 }
 
+// nameKeys is a Template's distinguishing keys, and name always, in the order
+// every name reads: who, what it is called, its kind, the rest, and when last,
+// whatever order the Template lists them in.
+const NAME_FIRST = ["owner", "name", "category", "form"];
+const NAME_LAST = ["fy", "date", "from", "to"];
+const nameRank = (k) => NAME_FIRST.includes(k) ? NAME_FIRST.indexOf(k) - NAME_FIRST.length : NAME_LAST.includes(k) ? 1 + NAME_LAST.indexOf(k) : 0;
+export const nameKeys = (t, also = []) => [...new Set(["name", ...also, ...t.fields.filter((f) => f.distinguishing).map((f) => f.key)])].sort((a, b) => nameRank(a) - nameRank(b));
+
 export function label(state, item) {
   const t = templateOf(state, item.type);
-  const keys = t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : Object.keys(item.fields);
+  const keys = t ? nameKeys(t) : Object.keys(item.fields);
   const parts = keys.map((k) => item.fields[k]).filter(Boolean);
   return item.type + (parts.length ? " · " + parts.join(" · ") : "");
 }
@@ -222,12 +230,14 @@ export function chooseItem(state, items, suggested = [], current = "") {
 
 // fieldHead is a field's name, marked when required. A field whose Template
 // describes it has a ? beside its name: hovering it shows the description,
-// clicking it shows it under the name until clicked again.
+// clicking it shows it under the name until clicked again. The ? is a span,
+// not a button: a label activates its first labelable control, so a button
+// would take every click on the field's blank space from its input.
 function fieldHead(field) {
   const name = el("span", { className: "field-name" }, field.key, field.required ? el("span", { className: "req" }, " *") : null);
   if (!field.description) return [name];
   const note = el("span", { className: "field-help", hidden: true }, field.description);
-  const toggle = el("button", { type: "button", className: "field-help-toggle", title: field.description, textContent: "?" });
+  const toggle = el("span", { role: "button", className: "field-help-toggle", title: field.description, textContent: "?" });
   toggle.setAttribute("aria-label", "About " + field.key);
   toggle.setAttribute("aria-expanded", "false");
   toggle.onclick = (event) => {
@@ -247,7 +257,10 @@ const tall = (text) => /[\u3400-\u9fff]|^[A-Z0-9 ]+$/.test(text) ? " tall" : "";
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
-export function inputFor(field, value, placeholder, state, self, type) {
+export function inputFor(field, value, placeholder, state, self, type, country = "") {
+  // CARD_OPTIONS is the most preset options shown as clickable cards;
+  // more make a list.
+  const CARD_OPTIONS = 6;
   const common = { name: field.key, className: "field-input" };
   let control;
   if (field.key === "issuer" && (!field.type || field.type === "text")) {
@@ -282,6 +295,28 @@ export function inputFor(field, value, placeholder, state, self, type) {
       refresh();
     });
     return wrapper;
+  } else if (field.multiple && (!field.type || field.type === "text") && globalThis.tagField) {
+    // Several values, each a bubble; kept joined by ", " as a multiple
+    // select keeps its own.
+    control = el("input", { ...common, type: "hidden", value });
+    const typ = type || state?.items?.find((item) => item.id === self)?.type || "";
+    let names = [...(field.options || [])];
+    if (typ) fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })))
+      .then((response) => response.ok ? response.json() : []).then((values) => { names = [...new Set([...names, ...values])]; }).catch(() => {});
+    const host = el("div", { className: "form-control" });
+    const bubbles = globalThis.tagField(host, {
+      known: () => names.map((name) => ({ name, count: 0 })),
+      count: () => "", fresh: "new",
+      normalize: (text) => String(text).trim(),
+      placeholder: placeholder || "",
+      onChange: (list) => {
+        control.value = list.join(", ");
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+    });
+    bubbles.set(String(value || "").split(",").map((part) => part.trim()).filter(Boolean));
+    return el("div", { className: "form-field" }, ...fieldHead(field), control, host);
   } else if (field.suggest && (!field.type || field.type === "text")) {
     control = el("input", { ...common, type: "text", value, placeholder: placeholder || "",
       autocomplete: "off", spellcheck: false });
@@ -306,20 +341,31 @@ export function inputFor(field, value, placeholder, state, self, type) {
     // to tell apart Items whose names are alike. pickItem holds the Item picked.
     const pickItem = { value: id || "" };
     const pickRevision = el("select", { hidden: !withRevision });
+    // go opens the linked Item in a new tab, leaving this form as it is.
+    const go = el("a", { className: "button item-browse", target: "_blank", title: "Open this Item", hidden: true });
+    go.innerHTML = iconSvg("square-arrow-out-up-right");
+    // pickType keeps one type first, so a long list of anchors is chosen
+    // in two steps; it shows only when the Items offered differ in type.
+    const pickType = el("select", { className: "item-type", hidden: true });
+    pickType.onchange = () => { if (pickItem.value && all.find((i) => i.id === pickItem.value)?.type !== pickType.value && pickType.value) choose(""); };
     const search = el("input", { type: "text", className: "item-search", autocomplete: "off", spellcheck: false, placeholder: "Type to find an Item…" });
     const shown = () => {
       const item = all.find((i) => i.id === pickItem.value);
       search.value = item ? label(state, item) : pickItem.value;
+      go.hidden = !item;
+      // A revision field opens the revision it names, not HEAD.
+      if (item) go.href = api("/browse/" + (withRevision && pickRevision.value ? "?digest=" + encodeURIComponent(pickRevision.value) : "")) + "#" + item.id;
     };
     // Suggested Items first; each choice ends in its ID, so two alike stay apart.
-    const offered = () => [...items.filter((i) => suggested.includes(i.id)), ...items.filter((i) => !suggested.includes(i.id))];
+    const typed = () => items.filter((i) => !pickType.value || i.type === pickType.value);
+    const offered = () => { const t = typed(); return [...t.filter((i) => suggested.includes(i.id)), ...t.filter((i) => !suggested.includes(i.id))]; };
     let texts = new Map();
     const choices = () => {
       texts = new Map(offered().map((i) => [label(state, i) + (suggested.includes(i.id) ? " · suggested" : "") + " — " + i.id,
         [label(state, i), ...Object.values(i.fields || {}), i.id].join(" ")]));
       return [...texts.keys()];
     };
-    const choose = (next) => { chosen = true; pickItem.value = next; shown(); fill(""); set(); };
+    const choose = (next) => { chosen = true; pickItem.value = next; fill(""); shown(); set(); };
     search.addEventListener("change", () => {
       const typed = search.value.trim();
       const next = typed.split(" — ").pop().trim();
@@ -336,6 +382,11 @@ export function inputFor(field, value, placeholder, state, self, type) {
       search.focus();
     };
     const draw = (want) => {
+      const types = [...new Set(items.map((i) => i.type))].sort();
+      const wantType = all.find((i) => i.id === pickItem.value)?.type || (types.includes(pickType.value) ? pickType.value : "");
+      pickType.replaceChildren(el("option", { value: "" }, "Any type"), ...types.map((t) => el("option", { value: t }, t)));
+      pickType.value = wantType;
+      pickType.hidden = types.length < 2;
       if (pickItem.value && !items.some((i) => i.id === pickItem.value) && want) pickItem.value = "";
       search.placeholder = want && !items.length ? "(no Item matches)" : "Type to find an Item…";
       if (document.activeElement !== search) shown();
@@ -369,7 +420,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
       const before = pickItem.value;
       draw(true);
       if (!chosen && !pickItem.value && suggested.length === 1) pickItem.value = suggested[0];
-      if (pickItem.value !== before) { shown(); fill(""); set(); }
+      if (pickItem.value !== before) { fill(""); shown(); set(); }
     };
     const fill = (keep) => {
       const item = items.find((i) => i.id === pickItem.value) || all.find((i) => i.id === pickItem.value);
@@ -386,11 +437,12 @@ export function inputFor(field, value, placeholder, state, self, type) {
       control.value = !pickItem.value ? "" : !withRevision ? pickItem.value : pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    pickRevision.onchange = set;
-    const finder = el("div", { className: "item-finder" }, suggest(search, choices, { arrow: true, search: (c) => texts.get(c) || c }), browse);
+    pickRevision.onchange = () => { set(); shown(); };
+    const finder = el("div", { className: "item-finder" }, pickType, suggest(search, choices, { arrow: true, search: (c) => texts.get(c) || c }), browse, go);
     const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), finder, pickRevision, control);
     draw(false);
     fill(ref);
+    shown();
     queueMicrotask(() => {
       if (!wrapper.isConnected || !(field.match || field.within)) return;
       narrow();
@@ -434,15 +486,16 @@ export function inputFor(field, value, placeholder, state, self, type) {
     });
     cards.append(...buttons);
     return el("div", { className: "form-field" }, ...fieldHead(field), control, cards);
-  } else if (field.type === "select") {
+  } else if (field.type === "select" || (field.type === "country" && field.options?.length)) {
+    // A country field given options is picked from them, as a select is.
     const choices = field.options.map((o) => [o, o]);
-    const empty = placeholder && field.type === "select" ? "(" + placeholder + ")" : "";
+    const empty = placeholder ? "(" + placeholder + ")" : "";
     control = el("select", common, el("option", { value: "" }, empty),
       ...choices.map(([v, text]) => el("option", { value: v, selected: v === value }, text)));
     if (value && !choices.some(([v]) => v === value)) {
       control.append(el("option", { value, selected: true }, value));
     }
-    if (field.type === "select" && choices.length > 0 && choices.length <= 5 && (!value || choices.some(([v]) => v === value))) {
+    if (choices.length > 0 && choices.length <= CARD_OPTIONS && (!value || choices.some(([v]) => v === value))) {
       control.hidden = true;
       const cards = el("div", { className: "field-choice-cards", role: "group" });
       cards.setAttribute("aria-label", field.key);
@@ -469,6 +522,83 @@ export function inputFor(field, value, placeholder, state, self, type) {
         ...fieldHead(field),
         control, cards);
     }
+  } else if (field.type === "time") {
+    // Explicit clock parts keep 24-hour display independent of system locale.
+    control = el("input", { ...common, type: "hidden", value });
+    const [clock, zone] = String(value || "").split(" ");
+    const [hour = "", minute = clock ? "00" : "", second = clock ? "00" : ""] = (clock || "").split(":");
+    const part = (label, max, value) => el("input", {
+      type: "number", min: 0, max, step: 1, value, placeholder: "--",
+      inputMode: "numeric", ariaLabel: field.key + " " + label,
+      onfocus: (event) => event.target.select(),
+      onblur: (event) => {
+        if (event.target.value && event.target.validity.valid) event.target.value = event.target.value.padStart(2, "0");
+      },
+    });
+    const hours = part("hour (24-hour)", 23, hour);
+    const minutes = part("minute", 59, minute);
+    const seconds = part("second", 59, second);
+    const at = el("div", { className: "time-clock", role: "group", ariaLabel: field.key + " time (24-hour)" }, hours, ":", minutes, ":", seconds);
+    const countryZone = (nation) => {
+      const code = String(nation || "").trim().toLowerCase();
+      if (["cn", "chn", "china", "中国"].includes(code)) return "Asia/Shanghai";
+      if (["au", "aus", "australia", "澳大利亚", "澳洲"].includes(code)) return "Australia/Sydney";
+      return "";
+    };
+    const defaultZone = countryZone(country);
+    const zones = field.options?.length ? field.options : [Intl.DateTimeFormat().resolvedOptions().timeZone];
+    const offered = [...new Set([...(zone ? [zone] : []), ...(defaultZone ? [defaultZone] : []), ...zones])];
+    const city = (z) => z.split("/").at(-1).replaceAll("_", " ");
+    const counts = new Map();
+    for (const z of offered) counts.set(city(z), (counts.get(city(z)) || 0) + 1);
+    const where = el("select", { ariaLabel: field.key + " time zone" }, ...offered.map((z) =>
+      el("option", { value: z, title: z }, counts.get(city(z)) === 1 ? city(z) : z)));
+    where.title = zone || defaultZone || offered[0] || "";
+    where.value = where.title;
+    let automatic = !zone;
+    const set = () => {
+      where.title = where.value;
+      const padded = (input) => (input.value || "0").padStart(2, "0");
+      control.value = hours.value ? `${padded(hours)}:${padded(minutes)}:${padded(seconds)} ${where.value}` : "";
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const parts = [hours, minutes, seconds];
+    for (const [index, part] of parts.entries()) {
+      part.oninput = (event) => {
+        const typed = part.value;
+        if (typed) {
+          part.value = String(Math.max(0, Math.min(Number(part.max), Math.trunc(Number(typed)))));
+          for (const other of parts) if (!other.value) other.value = "00";
+        }
+        set();
+        if (event?.inputType === "insertText" && typed &&
+            (typed.length >= 2 || Number(typed) * 10 > Number(part.max))) {
+          parts[index + 1]?.focus();
+          parts[index + 1]?.select();
+        }
+      };
+    }
+    where.onchange = () => { automatic = false; set(); };
+    const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), control,
+      el("div", { className: "time-zone" }, at, where));
+    queueMicrotask(() => {
+      if (!wrapper.isConnected) return;
+      const scope = wrapper.parentElement;
+      const update = () => {
+        if (!automatic || !wrapper.isConnected) return;
+        const next = countryZone(scope.querySelector('[name="country"]')?.value);
+        if (!next || next === where.value) return;
+        if (![...where.options].some((option) => option.value === next)) {
+          where.append(el("option", { value: next, title: next }, city(next)));
+        }
+        where.value = next;
+        set();
+      };
+      scope.addEventListener("input", (event) => { if (event.target.name === "country") update(); });
+      update();
+    });
+    return wrapper;
   } else if (field.type === "date" && (field.shape || []).includes("span")) {
     // A span is start/end, kept in one hidden value; an end left empty is
     // open, or, where the field also takes one day, makes it that day.
@@ -495,7 +625,6 @@ export function inputFor(field, value, placeholder, state, self, type) {
     if (field.type === "month") control.max = "9999-12";
     if (field.type === "country") {
       control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
-      // The countries Items already have are offered; any other can be typed.
       return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => countriesOf(state), { arrow: true }));
     }
   }
@@ -515,8 +644,37 @@ function picked(input) {
 
 // fieldInputs is the controls for fields, each with its value and its
 // placeholder by key: what every panel that edits an Item's fields shows.
-export const fieldInputs = (fields, values, placeholders, state, self, type) =>
-  fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type));
+// A field whose when does not hold for the values on the form is hidden,
+// and is shown just below the field its when names first, in the order
+// the Template gives.
+export function fieldInputs(fields, values, placeholders, state, self, type) {
+  const dependent = (f) => Object.keys(f.when || {}).find((key) => fields.some((g) => g.key === key));
+  const placed = fields.filter((f) => !dependent(f));
+  for (const f of fields.filter(dependent).reverse()) {
+    const at = placed.findIndex((g) => g.key === dependent(f));
+    // ponytail: a when naming another dependent field goes last; nest when chains appear.
+    if (at < 0) placed.push(f); else placed.splice(at + 1, 0, f);
+  }
+  fields = placed;
+  const nodes = fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type, values?.country || placeholders?.country || ""));
+  const conditional = fields.map((f, i) => [f, nodes[i]]).filter(([f]) => f.when);
+  if (conditional.length) queueMicrotask(() => {
+    const scope = nodes[0].closest("form") || nodes[0].parentElement;
+    if (!scope) return;
+    const sync = () => {
+      for (const [f, node] of conditional) {
+        node.hidden = !Object.entries(f.when).every(([key, allowed]) => {
+          const value = scope.querySelector(`[name="${key}"]`)?.value || "";
+          return value.split(",").some((v) => allowed.includes(v.trim()));
+        });
+      }
+    };
+    scope.addEventListener("input", sync);
+    scope.addEventListener("change", sync);
+    sync();
+  });
+  return nodes;
+}
 
 // countriesOf is every value a country field of the tree's Items holds,
 // once each, sorted.
@@ -570,6 +728,14 @@ export function tagUses(items) {
 
 // The top bar and the banner every page has.
 export function frame(state) {
+  if (!state.tree && $("banner") && !$("init-form")) {
+    const storage=el("select",{id:"init-layout"},el("option",{value:"",textContent:"By Item"}),el("option",{value:"in-place",textContent:"In place"}));
+    const outlines=el("select",{id:"init-outlines"},el("option",{value:"1",textContent:"Doc 1 rules"}),el("option",{value:"2",textContent:"Folder skeletons"}));
+    const form=el("form",{id:"init-form"},el("label",{},"Storage ",storage),el("label",{}," Outlines ",outlines),el("button",{type:"submit",textContent:"Initialize tree"}),el("span",{id:"init-message"}));
+    form.onsubmit=async e=>{e.preventDefault();try{await post("/api/init",{layout:storage.value,outlines:Number(outlines.value)});location.reload();}catch(error){say($("init-message"),error.message,true);}};
+    $("banner").replaceChildren(el("strong",{},"Initialize this folder"),form);
+  }
+
   $("root").textContent = state.root || "";
   statusBar.setState(state.name ? "tree " + state.name : state.tree === false ? "not a tree" : "doc tree");
   const items = (state.items || []).length;
@@ -977,7 +1143,7 @@ export const eventTitles = {
   edit_tags: "Changed tags", edit_revision_tags: "Changed revision tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
   export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",
   retire: "Retired", unretire: "Back in use", edit_retired_reason: "Changed retired reason",
-  share: "Changed shared with",
+  share: "Changed shared with", set_locked: "Changed lock setting", file_changed: "Recorded changed file", confirm_file_path: "Confirmed file location",
 };
 
 // eventLines is one history event as a title and the lines under it. The

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	// Time zones are looked up in dgs itself, whatever the host has.
+	_ "time/tzdata"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,11 +59,13 @@ type Field struct {
 	// Type checks the value and picks the control the page shows. Empty is
 	// FieldText.
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
-	// Options are a FieldSelect's values; a text field that Suggests offers
+	// Options are a FieldSelect's values or a FieldCountry's suggestions;
+	// a text field that Suggests offers
 	// them first, before the values saved, and takes any other.
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
 	// Multiple lets a FieldSelect hold several Options, kept in the
-	// Options' order joined by MultipleSeparator: 电, 水.
+	// Options' order joined by MultipleSeparator: 电, 水. A text field
+	// holds several values the same way, in the order typed: alice, bob.
 	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
 	// Suggest offers, for a text field, its Options and then the values
 	// Items of this type have saved for it; any other value can still be
@@ -93,6 +97,25 @@ type Field struct {
 	// Names are a select field's values in other languages, for a layout's
 	// {key:en}: {en: {房租: rent}}. A value without one is written as kept.
 	Names map[string]map[string]string `yaml:"names,omitempty" json:"names,omitempty"`
+	// When asks for the field only while each named field of this form holds
+	// one of the listed values: {form: [发票, 收据]}. A multiple field holds
+	// one when any of its values is listed. Otherwise the page hides the
+	// field, and saving drops its value and does not require it.
+	When map[string][]string `yaml:"when,omitempty" json:"when,omitempty"`
+}
+
+// asked is whether f's When holds for fields: always, without one.
+func (f Field) asked(fields map[string]string) bool {
+	for key, allowed := range f.When {
+		held := false
+		for _, v := range strings.Split(fields[key], MultipleSeparator) {
+			held = held || slices.Contains(allowed, strings.TrimSpace(v))
+		}
+		if !held {
+			return false
+		}
+	}
+	return true
 }
 
 // ValueName is value in lang, as Names give it; value itself when they
@@ -166,6 +189,10 @@ const (
 	FieldDate FieldType = "date"
 	// FieldMonth is YYYY-MM.
 	FieldMonth FieldType = "month"
+	// FieldTime is a time of day and the IANA time zone it was read in:
+	// 15:30 Asia/Shanghai, or 15:30:05 Asia/Shanghai. Its Options, when
+	// given, are the zones offered.
+	FieldTime FieldType = "time"
 	// FieldSelect is one of the field's Options.
 	FieldSelect FieldType = "select"
 	// FieldItem is another Item's ID.
@@ -181,7 +208,9 @@ const (
 
 // Template is one type's fields and defaults.
 type Template struct {
-	Type string `yaml:"type" json:"type"`
+	// Locked is the initial lock setting for imports into in-place trees.
+	Locked bool   `yaml:"locked,omitempty" json:"locked,omitempty"`
+	Type   string `yaml:"type" json:"type"`
 	// Extends names the type this one inherits fields from.
 	Extends string `yaml:"extends,omitempty" json:"extends,omitempty"`
 	// Abstract types only pass fields down: no Item is of one.
@@ -190,7 +219,14 @@ type Template struct {
 	Kind        Kind   `yaml:"kind" json:"kind"`
 	// Anchor marks a Template other documents hang under: a tenancy, a
 	// vehicle. A link field with match {anchor: =true} offers its Items.
-	Anchor   bool              `yaml:"anchor,omitempty" json:"anchor,omitempty"`
+	Anchor bool `yaml:"anchor,omitempty" json:"anchor,omitempty"`
+	// Single marks a type whose Items never take a second revision: a used
+	// ticket is not reissued. Import offers no Item to add to.
+	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
+	// Replaces are the fields an Item of this type must share with the one
+	// it replaces: [owner, country] lets a visa replace only a visa of the
+	// same owner and country. Left out, it is ReplacesKeys' default.
+	Replaces []string          `yaml:"replaces,omitempty" json:"replaces,omitempty"`
 	Fields   []Field           `yaml:"fields" json:"fields"`
 	Defaults map[string]string `yaml:"defaults" json:"defaults"`
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
@@ -204,12 +240,24 @@ type Template struct {
 	Lineage []string `yaml:"-" json:"lineage,omitempty"`
 }
 
+// ReplacesKeys are t's Replaces. Naming none, a visa shares its owner and
+// country, as before Templates could say; any other type its owner.
+func (t Template) ReplacesKeys() []string {
+	if len(t.Replaces) > 0 {
+		return t.Replaces
+	}
+	if t.Type == "visa" {
+		return []string{"owner", "country"}
+	}
+	return []string{"owner"}
+}
+
 // NameLanguages are the languages a Template may name its type in.
 var NameLanguages = []string{"zh", "en"}
 
 // MandatoryKeys are the fields every Template requires besides its type: whose
-// document it is and which country issued it.
-var MandatoryKeys = []string{"owner", "country"}
+// document it is. A country, where a Template has one, is of type country.
+var MandatoryKeys = []string{"owner"}
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
@@ -290,8 +338,8 @@ func (t Template) Validate() error {
 		if f.Suggest && f.Type != "" && f.Type != FieldText {
 			return fmt.Errorf("type %s: key %s: suggest belongs to a text field", t.Type, f.Key)
 		}
-		if f.Multiple && f.Type != FieldSelect {
-			return fmt.Errorf("type %s: key %s: multiple belongs to a select field", t.Type, f.Key)
+		if f.Multiple && f.Type != FieldSelect && f.Type != "" && f.Type != FieldText {
+			return fmt.Errorf("type %s: key %s: multiple belongs to a select or text field", t.Type, f.Key)
 		}
 		if len(f.Shape) > 0 && f.Type != FieldDate {
 			return fmt.Errorf("type %s: key %s: shape belongs to a date field", t.Type, f.Key)
@@ -309,6 +357,14 @@ func (t Template) Validate() error {
 			groups[g.Name] = true
 			if len(g.Values) == 0 {
 				return fmt.Errorf("type %s: key %s: group %s holds no values", t.Type, f.Key, g.Name)
+			}
+		}
+		for key, allowed := range f.When {
+			if key == f.Key || !t.has(key) {
+				return fmt.Errorf("type %s: key %s: when %s is not another field of this Template", t.Type, f.Key, key)
+			}
+			if len(allowed) == 0 {
+				return fmt.Errorf("type %s: key %s: when %s lists no values", t.Type, f.Key, key)
 			}
 		}
 		if len(f.Names) > 0 && f.Type != FieldSelect {
@@ -330,11 +386,20 @@ func (t Template) Validate() error {
 		}
 		switch f.Type {
 		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
+			if f.Type == FieldCountry && len(f.Values) == 0 {
+				break // Country suggestions do not restrict manual input.
+			}
 			if f.Suggest && len(f.Values) == 0 {
 				break // a suggesting text field's options are offered first
 			}
 			if len(f.Options) > 0 || len(f.Values) > 0 {
 				return fmt.Errorf("type %s: key %s: options and values belong to a select field", t.Type, f.Key)
+			}
+		case FieldTime:
+			for _, zone := range f.Options {
+				if _, err := time.LoadLocation(zone); err != nil || zone == "" || zone == "Local" {
+					return fmt.Errorf("type %s: key %s: option %q is not an IANA time zone such as Asia/Shanghai", t.Type, f.Key, zone)
+				}
 			}
 		case FieldSelect:
 			if len(f.Options) == 0 {
@@ -346,7 +411,7 @@ func (t Template) Validate() error {
 				}
 			}
 		default:
-			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item, revision or country", t.Type, f.Key, f.Type)
+			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, time, select, item, revision or country", t.Type, f.Key, f.Type)
 		}
 		if f.PerRevision && t.Kind != KindDocument {
 			return fmt.Errorf("type %s: key %s: per_revision belongs to a document; a record has one PDF", t.Type, f.Key)
@@ -354,9 +419,8 @@ func (t Template) Validate() error {
 		if f.PerRevision && f.Distinguishing {
 			return fmt.Errorf("type %s: key %s names the document, so it cannot change per revision", t.Type, f.Key)
 		}
-		if f.Distinguishing && !f.Required {
-			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
-		}
+		// An optional distinguishing field counts empty as a value of its
+		// own: a clean copy and an annotated one are two documents.
 	}
 	for _, key := range MandatoryKeys {
 		if t.Abstract {
@@ -366,9 +430,9 @@ func (t Template) Validate() error {
 		if !ok || !f.Required {
 			return fmt.Errorf("type %s: every document has %s, so the Template needs each as a required field", t.Type, strings.Join(MandatoryKeys, " and "))
 		}
-		if key == "country" && f.Type != FieldCountry {
-			return fmt.Errorf("type %s: key country must be of type country", t.Type)
-		}
+	}
+	if f, ok := t.fieldOK("country"); ok && !t.Abstract && f.Type != FieldCountry {
+		return fmt.Errorf("type %s: key country must be of type country", t.Type)
 	}
 	for key, value := range t.Defaults {
 		if !seen[key] {
@@ -376,6 +440,11 @@ func (t Template) Validate() error {
 		}
 		if _, err := t.field(key).clean(value); err != nil {
 			return fmt.Errorf("type %s: default for %s: %w", t.Type, key, err)
+		}
+	}
+	for _, key := range t.Replaces {
+		if !seen[key] {
+			return fmt.Errorf("type %s: replaces %s, which is not a field", t.Type, key)
 		}
 	}
 	for _, d := range t.IgnoreDates {
@@ -536,6 +605,8 @@ func (f Field) clean(value string) (string, error) {
 		}
 	case FieldDate:
 		return f.cleanDate(value)
+	case FieldTime:
+		return f.cleanTime(value)
 	case FieldSelect:
 		if f.Multiple {
 			return f.cleanMultiple(value)
@@ -562,6 +633,26 @@ func (f Field) clean(value string) (string, error) {
 		return kept, nil
 	}
 	return value, nil
+}
+
+// cleanTime keeps a time field's value as HH:MM[:SS] Zone. A full-width
+// colon, as a Chinese keyboard types it, is taken as a colon.
+func (f Field) cleanTime(value string) (string, error) {
+	clock, zone, _ := strings.Cut(strings.TrimSpace(strings.ReplaceAll(value, "：", ":")), " ")
+	zone = strings.TrimSpace(zone)
+	parsed, err := time.Parse("15:04:05", clock)
+	layout := "15:04:05"
+	if err != nil {
+		parsed, err = time.Parse("15:04", clock)
+		layout = "15:04"
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s: %q is not a time written HH:MM or HH:MM:SS", f.Key, value)
+	}
+	if _, err := time.LoadLocation(zone); err != nil || zone == "" || zone == "Local" {
+		return "", fmt.Errorf("%s: %q needs its time zone, such as 15:30 Asia/Shanghai", f.Key, value)
+	}
+	return parsed.Format(layout) + " " + zone, nil
 }
 
 func (t Template) hasField(key string) bool {

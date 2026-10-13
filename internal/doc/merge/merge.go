@@ -38,7 +38,7 @@ type Source struct {
 
 // FromTree reads a tree to merge in.
 func FromTree(st *tree.Store) (Source, error) {
-	if err := st.Require(); err != nil {
+	if err := st.RequireFileWrites(); err != nil {
 		return Source{}, err
 	}
 	items, err := st.LoadItems()

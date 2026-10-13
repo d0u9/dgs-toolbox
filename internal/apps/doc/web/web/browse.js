@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/ui/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
+import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, nameKeys, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
 import { icon, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
@@ -36,12 +36,12 @@ const fieldOf = (key) => {
 };
 
 // tableKeys is the field columns of the list for the Items given, and what
-// Sort offers besides its own: the fields every Template requires, then,
+// Sort offers besides its own: name, the fields every Template requires, then,
 // when the Items are all of one type, that type's distinguishing keys in its
 // order. A key none of them has a value for is left out.
 function tableKeys(items) {
   const types = new Set(items.map((i) => i.type));
-  const keys = [...new Set([...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
+  const keys = [...new Set(["name", ...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
   return keys.filter((k) => items.some((i) => currentFields(i)[k]));
 }
 
@@ -96,8 +96,9 @@ function passes(i, n = steps.length) {
   return (!onlyFrequent() || i.frequent) &&
     steps.slice(0, n).every((s) => valuesOf(i, s.key).includes(s.value)) &&
     // A linked field matches by the linked Item's name too, so a plate finds
-    // every document about that car.
-    (textHits.has(i.id) || matches(label(state, i) + " " + Object.entries(fields).map(([k, v]) => v + " " + shown(i, k, v)).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
+    // every document about that car. The Item's ID and its revisions' IDs
+    // and PDF digests match too, as messages and logs name them.
+    (textHits.has(i.id) || matches(i.id + " " + i.revisions.map((r) => (r.id || "") + " " + (r.digest || "")).join(" ") + " " + label(state, i) + " " + Object.entries(fields).map(([k, v]) => v + " " + shown(i, k, v)).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
 }
 
 // facets is what the Items given can still be told apart by: each key with
@@ -230,6 +231,8 @@ function drawFacets() {
   valueTable.draw(values);
 }
 $("filter-add").onclick = () => openFacets();
+// The keys most often walked into open straight at their values.
+for (const b of $("filter-quick").querySelectorAll("[data-facet]")) b.onclick = () => openFacets(b.dataset.facet);
 $("facets-close").onclick = closeFacets;
 // A click on the backdrop, outside the dialog's box, closes it.
 $("facets").onclick = (event) => {
@@ -270,21 +273,28 @@ function setDirection(dir) {
   b.setAttribute("aria-label", b.title);
 }
 
+// Added is when the Item was first kept; Modified is its latest change of
+// any kind. A field edit keeps a new snapshot, so the latest revision's time
+// is neither.
+const addedAt = (i) => (i.revisions[0] || {}).added || (i.history || [])[0]?.at || "";
+const modifiedAt = (i) => (i.history || []).at(-1)?.at || addedAt(i);
+const day = (t) => t ? new Date(t).toLocaleDateString() : "";
+
 function shownItems() {
   const items = state.items.filter((i) => passes(i));
   const sort = $("view-sort").value, dir = direction() === "asc" ? 1 : -1;
-  const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
   const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
   const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
-    : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
+    : { added: addedAt, modified: modifiedAt, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
       tags: (i) => tagsAt(i, headOf(i)).join(" "),
-      revisions: (i) => papersOf(i).length }[sort] || added;
-  // Retired Items go last and frequent ones first, whatever the sort; the
-  // sort orders each part.
+      revisions: (i) => papersOf(i).length }[sort] || addedAt;
+  // In the default Added order, retired Items go last and frequent ones
+  // first; any other sort is by its column alone.
+  const grouped = sort === "added";
   return items.sort((x, y) => {
-    if (!!x.retired !== !!y.retired) return x.retired ? 1 : -1;
-    if (!!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
+    if (grouped && !!x.retired !== !!y.retired) return x.retired ? 1 : -1;
+    if (grouped && !!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
     const a = keyOf(x), b = keyOf(y);
     // No value sorts after any value, whichever way round.
     if ((sort === "expiry" || sort === "tags" || sort.startsWith("field:")) && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
@@ -315,9 +325,11 @@ function expiryBadge(item) {
   return text ? el("span", { className: "badge badge-" + e.state, title: e.date || "" }, text) : null;
 }
 
-const hasPDF = (item, ref) => !!item?.revisions.find((r) => (r.id || r.digest) === ref)?.digest;
+const fileOf=(item,ref)=>item?.revisions.find(r=>(r.id||r.digest)===ref);
+const hasFile=(item,ref)=>!!fileOf(item,ref)?.digest;
+const hasPDF = (item, ref) => hasFile(item,ref)&&(/\.pdf$/i.test(fileOf(item,ref)?.path||"file.pdf"));
 const headOf = (item) => item.head || ((item.revisions[item.revisions.length - 1] || {}).id || (item.revisions[item.revisions.length - 1] || {}).digest);
-const thumbURL = (item) => { const d = headOf(item); return api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
+const thumbURL = (item) => { const d = headOf(item); return api(`/${hasPDF(item,d)?"api/page":"api/thumbnail"}?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
 
 // thumb is the first page of HEAD, or the type's name where the PDF has no
 // picture of its page (one made on a computer).
@@ -328,7 +340,7 @@ function thumb(item) {
   const wrap = el("div", { className: "card-thumb-wrap" });
   const url = thumbURL(item);
   const none = () => { noPicture.add(url); wrap.classList.add("no-picture"); wrap.dataset.type = item.type; };
-  if (!hasPDF(item, headOf(item))) {
+  if (!hasFile(item, headOf(item))) {
     wrap.classList.add("no-picture"); wrap.dataset.type = "No PDF"; return wrap;
   }
   if (noPicture.has(url)) {
@@ -345,14 +357,14 @@ function thumb(item) {
 // The fields a card shows under its title: what is not already in the name.
 function details(item) {
   const t = templateOf(state, item.type);
-  const named = new Set(t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : []);
+  const named = new Set(t ? nameKeys(t) : []);
   return Object.entries(currentFields(item)).filter(([k]) => !named.has(k) && !["expires", "expiry", "expires_at", "expiry_date", "valid_until"].includes(k))
     .map(([k, v]) => k + ": " + shown(item, k, v)).join(" · ");
 }
 
 function card(item) {
   const t = templateOf(state, item.type);
-  const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
+  const named = t ? nameKeys(t).map((k) => currentFields(item)[k]).filter(Boolean) : [];
   const li = el("li", { className: "card state-" + expiryOf(item).state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     thumb(item), star(item),
     el("div", { className: "card-body" },
@@ -362,6 +374,7 @@ function card(item) {
       el("p", { className: "card-details", title: details(item) }, details(item)),
       textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
       el("p", { className: "card-badges" }, sharedBadge(item), retiredBadge(item), expiryBadge(item))));
+  li.dataset.item = item.id;
   if (selected && selected.id === item.id) li.classList.add("card-selected");
   return li;
 }
@@ -389,22 +402,27 @@ function star(item) {
 // tableColumns is every column the list may show. Item, the star and the
 // thumbnail are always there; the rest are chosen from the header's menu
 // (right click, or its +): type, any field the Items hold, tags, expiry,
-// added and revisions.
-const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added", "revisions"];
+// added, modified and revisions.
+const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added", "modified", "revisions"];
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
-  const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
   const fields = [...new Set([...(state.mandatory || []), ...items.flatMap((i) => Object.keys(currentFields(i)))])]
-    .sort((a, b) => a.localeCompare(b));
+    .filter((k) => k !== "name").sort((a, b) => a.localeCompare(b));
   return [
     { id: "thumb", text: "", fixed: true, width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
     { id: "frequent", text: "Frequent", icon: "star", tip: "Frequent", fixed: true, width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
     // The card's name without its type, which the Type column, or the type
-    // filter, already says.
-    { id: "name", text: "Item", fixed: true, width: 340, cell: (item) => {
-      const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
+    // filter, already says, and without name, which has its own column. Its
+    // kind, issuer and date are shown too, so an Item named by name alone is
+    // not left with only its owner.
+    { id: "name", text: "Item", fixed: true, width: 240, cell: (item) => {
+      const t = templateOf(state, item.type);
+      const name = (t ? nameKeys(t, ["category", "form", "issuer", "date"]) : []).filter((k) => k !== "name").map((k) => currentFields(item)[k]).filter(Boolean).join(" · ") || item.type;
       return el("td", { className: "table-name", title: label(state, item) }, name);
     } },
+    // Name stands beside Item, where the eye is, rather than among the fields.
+    { id: "field:name", text: "Name", about: fieldOf("name")?.description, fixed: true, width: 200,
+      cell: (item) => el("td", {}, currentFields(item).name || "") },
     { id: "type", text: "Type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
     ...fields.map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, width: k === "country" ? 90 : 130, group: "Fields",
       cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
@@ -413,7 +431,8 @@ function tableColumns(items) {
       cell: (item) => el("td", { className: "table-tags" }, tagPills(tagsAt(item, headOf(item)))) },
     { id: "expiry", text: "Expiry", width: 150,
       cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
-    { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
+    { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, day(addedAt(item))) },
+    { id: "modified", text: "Modified", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, day(modifiedAt(item))) },
     { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(papersOf(item).length)) },
   ];
 }
@@ -436,6 +455,7 @@ function row(item, cells) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     ...cells);
+  tr.dataset.item = item.id;
   if (selected && selected.id === item.id) tr.classList.add("selected", "focused");
   return tr;
 }
@@ -468,16 +488,21 @@ function drawPage() {
   const attached = hasPDF(item, digest);
   $("detail-picture").classList.toggle("without-pdf", !attached);
   $("picture-splitter").hidden = !attached;
-  $("detail-frame").hidden = !attached;
+  $("detail-frame").hidden = !hasFile(item,digest);
   $("page-prev").hidden = !attached;
   $("page-next").hidden = !attached;
   $("open-reader").hidden = !attached;
-  $("reveal-pdf").hidden = !attached;
-  $("detail-image").hidden = !attached;
+  $("reveal-pdf").hidden = !hasFile(item,digest);
+  // An in-place tree keeps each file where it is; its path, from the tree
+  // root, can be selected and copied.
+  $("detail-path").textContent = fileOf(item, digest)?.path || "";
+  $("detail-path").hidden = !fileOf(item, digest)?.path;
+  $("detail-image").hidden = !hasFile(item,digest);
   $("open-reader").disabled = !attached;
   if (!attached) {
-    frame.classList.add("no-picture"); frame.dataset.type = "No PDF";
-    $("page-label").textContent = "No attachment";
+    frame.classList.add("no-picture"); frame.dataset.type = hasFile(item,digest)?item.type:"No PDF";
+    if(hasFile(item,digest))$("detail-image").src=api("/api/thumbnail?"+new URLSearchParams({item:id,digest}));
+    $("page-label").textContent = hasFile(item,digest)?"This file has no PDF pages; show it in Finder.":"No attachment";
     $("page-prev").disabled = true; $("page-next").disabled = true;
     return;
   }
@@ -535,6 +560,7 @@ $("reader-back").onclick = closeReader;
 
 function render() {
   frame(state);
+  $("check-files").hidden = !state.capabilities.file_changes;
   drawSort(state.items.filter((i) => passes(i)));
   const items = shownItems();
   drawSteps();
@@ -619,6 +645,29 @@ function close() {
   render();
 }
 $("close").onclick = close;
+function navigateItems(event) {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+      event.target.closest('input, textarea, select, button, a, [contenteditable], dialog, #side, #preview, .context-menu') ||
+      document.body.classList.contains("reading")) return;
+  const delta = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }[event.key];
+  if (!delta) return;
+  const items = shownItems();
+  event.preventDefault();
+  if (!items.length) return;
+  const index = items.findIndex((item) => item.id === selected?.id);
+  const next = index < 0 ? (delta > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, index + delta));
+  if (items[next].id === selected?.id) return;
+  open(items[next]);
+  const pane = $("items-pane");
+  pane.focus({ preventScroll: true });
+  const row = [...pane.querySelectorAll("[data-item]")].find((node) => node.dataset.item === items[next].id);
+  if (!row) return;
+  const bounds = pane.getBoundingClientRect(), box = row.getBoundingClientRect();
+  if (box.top < bounds.top) pane.scrollTop += box.top - bounds.top;
+  else if (box.bottom > bounds.bottom) pane.scrollTop += box.bottom - bounds.bottom;
+}
+$("items-pane").tabIndex = 0;
+document.addEventListener("keydown", navigateItems);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.target.closest("input, textarea, select")) return;
   if (document.body.classList.contains("reading")) closeReader();
@@ -672,12 +721,18 @@ function detail(item) {
   drawRetired(item);
   drawShared(item);
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
+  $("locked").hidden = !state.capabilities.file_changes;
+  $("locked").setAttribute("aria-pressed", String(!!item.locked));
+  $("locked").classList.toggle("on", !!item.locked);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").classList.toggle("on", !!item.frequent);
+  $("delete-note").textContent = state.capabilities.shared_files ? "Moves this sidecar to trash; files stay while another Item references them." : "Moves this Item, with every revision’s PDF, into the tree’s trash folder.";
+  $("delete").disabled = false;
   $("attach-pdf").hidden = false;
-  $("attach-pdf").title = "Save the PDF with these fields: a correction, or a new revision when that is ticked";
+  $("attach-pdf").disabled = !state.capabilities.attachment_changes;
+  $("attach-pdf").title = !state.capabilities.attachment_changes ? "Attachment changes are not supported in in-place trees yet" : "Save the PDF with these fields: a correction, or a new revision when that is ticked";
   $("attach-pdf").textContent = hasPDF(item, selected.digest) ? "Replace PDF…" : "Attach PDF…";
-  $("new-without-pdf").hidden = item.kind !== "document";
+  $("new-without-pdf").hidden = !state.capabilities.without_file || item.kind !== "document";
   $("new-without-pdf").href = api("/import/?no_pdf=1&into=" + encodeURIComponent(item.id));
   const papers = papersOf(item);
   const paper = papers.findIndex((p) => p.some((r) => (r.id || r.digest) === selected.digest));
@@ -687,6 +742,7 @@ function detail(item) {
   // New revision is the owner's word, asked each time; a record has none.
   $("new-revision-field").hidden = item.kind !== "document";
   const chosen = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  if (chosen?.lost) $("detail-rev").textContent += " · file lost";
   // Saving an older revision's fields branches from it and moves HEAD there.
   const branching = selected.digest !== headOf(item);
   $("save-button").textContent = branching ? "Save as new HEAD" : "Save";
@@ -1066,7 +1122,10 @@ reload().then(() => {
   back = null;
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
-  if (wanted) pick(wanted.id, was && wanted.revisions.some((r) => (r.id || r.digest) === was.digest) ? was.digest : headOf(wanted));
+  if (wanted) {
+    const requested=new URLSearchParams(location.search).get("digest");
+    pick(wanted.id,requested&&wanted.revisions.some(r=>(r.id||r.digest)===requested)?requested:was&&wanted.revisions.some(r=>(r.id||r.digest)===was.digest)?was.digest:headOf(wanted));
+  }
   else render();
   // ?read opens the picked Item straight in the reader, as a link from
   // another page asks.
@@ -1109,13 +1168,13 @@ async function drawSupersession(item) {
   $("undo-supersession").hidden = !predecessorID;
   $("retire-form").hidden = !!item.superseded_by;
   $("supersession-form").hidden = true;
-  if (item.type !== "visa" || item.retired || previous) return;
+  if (!(state.capabilities.replacement_any_type || item.type === "visa") || item.retired || previous) return;
   try {
-    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({owner:item.fields.owner || "",country:item.fields.country || "",exclude:item.id})));
+    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({...item.fields,type:item.type,exclude:item.id})));
     const candidates = await response.json();
     if (request !== supersessionRequest || selected?.id !== item.id) return;
     if (!response.ok) throw new Error(candidates.error);
-    $("supersession-choice").replaceChildren(el("option", {value:""}, "Choose an existing visa…"), ...candidates.map((i) => el("option", {value:i.id}, [i.fields.visa_type, i.fields.number || i.id, i.fields.issued].filter(Boolean).join(" · "))));
+    $("supersession-choice").replaceChildren(el("option", {value:""}, "Choose one it replaces…"), ...candidates.map((i) => el("option", {value:i.id}, label(state, i))));
     $("supersession-form").hidden = !candidates.length;
   } catch (err) { if (request === supersessionRequest) say($("retire-message"),err.message,true); }
 }
@@ -1129,4 +1188,108 @@ $("undo-supersession").onclick = async () => {
   if (!predecessorID) return;
   try { await post("/api/supersession", {item:predecessorID}); await reload(); }
   catch (err) { say($("retire-message"),err.message,true); }
+};
+
+$("locked").onclick = async () => {
+  const item = selected && state.items.find((i) => i.id === selected.id);
+  if (!item) return;
+  try { await post("/api/items/meta", { item: item.id, locked: !item.locked }); await reload(); }
+  catch (e) { say($("edit-message"), e.message, true); }
+};
+
+let fileProblems = [];
+const fileCheckTable = listTable($("file-problems"), {
+  key: "dgs-doc-file-check-columns",
+  shown: ["item", "path", "detail", "candidates"],
+  columns: [
+    { id: "item", text: "Item", width: 220, cell: (p) => {
+      // A definition that fails names its Item only by its file name.
+      const id = p.item || (p.Path.match(/([0-9A-Z]{26})\.dgs-item\.yaml$/) || [])[1];
+      const item = state.items.find((i) => i.id === id);
+      return item ? label(state, item) : "—";
+    } },
+    { id: "path", text: "Recorded path", width: 280, cell: (p) => p.confirmed || p.Path },
+    { id: "detail", text: "Result", width: 240, cell: (p) => p.forgotten ? "Loss accepted" : p.confirmed ? "Recorded" : p.Detail },
+    { id: "candidates", text: "Found paths / Confirm", width: 260, sortable: false, cell: (p) => {
+      const cell = el("td", {});
+      if (p.confirmed || p.forgotten) return cell;
+      for (const path of p.candidates || []) {
+        const button = el("button", { className: "button secondary small-button", type: "button", textContent: "Use this path" });
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path });
+            p.confirmed = path;
+            fileCheckTable.draw(fileProblems);
+            drawFileCheckAll();
+            await reload();
+          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
+        };
+        cell.append(el("div", { className: "file-check-candidate" }, el("span", {}, path), button));
+      }
+      // A lost file found nowhere can be forgotten: the revision keeps its
+      // fields and digest, and checks stop reporting it.
+      if (p.lost && !p.candidates?.length) {
+        const button = el("button", { className: "button secondary small-button", type: "button", textContent: "Accept loss" });
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await post("/api/files/accept-loss", { item: p.item, digest: p.digest });
+            p.forgotten = true;
+            fileCheckTable.draw(fileProblems);
+            await reload();
+          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
+        };
+        cell.append(button);
+      }
+      return cell;
+    } },
+  ],
+  empty: "No files or definitions need attention.",
+});
+// Each Problem with exactly one found path is unambiguous; confirm those in
+// order and leave the rest for a choice.
+const singleMatches = () => fileProblems.filter((p) => !p.confirmed && !p.forgotten && p.candidates?.length === 1);
+const drawFileCheckAll = () => {
+  const n = singleMatches().length;
+  $("file-check-all").hidden = !n;
+  $("file-check-all").textContent = "Use all single matches (" + n + ")";
+};
+$("file-check-all").onclick = async () => {
+  $("file-check-all").disabled = true;
+  try {
+    for (const p of singleMatches()) {
+      await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path: p.candidates[0] });
+      p.confirmed = p.candidates[0];
+    }
+  } catch (e) { say($("file-check-summary"), e.message, true); }
+  finally {
+    $("file-check-all").disabled = false;
+    fileCheckTable.draw(fileProblems);
+    drawFileCheckAll();
+    await reload();
+  }
+};
+$("file-check-close").onclick = () => $("file-check-report").close();
+$("check-files").onclick = async () => {
+  $("check-files").disabled = true;
+  $("file-check-report").showModal();
+  fileProblems = [];
+  drawFileCheckAll();
+  $("file-problems").hidden = true;
+  say($("file-check-summary"), "Checking recorded files… Unlocked changes will be recorded as new revisions.");
+  try {
+    const result = await post("/api/files/check", {});
+    await reload();
+    const problems = result.report.Problems || [];
+    const recorded = result.recorded?.length || 0;
+    say($("file-check-summary"), "Checked " + result.report.Checked + " files in " + result.report.Items + " Items. "
+      + (recorded ? recorded + " changed files recorded as new revisions. " : "")
+      + (problems.length ? problems.length + " need attention." : "All files match."));
+    fileProblems = problems;
+    $("file-problems").hidden = !problems.length;
+    fileCheckTable.draw(fileProblems);
+    drawFileCheckAll();
+  } catch (e) { say($("file-check-summary"), e.message, true); }
+  finally { $("check-files").disabled = false; }
 };

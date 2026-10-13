@@ -25,6 +25,7 @@ func New() tui.App {
 			Usage:         "[<dir>]",
 			Description:   "Make a folder a doc tree, by writing its marker and an example Template.",
 			MaxArgs:       1,
+			Flags:         []tui.ActionFlag{{Name: "layout", Usage: "in-place to record files where they are; omitted uses by-Item"}, {Name: "outlines", Usage: "paths for Doc 1 rules (default); folders for folder skeletons"}},
 			RunWithConfig: initAction,
 		}, {
 			ID:          "verify",

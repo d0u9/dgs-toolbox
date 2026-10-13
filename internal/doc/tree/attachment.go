@@ -14,6 +14,7 @@ import (
 
 // CreateWithoutPDF creates an Item with a metadata-only first revision.
 func (st *Store) CreateWithoutPDF(request ImportRequest) (Item, error) {
+	// Only a sidecar is written, so an in-place tree takes it too.
 	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
@@ -54,6 +55,10 @@ func (st *Store) CreateWithoutPDF(request ImportRequest) (Item, error) {
 
 // AddWithoutPDF records a new issue without requiring a scan.
 func (st *Store) AddWithoutPDF(id string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
+	if template.Single {
+		return Item{}, ErrSingle
+	}
+	// Only a sidecar is written, so an in-place tree takes it too.
 	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
@@ -107,7 +112,7 @@ func (st *Store) AttachFile(ctx context.Context, id string, ref string, sources 
 // AttachFileAs is AttachFile; with newRevision the snapshot begins a
 // revision rather than correcting the one ref is in.
 func (st *Store) AttachFileAs(ctx context.Context, id string, ref string, sources []string, keepOriginal bool, newRevision bool, now time.Time) (Item, error) {
-	if err := st.Require(); err != nil {
+	if err := st.RequireFileWrites(); err != nil {
 		return Item{}, err
 	}
 	item, items, err := st.FindItem(id)
@@ -161,7 +166,7 @@ func (st *Store) AttachFileAs(ctx context.Context, id string, ref string, source
 		if actual != digest {
 			return Item{}, fmt.Errorf("stored PDF digest mismatch")
 		}
-		undo, err := input.archive(ctx, st, id, keepOriginal)
+		undo, err := input.archive(ctx, st, item, keepOriginal, nil)
 		if err != nil {
 			return Item{}, err
 		}
@@ -206,7 +211,7 @@ func (st *Store) AttachFileAs(ctx context.Context, id string, ref string, source
 	}
 	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, input.name, correcting(item, ref, newRevision), now)
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "attach_pdf", Digest: next, Changes: map[string][2]string{"pdf": {base.Digest, digest}}})
-	undoOriginal, err := input.archive(ctx, st, id, keepOriginal)
+	undoOriginal, err := input.archive(ctx, st, item, keepOriginal, nil)
 	if err != nil {
 		if copied {
 			os.Remove(destination)

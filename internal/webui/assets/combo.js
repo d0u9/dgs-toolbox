@@ -53,8 +53,7 @@ export function suggest(input, choices, { arrow = false, search = null } = {}) {
         onmousedown: (event) => { event.preventDefault(); pick(c); } }, ...mark(c, exact ? "" : q))));
     }
     const r = (input.closest(".combo") || input).getBoundingClientRect();
-    // Held inside the window: a list wider than the room right of the box
-    // moves left rather than running off the screen.
+    // Fit the choices, expanding beyond the box up to the window width.
     menu.style.minWidth = Math.min(r.width, innerWidth - 16) + "px";
     menu.style.left = "0px";
     menu.hidden = false;

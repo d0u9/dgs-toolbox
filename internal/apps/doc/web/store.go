@@ -25,7 +25,7 @@ func (s server) templates() ([]tree.Template, error) {
 func (s server) treeReady(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.treeError != nil {
-			local := r.URL.Path == "/api/state" || r.URL.Path == "/api/source" || r.URL.Path == "/api/source/file" || r.URL.Path == "/api/reveal" || r.URL.Path == "/api/ahead"
+			local := r.URL.Path == "/api/init" || r.URL.Path == "/api/state" || r.URL.Path == "/api/source" || r.URL.Path == "/api/source/file" || r.URL.Path == "/api/reveal" || r.URL.Path == "/api/ahead"
 			if (r.URL.Path == "/api/pages" || r.URL.Path == "/api/page" || r.URL.Path == "/api/text") && r.URL.Query().Get("item") == "" {
 				local = true
 			}
@@ -58,4 +58,24 @@ func (s server) apiWhenReady(cacheDir string) http.Handler {
 		opening.Unlock()
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func (s server) initialize(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Layout   string `json:"layout"`
+		Outlines int    `json:"outlines"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	if request.Outlines == 0 {
+		request.Outlines = 1
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	if err := tree.InitWithOptions(s.root, s.now(), request.Layout, request.Outlines); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -23,11 +23,29 @@ them only read, so the reading part can later be served on its own.
   includes the Item that was moved. Export and merge jobs retain their bulk
   result shapes; local cache actions retain their queue/OK answers.
 - `POST /api/items/meta` takes `{item, digest?, notes?, tags?, shared_with?,
-  retired?, reason?, frequent?, revision_tags?}`. Omitted fields are kept;
+  retired?, reason?, frequent?, locked?, revision_tags?}`. Omitted fields are kept;
   empty strings and arrays clear them, and explicit `false` is set.
   Revision tags require `digest`. All requested changes validate before one
   sidecar write, retaining the existing history events and domain checks.
   HEAD remains its own endpoint. The former per-property endpoints are removed.
+- In-place only: `POST /api/files/check` takes `{}` and answers
+  `{report, recorded}`. The report uses `Items`, `Checked`, `Bytes`, `Problems`;
+  each problem has `Kind`, `Path`, `Detail`, and file problems also carry
+  `item`, `digest`, `candidates?`, `actual?`, `locked?`, `lost?`, `accepted?`,
+  `original?`.
+  Missing content found elsewhere has kind `moved`; paths wait for confirmation.
+  Unlocked changed PDFs are recorded as revisions and their Item IDs are in
+  `recorded`. Per-file write failures remain in the report; successful writes
+  stand and the Item cache follows them.
+- In-place only: `POST /api/files/accept-loss` takes `{item, digest}` and
+  answers `{item}`. Every lost revision with that digest is marked
+  `loss_accepted`; it keeps its fields, digest and path, and checks report it
+  only when its bytes are found elsewhere. A digest with no lost revision is
+  rejected.
+- In-place only: `POST /api/files/confirm` takes
+  `{item, digest, previous, path}` and answers `{item}`. The sidecar's previous
+  path and candidate bytes are checked again before publication. Metadata
+  `locked` also requires an in-place tree.
 - Handlers use a `tree.Store` opened once per tree, with domain operations
   composed through it. Domain packages and the cache retain that same Store;
   there is no unchecked root-based fallback. Storage paths are owned by the Store; missing-marker
@@ -120,3 +138,27 @@ compute an answer without saving it.
 
 Every other endpoint changes the tree: imports, edits, revisions, HEAD,
 deletion, Templates, Outlines, rules, Snapshots, Cases, exports and merges.
+
+### Doc 2 in-place trees
+
+Imports and revision imports accept `folder` for verified copies. Generated
+PDFs also accept `pdf_name` (a filename ending in `.pdf`), defaulting to the
+first image stem plus `.pdf`. The PDF goes directly in `folder`; retained
+images keep their filenames under `<folder>/<PDF stem>/`. Existing PDFs or
+original-image folders and duplicate original filenames are refused. External ordinary revision files keep their
+names directly in `folder`, with conflicts refused; `suffix` instead names a
+copy beside the current file. Item and revision deletion count live references
+before moving
+objects to trash. Ordinary files import unchanged; PDF page/text endpoints
+reject other file types. `GET /api/thumbnail?item=…&digest=…` serves a cached
+native JPEG thumbnail, with a clear unsupported response outside macOS/cgo.
+Show in Finder uses the existing reveal endpoint.
+
+The existing rule and Outline definition endpoints use the Doc 2 `folders`,
+`defaults`, `mount` and `pins` format for trees with `outlines: folders`. Group returns
+empty folders, file numbers and `unplaced` Item IDs. Explain uses the same
+placement engine. Export plans include skeleton directories and retain each
+file's actual extension. Validity uses one date for the complete export plan.
+Trees with `outlines: paths` retain Doc 1 definition formats. `POST /api/init`
+accepts independent `layout` and `outlines` choices. `/api/state` returns
+`outlines` and operation `capabilities`, rather than a layout indicator.
