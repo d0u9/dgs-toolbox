@@ -12,7 +12,7 @@
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
 // explain(file) answers the server's explanations of how the Outline
 // places the file's Item, for Why here.
-import { $, el, keep, label, fieldsAt, tagsAt, tagPills, reveal, originalsList } from "/common.js";
+import { $, el, keep, label, itemNames, fieldsAt, tagsAt, tagPills, reveal, originalsList } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { find, findFile, resizable, whyText } from "/outlinetree.js";
 import { iconSvg } from "/ui/icons.js";
@@ -89,8 +89,7 @@ export function outlineView({ state, preview, onLeave, explain }) {
     const keys = [...order, ...Object.keys(fields).filter((k) => !order.includes(k))].filter((k) => fields[k]);
     const value = (k) => {
       const f = t && t.fields.find((x) => x.key === k);
-      const other = f && f.type === "item" && state().items.find((x) => x.id === fields[k]);
-      return other ? label(state(), other) : fields[k];
+      return f && f.type === "item" ? itemNames(state(), fields[k]) : fields[k];
     };
     const tags = i ? tagsAt(i, file.digest) : [];
     const when = added(i, file);
