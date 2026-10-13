@@ -65,7 +65,8 @@ type Field struct {
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
 	// Multiple lets a FieldSelect hold several Options, kept in the
 	// Options' order joined by MultipleSeparator: 电, 水. A text field
-	// holds several values the same way, in the order typed: alice, bob.
+	// holds several values the same way, in the order typed: alice, bob,
+	// and a FieldItem several Items' IDs: a ticket about two trips.
 	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
 	// Suggest offers, for a text field, its Options and then the values
 	// Items of this type have saved for it; any other value can still be
@@ -338,8 +339,8 @@ func (t Template) Validate() error {
 		if f.Suggest && f.Type != "" && f.Type != FieldText {
 			return fmt.Errorf("type %s: key %s: suggest belongs to a text field", t.Type, f.Key)
 		}
-		if f.Multiple && f.Type != FieldSelect && f.Type != "" && f.Type != FieldText {
-			return fmt.Errorf("type %s: key %s: multiple belongs to a select or text field", t.Type, f.Key)
+		if f.Multiple && f.Type != FieldSelect && f.Type != "" && f.Type != FieldText && f.Type != FieldItem {
+			return fmt.Errorf("type %s: key %s: multiple belongs to a select, text or item field", t.Type, f.Key)
 		}
 		if len(f.Shape) > 0 && f.Type != FieldDate {
 			return fmt.Errorf("type %s: key %s: shape belongs to a date field", t.Type, f.Key)
@@ -618,6 +619,20 @@ func (f Field) clean(value string) (string, error) {
 		}
 		return "", fmt.Errorf("%s: %q is not one of %s", f.Key, value, strings.Join(f.Options, ", "))
 	case FieldItem:
+		if f.Multiple {
+			var kept []string
+			for _, v := range strings.Split(value, ",") {
+				v = strings.TrimSpace(v)
+				if v == "" || slices.Contains(kept, v) {
+					continue
+				}
+				if !idPattern.MatchString(v) {
+					return "", fmt.Errorf("%s: %q is not an Item ID", f.Key, v)
+				}
+				kept = append(kept, v)
+			}
+			return strings.Join(kept, MultipleSeparator), nil
+		}
 		if !idPattern.MatchString(value) {
 			return "", fmt.Errorf("%s: %q is not an Item ID", f.Key, value)
 		}
@@ -662,6 +677,19 @@ func (t Template) hasField(key string) bool {
 		}
 	}
 	return false
+}
+
+// ItemLinks reads an item field's value as the Item IDs it names: one, or
+// several joined by MultipleSeparator. A value that is not wholly IDs
+// names none.
+func ItemLinks(value string) []string {
+	ids := strings.Split(value, MultipleSeparator)
+	for _, id := range ids {
+		if !idPattern.MatchString(id) {
+			return nil
+		}
+	}
+	return ids
 }
 
 // SplitRevisionLink reads a revision field's value, <item-id>@<revision>.

@@ -205,13 +205,26 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 // Follow adds, for each key whose value links to another Item — an Item ID,
 // or <item-id>@<revision> — that Item's keys under the key's name:
 // original.level is the level of the revision original names, and an Item
-// ID alone stands for its current revision. A link to an Item not in items
+// ID alone stands for its current revision; of several IDs, the first is
+// followed, as FollowAt can change. A link to an Item not in items
 // adds nothing, so a layout using it finds the key missing.
-func Follow(keys map[string]string, items map[string]tree.Item) {
+func Follow(keys map[string]string, items map[string]tree.Item) { FollowAt(keys, items, "") }
+
+// FollowAt is Follow, except that a key linking several Items, one of them
+// at, follows at: inside a folder made per anchor, a ticket about two trips
+// takes about.* from the trip whose folder it is in.
+func FollowAt(keys map[string]string, items map[string]tree.Item, at string) {
 	for key, value := range maps.Clone(keys) {
 		id, ref, ok := tree.SplitRevisionLink(value)
 		if !ok {
 			id, ref = value, ""
+			// Of several linked Items, the first lends its keys.
+			if ids := tree.ItemLinks(value); len(ids) > 1 {
+				id = ids[0]
+				if slices.Contains(ids, at) {
+					id = at
+				}
+			}
 		}
 		linked, found := items[id]
 		if !found {
