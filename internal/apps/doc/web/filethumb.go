@@ -9,7 +9,6 @@ import (
 )
 
 func (s server) fileThumbnail(w http.ResponseWriter, r *http.Request) {
-
 	item, err := s.documents.GetItem(r.URL.Query().Get("item"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)

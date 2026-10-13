@@ -11,9 +11,14 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// Inside reports whether p is a clean slash path that stays within its base.
+func Inside(p string) bool {
+	return p != "" && !strings.ContainsAny(p, "\\\x00") && filepath.IsLocal(filepath.FromSlash(p)) && path.Clean(p) == p
+}
+
 func cleanRecorded(p string) (string, error) {
 	p = norm.NFC.String(p)
-	if p == "" || p == "." || strings.ContainsAny(p, "\\\x00") || !filepath.IsLocal(filepath.FromSlash(p)) || path.Clean(p) != p {
+	if p == "." || !Inside(p) {
 		return "", fmt.Errorf("invalid recorded path %q", p)
 	}
 	switch strings.ToLower(strings.Split(p, "/")[0]) {
@@ -54,14 +59,10 @@ func (s *Store) recordedPath(rel string) (string, error) {
 		if len(matches) > 1 {
 			return "", fmt.Errorf("ambiguous Unicode path %q", rel)
 		}
-		name := ""
-		if len(matches) == 1 {
-			name = matches[0]
-		}
-		if name == "" {
+		if len(matches) == 0 {
 			return treePath(filepath.Join(current, filepath.FromSlash(strings.Join(parts[i:], "/")))), nil
 		}
-		candidate := filepath.Join(current, name)
+		candidate := filepath.Join(current, matches[0])
 		next, err := filepath.EvalSymlinks(candidate)
 		if errors.Is(err, os.ErrNotExist) {
 			// A dangling symlink still has a target that must stay in the tree.
@@ -108,22 +109,15 @@ func (s *Store) recordedNames(dir, part string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.sourceNames != nil {
-		names := map[string][]string{}
-		for _, entry := range entries {
-			key := norm.NFC.String(entry.Name())
-			names[key] = append(names[key], entry.Name())
-		}
-		s.sourceNames[dir] = names
-		return names[part], nil
-	}
-	var matches []string
+	names := map[string][]string{}
 	for _, entry := range entries {
-		if norm.NFC.String(entry.Name()) == part {
-			matches = append(matches, entry.Name())
-		}
+		key := norm.NFC.String(entry.Name())
+		names[key] = append(names[key], entry.Name())
 	}
-	return matches, nil
+	if s.sourceNames != nil {
+		s.sourceNames[dir] = names
+	}
+	return names[part], nil
 }
 
 // ValidateItemPaths checks the in-place sidecar invariant without requiring
@@ -180,31 +174,30 @@ func (s *Store) ReadPDF(item Item, digest string) (string, error) {
 	if err := s.ValidateItemPaths(&item); err != nil {
 		return "", err
 	}
-	if s.InPlace() {
-		for _, r := range item.Revisions {
-			if r.Digest == digest && r.Lost {
-				return "", fmt.Errorf("Item %s: file is not at its recorded location: %s (earlier revision lost its file)", item.ID, r.Path)
-			}
+	rel := s.layout.PDF(Placing(item), digest)
+	if !s.InPlace() {
+		p := filepath.Join(s.root, rel)
+		if info, err := os.Stat(p); err != nil {
+			return "", err
+		} else if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("Item %s: recorded file is not a regular file", item.ID)
+		}
+		return p, nil
+	}
+	for _, r := range item.Revisions {
+		if r.Digest == digest && r.Lost {
+			return "", fmt.Errorf("Item %s: file is not at its recorded location: %s (earlier revision lost its file)", item.ID, r.Path)
 		}
 	}
-	rel := s.layout.PDF(Placing(item), digest)
-	p := filepath.Join(s.root, rel)
-	var err error
-	if s.InPlace() {
-		p, err = s.recordedPath(rel)
-	}
+	p, err := s.recordedPath(rel)
 	if err == nil {
 		var info os.FileInfo
-		info, err = os.Stat(p)
-		if err == nil && !info.Mode().IsRegular() {
+		if info, err = os.Stat(p); err == nil && !info.Mode().IsRegular() {
 			return "", fmt.Errorf("Item %s: recorded file is not a regular file", item.ID)
 		}
 	}
 	if err != nil {
-		if s.InPlace() {
-			err = fmt.Errorf("Item %s: file is not at its recorded location: %s: %w", item.ID, filepath.ToSlash(rel), err)
-		}
-		return "", err
+		return "", fmt.Errorf("Item %s: file is not at its recorded location: %s: %w", item.ID, filepath.ToSlash(rel), err)
 	}
 	return p, nil
 }

@@ -13,9 +13,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -52,7 +54,10 @@ type Problem struct {
 	Actual     string   `json:"actual,omitempty"`
 	Locked     bool     `json:"locked,omitempty"`
 	Lost       bool     `json:"lost,omitempty"`
-	Original   bool     `json:"original,omitempty"`
+	// Accepted is a lost file the owner chose to forget; it is reported only
+	// when its bytes are found elsewhere.
+	Accepted bool `json:"accepted,omitempty"`
+	Original bool `json:"original,omitempty"`
 }
 
 // Report is the result of a check.
@@ -111,9 +116,6 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 		recorded     bool
 	}
 	var reads []pending
-	addFile := func(kind Kind, id string, locked bool, digest, path, detail string, original, lost bool) {
-		report.Problems = append(report.Problems, Problem{Kind: kind, Path: rel(path), Detail: detail, Item: id, Digest: digest, Locked: locked, Lost: lost, Original: original})
-	}
 	for _, sidecar := range sidecars {
 		data, err := os.ReadFile(sidecar)
 		switch {
@@ -156,7 +158,7 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 						named[original] = true
 						if _, err := os.Stat(original); errors.Is(err, fs.ErrNotExist) {
 							if o.Path != "" {
-								addFile(Missing, item.ID, item.Locked, o.Digest, original, "original image", true, false)
+								report.Problems = append(report.Problems, Problem{Kind: Missing, Path: rel(original), Detail: "original image", Item: item.ID, Digest: o.Digest, Locked: item.Locked, Original: true})
 							} else {
 								add(Missing, original, "original image")
 							}
@@ -190,7 +192,7 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 					var err error
 					path, err = store.ReadPDF(item, rev.Digest)
 					if err != nil {
-						addFile(Missing, item.ID, item.Locked, rev.Digest, filepath.Join(store.Root(), filepath.FromSlash(rev.Path)), err.Error(), false, rev.Lost)
+						report.Problems = append(report.Problems, Problem{Kind: Missing, Path: rel(filepath.Join(store.Root(), filepath.FromSlash(rev.Path))), Detail: err.Error(), Item: item.ID, Digest: rev.Digest, Locked: item.Locked, Lost: rev.Lost, Accepted: rev.Lost && rev.LossAccepted})
 						continue
 					}
 				}
@@ -211,59 +213,51 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 	}
 
 	// Shared files are read once per check, but each reference is compared.
-	digests := map[string]string{}
-	for i, r := range reads {
-		if err := ctx.Err(); err != nil {
-			return report, err
-		}
+	var paths []string
+	for _, r := range reads {
+		paths = append(paths, r.path)
+	}
+	digests, bytes, err := hashFiles(ctx, paths, func(p string, done, total int) {
 		if progress != nil {
-			progress(rel(r.path), i, len(reads))
+			progress(rel(p), done, total)
 		}
-		digest, cached := digests[r.path]
-		if !cached {
-			var err error
-			digest, err = tree.FileDigest(r.path)
-			if err != nil {
-				return report, err
-			}
-			digests[r.path] = digest
-			if info, err := os.Stat(r.path); err == nil {
-				report.Bytes += info.Size()
-			}
-			report.Checked++
-		}
+	})
+	if err != nil {
+		return report, err
+	}
+	report.Checked, report.Bytes = len(digests), bytes
+	for _, r := range reads {
+		digest := digests[r.path]
 		if digest != r.digest {
 			if r.recorded {
 				detail := "now hashes to " + short(digest)
 				if r.locked || r.original {
 					detail += "; restore this file from a backup"
 				}
-				addFile(Changed, r.itemID, r.locked, r.digest, r.path, detail, r.original, false)
-				report.Problems[len(report.Problems)-1].Actual = digest
+				report.Problems = append(report.Problems, Problem{Kind: Changed, Path: rel(r.path), Detail: detail, Item: r.itemID, Digest: r.digest, Actual: digest, Locked: r.locked, Original: r.original})
 			} else {
 				add(Changed, r.path, "now hashes to "+short(digest))
 			}
 		}
 	}
-	{
-		var missing []string
-		for _, p := range report.Problems {
-			if p.Kind == Missing && p.Digest != "" {
-				missing = append(missing, p.Digest)
-			}
-		}
-		found, err := store.FindFilePaths(ctx, missing)
-		if err != nil {
-			return report, err
-		}
-		for i := range report.Problems {
-			p := &report.Problems[i]
-			if p.Kind == Missing && len(found[p.Digest]) > 0 {
-				p.Kind, p.Candidates = Moved, found[p.Digest]
-				p.Detail = "found at " + strings.Join(p.Candidates, ", ") + "; confirm before updating the recorded path"
-			}
+	var missing []string
+	for _, p := range report.Problems {
+		if p.Kind == Missing && p.Digest != "" {
+			missing = append(missing, p.Digest)
 		}
 	}
+	found, err := store.FindFilePaths(ctx, missing)
+	if err != nil {
+		return report, err
+	}
+	for i := range report.Problems {
+		p := &report.Problems[i]
+		if p.Kind == Missing && len(found[p.Digest]) > 0 {
+			p.Kind, p.Candidates = Moved, found[p.Digest]
+			p.Detail = "found at " + strings.Join(p.Candidates, ", ") + "; confirm before updating the recorded path"
+		}
+	}
+	report.Problems = slices.DeleteFunc(report.Problems, func(p Problem) bool { return p.Kind == Missing && p.Accepted })
 	if err := files(st, revisions, add); err != nil {
 		return report, err
 	}
@@ -403,4 +397,39 @@ func files(st *tree.Store, revisions map[string]map[string]bool, add func(Kind, 
 // strip drops the path an error begins with, as a Problem carries it.
 func strip(path string, err error) string {
 	return strings.TrimPrefix(err.Error(), path+": ")
+}
+
+// hashFiles hashes each distinct path once, tree.FileWorkers at a time, and
+// returns the digests and the bytes read. progress is called once per file,
+// in completion order, never concurrently.
+func hashFiles(ctx context.Context, paths []string, progress Progress) (map[string]string, int64, error) {
+	var unique []string
+	digests := map[string]string{}
+	for _, p := range paths {
+		if _, ok := digests[p]; !ok {
+			digests[p] = ""
+			unique = append(unique, p)
+		}
+	}
+	var mu sync.Mutex
+	var bytes int64
+	done := 0
+	err := tree.Each(ctx, len(unique), tree.FileWorkers, func(i int) error {
+		p := unique[i]
+		digest, err := tree.FileDigest(p)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(p)
+		mu.Lock()
+		defer mu.Unlock()
+		if err == nil {
+			bytes += info.Size()
+		}
+		digests[p] = digest
+		progress(p, done, len(unique))
+		done++
+		return nil
+	})
+	return digests, bytes, err
 }

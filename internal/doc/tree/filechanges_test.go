@@ -132,6 +132,20 @@ func TestInPlaceChangedFilesRespectLocksAndKeepLostHistory(t *testing.T) {
 	if !corrected.Revisions[len(corrected.Revisions)-1].Lost {
 		t.Fatal("correction forgot lost file")
 	}
+	// Accepting the loss keeps the revision and its digest, still lost.
+	if _, err := st.AcceptLostFile(ctx, item.ID, next, time.Unix(5, 0)); err == nil {
+		t.Fatal("accepted a file that is not lost")
+	}
+	accepted, err := st.AcceptLostFile(ctx, item.ID, old, time.Unix(5, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := accepted.Revisions[0]; !r.Lost || !r.LossAccepted || r.Digest != old || accepted.Head != changed.Head {
+		t.Fatalf("accepted %+v", accepted)
+	}
+	if _, err := st.ReadPDF(accepted, old); err == nil {
+		t.Fatal("accepted loss previews changed bytes")
+	}
 	// A backup found elsewhere revives every old snapshot only after confirmation.
 	backup := filepath.Join(st.Root(), "backup.pdf")
 	if err := os.WriteFile(backup, []byte("synthetic original"), 0600); err != nil {
@@ -141,7 +155,7 @@ func TestInPlaceChangedFilesRespectLocksAndKeepLostHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Head != changed.Head || restored.Revisions[0].Lost {
+	if restored.Head != changed.Head || restored.Revisions[0].Lost || restored.Revisions[0].LossAccepted {
 		t.Fatal("restore changed HEAD or kept lost marker")
 	}
 	if _, err := st.ReadPDF(restored, old); err != nil {

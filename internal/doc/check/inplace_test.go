@@ -88,6 +88,18 @@ func TestInPlaceChangedCheckIsReadOnlyAndSearchesLostContent(t *testing.T) {
 	if _, err := st.RecordFileChange(context.Background(), item.ID, digest, problem.Path, problem.Actual, time.Unix(1, 0)); err != nil {
 		t.Fatal(err)
 	}
+	report, err = Tree(context.Background(), st, nil)
+	if err != nil || len(report.Problems) != 1 || report.Problems[0].Kind != Missing || !report.Problems[0].Lost {
+		t.Fatalf("lost %+v %v", report, err)
+	}
+	// An accepted loss is quiet until its bytes turn up again.
+	if _, err := st.AcceptLostFile(context.Background(), item.ID, digest, time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	report, err = Tree(context.Background(), st, nil)
+	if err != nil || len(report.Problems) != 0 {
+		t.Fatalf("accepted loss reported %+v %v", report, err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "backup.pdf"), []byte("synthetic original"), 0600); err != nil {
 		t.Fatal(err)
 	}

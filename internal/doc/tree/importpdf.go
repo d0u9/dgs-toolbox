@@ -197,14 +197,25 @@ func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error
 }
 
 // CleanFields keeps the Template's keys, trimmed, fills defaults for empty
-// ones, and refuses a missing required key. Empty keys are dropped.
+// ones, and refuses a missing required key. Empty keys are dropped, and so
+// are keys whose When does not hold.
 func CleanFields(t Template, given map[string]string) (map[string]string, error) {
 	fields := map[string]string{}
 	var missing []string
+	// A field When does not ask for is judged by the values given, before
+	// any is cleaned, and is then dropped.
+	values := map[string]string{}
 	for _, f := range t.Fields {
 		value := strings.TrimSpace(given[f.Key])
 		if value == "" {
 			value = strings.TrimSpace(t.Defaults[f.Key])
+		}
+		values[f.Key] = value
+	}
+	for _, f := range t.Fields {
+		value := values[f.Key]
+		if !f.asked(values) {
+			continue
 		}
 		if value == "" {
 			if f.Required {

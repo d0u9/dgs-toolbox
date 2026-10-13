@@ -173,3 +173,32 @@ func TestInheritedTextFieldTakesSuggestions(t *testing.T) {
 		}
 	}
 }
+
+func TestWhenAsksForAFieldOnlyForListedValues(t *testing.T) {
+	parent := "type: paid\nextends: record\nabstract: true\nfields:\n  - {key: category, type: select, options: [医疗, 其他]}\n"
+	child := "type: x\nextends: paid\nkind: record\nfields:\n  - {key: form, suggest: true, options: [发票, 回执]}\n  - {key: category, required: true, when: {form: [发票]}}\n"
+	templates, err := parseAll(t, recordBase, parent, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var x Template
+	for _, tpl := range templates {
+		if tpl.Type == "x" {
+			x = tpl
+		}
+	}
+	if _, err := CleanFields(x, map[string]string{"owner": "alice", "form": "发票"}); err == nil || !strings.Contains(err.Error(), "category") {
+		t.Fatalf("a listed value should require category: %v", err)
+	}
+	fields, err := CleanFields(x, map[string]string{"owner": "alice", "form": "回执", "category": "医疗"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, kept := fields["category"]; kept {
+		t.Fatalf("an unlisted value should drop category: %v", fields)
+	}
+	bad := "type: y\nextends: record\nkind: record\nfields:\n  - {key: note, when: {nothing: [a]}}\n"
+	if _, err := parseAll(t, recordBase, bad); err == nil {
+		t.Fatal("when naming no field should be refused")
+	}
+}

@@ -1,6 +1,7 @@
 package outline
 
 import (
+	"cmp"
 	"fmt"
 	"path"
 	"slices"
@@ -30,10 +31,6 @@ type skeletonFile struct {
 	Pins     map[string]view.Pin `yaml:"pins,omitempty"`
 }
 
-func inside(p string) bool {
-	return p != "" && !path.IsAbs(p) && p == path.Clean(p) && p != ".." && !strings.HasPrefix(p, "../") && !strings.ContainsAny(p, "\\\x00")
-}
-
 func (o Outline) validateSkeleton() error {
 	base := Outline{Name: o.Name, About: o.About, Folder: o.Folder}
 	if err := base.Validate(); err != nil {
@@ -46,22 +43,18 @@ func (o Outline) validateSkeleton() error {
 		if (m.Rule == "") == (m.Snapshot == "") {
 			return fmt.Errorf("mount needs one rule or snapshot")
 		}
-		name := m.Rule
-		if name == "" {
-			name = m.Snapshot
-		}
-		if !namePattern.MatchString(name) {
+		if !namePattern.MatchString(cmp.Or(m.Rule, m.Snapshot)) {
 			return fmt.Errorf("invalid mount name")
 		}
-		if m.At != "" && !inside(m.At) {
+		if m.At != "" && !tree.Inside(m.At) {
 			return fmt.Errorf("mount path is not inside the Outline")
 		}
-		if m.As != "" && (!inside(m.As) || strings.Contains(m.As, "/")) {
+		if m.As != "" && (!tree.Inside(m.As) || strings.Contains(m.As, "/")) {
 			return fmt.Errorf("mount as must be one folder name")
 		}
 	}
 	for folder, pin := range o.Pins {
-		if !inside(folder) {
+		if !tree.Inside(folder) {
 			return fmt.Errorf("pin path is not inside the Outline")
 		}
 		used := map[int]bool{}
@@ -150,11 +143,7 @@ func groupSkeleton(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, 
 	folderNumbers := map[string]map[int]string{}
 	var folders []string
 	for index, m := range o.Mount {
-		label := m.Rule
-		if label == "" {
-			label = m.Snapshot
-		}
-		planName := fmt.Sprintf("%02d-%s", index+1, label)
+		planName := fmt.Sprintf("%02d-%s", index+1, cmp.Or(m.Rule, m.Snapshot))
 		plan := view.Plan{Files: []view.File{}, Missing: []view.Missing{}, Clashes: []view.Clash{}}
 		if m.Rule != "" {
 			r, ok := rules[m.Rule]
@@ -165,17 +154,7 @@ func groupSkeleton(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, 
 			if m.As != "" {
 				at = path.Join(at, m.As)
 			}
-			defaults := r.Defaults
-			if defaults.Revision == "" {
-				defaults.Revision = o.Defaults.Revision
-			}
-			if defaults.Valid == "" {
-				defaults.Valid = o.Defaults.Valid
-			}
-			if defaults.File == "" {
-				defaults.File = o.Defaults.File
-			}
-			built, err := view.BuildFolders(r.Folders, items, names, defaults, o.Pins, at, assigned, folderNumbers, now)
+			built, err := view.BuildFolders(r.Folders, items, names, r.Defaults.Inherit(o.Defaults), o.Pins, at, assigned, folderNumbers, now)
 			if err != nil {
 				return out, err
 			}

@@ -140,9 +140,17 @@ export function tagPills(tags, wrap = false) {
   return el("span", { className: "tag-pills" + (wrap ? " wrap" : "") }, ...tags.map((tag) => el("span", { className: "tag-pill", title: tag }, tag)));
 }
 
+// nameKeys is a Template's distinguishing keys, and name always, in the order
+// every name reads: who, what it is called, its kind, the rest, and when last,
+// whatever order the Template lists them in.
+const NAME_FIRST = ["owner", "name", "category", "form"];
+const NAME_LAST = ["fy", "date", "from", "to"];
+const nameRank = (k) => NAME_FIRST.includes(k) ? NAME_FIRST.indexOf(k) - NAME_FIRST.length : NAME_LAST.includes(k) ? 1 + NAME_LAST.indexOf(k) : 0;
+export const nameKeys = (t, also = []) => [...new Set(["name", ...also, ...t.fields.filter((f) => f.distinguishing).map((f) => f.key)])].sort((a, b) => nameRank(a) - nameRank(b));
+
 export function label(state, item) {
   const t = templateOf(state, item.type);
-  const keys = t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : Object.keys(item.fields);
+  const keys = t ? nameKeys(t) : Object.keys(item.fields);
   const parts = keys.map((k) => item.fields[k]).filter(Boolean);
   return item.type + (parts.length ? " · " + parts.join(" · ") : "");
 }
@@ -222,12 +230,14 @@ export function chooseItem(state, items, suggested = [], current = "") {
 
 // fieldHead is a field's name, marked when required. A field whose Template
 // describes it has a ? beside its name: hovering it shows the description,
-// clicking it shows it under the name until clicked again.
+// clicking it shows it under the name until clicked again. The ? is a span,
+// not a button: a label activates its first labelable control, so a button
+// would take every click on the field's blank space from its input.
 function fieldHead(field) {
   const name = el("span", { className: "field-name" }, field.key, field.required ? el("span", { className: "req" }, " *") : null);
   if (!field.description) return [name];
   const note = el("span", { className: "field-help", hidden: true }, field.description);
-  const toggle = el("button", { type: "button", tabIndex: -1, className: "field-help-toggle", title: field.description, textContent: "?" });
+  const toggle = el("span", { role: "button", className: "field-help-toggle", title: field.description, textContent: "?" });
   toggle.setAttribute("aria-label", "About " + field.key);
   toggle.setAttribute("aria-expanded", "false");
   toggle.onclick = (event) => {
@@ -634,8 +644,37 @@ function picked(input) {
 
 // fieldInputs is the controls for fields, each with its value and its
 // placeholder by key: what every panel that edits an Item's fields shows.
-export const fieldInputs = (fields, values, placeholders, state, self, type) =>
-  fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type, values?.country || placeholders?.country || ""));
+// A field whose when does not hold for the values on the form is hidden,
+// and is shown just below the field its when names first, in the order
+// the Template gives.
+export function fieldInputs(fields, values, placeholders, state, self, type) {
+  const dependent = (f) => Object.keys(f.when || {}).find((key) => fields.some((g) => g.key === key));
+  const placed = fields.filter((f) => !dependent(f));
+  for (const f of fields.filter(dependent).reverse()) {
+    const at = placed.findIndex((g) => g.key === dependent(f));
+    // ponytail: a when naming another dependent field goes last; nest when chains appear.
+    if (at < 0) placed.push(f); else placed.splice(at + 1, 0, f);
+  }
+  fields = placed;
+  const nodes = fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type, values?.country || placeholders?.country || ""));
+  const conditional = fields.map((f, i) => [f, nodes[i]]).filter(([f]) => f.when);
+  if (conditional.length) queueMicrotask(() => {
+    const scope = nodes[0].closest("form") || nodes[0].parentElement;
+    if (!scope) return;
+    const sync = () => {
+      for (const [f, node] of conditional) {
+        node.hidden = !Object.entries(f.when).every(([key, allowed]) => {
+          const value = scope.querySelector(`[name="${key}"]`)?.value || "";
+          return value.split(",").some((v) => allowed.includes(v.trim()));
+        });
+      }
+    };
+    scope.addEventListener("input", sync);
+    scope.addEventListener("change", sync);
+    sync();
+  });
+  return nodes;
+}
 
 // countriesOf is every value a country field of the tree's Items holds,
 // once each, sorted.

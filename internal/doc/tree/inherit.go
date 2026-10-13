@@ -212,6 +212,9 @@ func override(typ string, p, c Field) (Field, error) {
 	rest := c
 	rest.Required, rest.Distinguishing, rest.PerRevision, rest.Description = false, false, false, ""
 	rest.Shape, rest.Pattern, rest.Patterns = nil, "", nil
+	if len(p.When) == 0 {
+		rest.When = nil
+	}
 	text := p.Type == "" || p.Type == FieldText
 	if text && c.Suggest {
 		rest.Suggest, rest.Options = false, nil
@@ -220,7 +223,7 @@ func override(typ string, p, c Field) (Field, error) {
 		rest.Type = ""
 	}
 	if !reflect.DeepEqual(rest, Field{Key: c.Key}) {
-		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape, described, or, as text, given suggestions; not changed", typ, c.Key)
+		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape, described, asked only when, or, as text, given suggestions; not changed", typ, c.Key)
 	}
 	f := p
 	f.Required = p.Required || c.Required
@@ -228,6 +231,9 @@ func override(typ string, p, c Field) (Field, error) {
 	f.PerRevision = p.PerRevision || c.PerRevision
 	if c.Description != "" {
 		f.Description = c.Description
+	}
+	if len(c.When) > 0 {
+		f.When = c.When
 	}
 	if c.Pattern != "" || len(c.Patterns) > 0 {
 		f.Pattern, f.Patterns = c.Pattern, c.Patterns

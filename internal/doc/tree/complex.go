@@ -54,8 +54,8 @@ func (st *Store) addInPlaceRevision(ctx context.Context, id, source string, temp
 	if other, ok := input.heldBy(items); ok && other.ID != id {
 		return Item{}, fmt.Errorf("%w: %s", ErrDuplicate, other.ID)
 	}
-	if digest == item.CurrentDigest() {
-		item.saveSnapshot(template.Type, full, digest, input.name, item.PaperOf(item.Current()), now)
+	// A same-content revision adds tags; new content starts with only these.
+	annotate := func(same bool) {
 		if m.Notes != nil {
 			item.Notes = strings.TrimSpace(*m.Notes)
 		}
@@ -63,10 +63,18 @@ func (st *Store) addInPlaceRevision(ctx context.Context, id, source string, temp
 			item.Tags = tag.List(*m.Tags)
 		}
 		for i := range item.Revisions {
-			if item.Revisions[i].Ref() == item.Current() {
-				item.Revisions[i].Tags = tag.List(append(item.Revisions[i].Tags, m.RevisionTags...))
+			if r := &item.Revisions[i]; r.Ref() == item.Current() {
+				if same {
+					r.Tags = tag.List(append(r.Tags, m.RevisionTags...))
+				} else {
+					r.Tags = tag.List(m.RevisionTags)
+				}
 			}
 		}
+	}
+	if digest == item.CurrentDigest() {
+		item.saveSnapshot(template.Type, full, digest, input.name, item.PaperOf(item.Current()), now)
+		annotate(true)
 		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_fields", Digest: item.Current()})
 		input.annotate(&item, item.Current(), m.KeepOriginal)
 		return item, st.WriteItem(item)
@@ -84,17 +92,7 @@ func (st *Store) addInPlaceRevision(ctx context.Context, id, source string, temp
 		besides = base + m.Suffix + strings.ToLower(filepath.Ext(source))
 	}
 	item.saveSnapshot(template.Type, full, digest, input.name, "", now)
-	if m.Notes != nil {
-		item.Notes = strings.TrimSpace(*m.Notes)
-	}
-	if m.Tags != nil {
-		item.Tags = tag.List(*m.Tags)
-	}
+	annotate(false)
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "import_revision", Digest: item.Current()})
-	for i := range item.Revisions {
-		if item.Revisions[i].Ref() == item.Current() {
-			item.Revisions[i].Tags = tag.List(m.RevisionTags)
-		}
-	}
 	return st.importInPlace(ctx, ImportRequest{Source: source, Folder: m.Folder, PDFName: m.PDFName, Path: besides, KeepOriginal: m.KeepOriginal, Now: now}, input, item, digest, nil)
 }
