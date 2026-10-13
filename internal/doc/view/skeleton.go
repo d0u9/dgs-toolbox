@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path"
@@ -29,7 +30,9 @@ func (d Defaults) Validate() error {
 	}
 	return nil
 }
-func (d Defaults) inherit(parent Defaults) Defaults {
+
+// Inherit fills each unset default from parent.
+func (d Defaults) Inherit(parent Defaults) Defaults {
 	if d.Revision == "" {
 		d.Revision = parent.Revision
 	}
@@ -112,7 +115,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 	if err := defaults.Validate(); err != nil {
 		return out, err
 	}
-	defaults = defaults.inherit(Defaults{Revision: Head, File: "{#}-{name}"})
+	defaults = defaults.Inherit(Defaults{Revision: Head, File: "{#}-{name}"})
 	byID := map[string]tree.Item{}
 	for _, i := range items {
 		byID[i.ID] = i
@@ -129,11 +132,6 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 			}
 			pinned[id] = folder
 		}
-		for name, n := range pin.Numbers {
-			if n < 1 {
-				return out, fmt.Errorf("number for %s must be positive", name)
-			}
-		}
 	}
 	keysOf := func(item tree.Item, n int) map[string]string {
 		keys := KeysOf(item, n)
@@ -142,12 +140,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 			keys["type:"+lang] = name
 		}
 		types.nameValues(keys)
-		if keys["name"] == "" {
-			keys["name"] = keys["type:zh"]
-			if keys["name"] == "" {
-				keys["name"] = keys["type"]
-			}
-		}
+		keys["name"] = cmp.Or(keys["name"], keys["type:zh"], keys["type"])
 		return keys
 	}
 	renderName := func(layout string, keys map[string]string, number int) (string, []string, error) {
@@ -156,10 +149,17 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 			return "", nil, err
 		}
 		name, lacking := render(parsed, keys, nil)
-		if name == "" || path.IsAbs(name) || name != path.Clean(name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsAny(name, "\\\x00") {
+		if !tree.Inside(name) {
 			return "", nil, fmt.Errorf("folder/file name is not a relative path")
 		}
 		return name, lacking, nil
+	}
+	// rank orders by position in list; values not in it sort last.
+	rank := func(list []string, v string) int {
+		if i := slices.Index(list, v); i >= 0 {
+			return i
+		}
+		return len(list)
 	}
 	type choice struct {
 		item    tree.Item
@@ -169,7 +169,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 	var walk func([]Folder, string, []tree.Item, Defaults, map[string]string, []expr.Expr) error
 	walk = func(list []Folder, parent string, pool []tree.Item, inherited Defaults, context map[string]string, conditions []expr.Expr) error {
 		for _, f := range list {
-			d := f.Defaults.inherit(inherited)
+			d := f.Defaults.Inherit(inherited)
 			if f.File != "" {
 				d.File = f.File
 			}
@@ -230,14 +230,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 					}
 				}
 				sort.SliceStable(groups, func(i, j int) bool {
-					a, b := slices.Index(f.Order, groups[i].value), slices.Index(f.Order, groups[j].value)
-					if a < 0 {
-						a = len(f.Order)
-					}
-					if b < 0 {
-						b = len(f.Order)
-					}
-					if a != b {
+					if a, b := rank(f.Order, groups[i].value), rank(f.Order, groups[j].value); a != b {
 						return a < b
 					}
 					return groups[i].value < groups[j].value
@@ -324,30 +317,15 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 
 				sort.SliceStable(choices, func(i, j int) bool {
 					a, b := choices[i], choices[j]
-					if x, y := slices.Index(pin.Items, a.item.ID), slices.Index(pin.Items, b.item.ID); x >= 0 || y >= 0 {
-						if x < 0 {
-							x = len(pin.Items)
-						}
-						if y < 0 {
-							y = len(pin.Items)
-						}
-						if x != y {
-							return x < y
-						}
+					if x, y := rank(pin.Items, a.item.ID), rank(pin.Items, b.item.ID); x != y {
+						return x < y
 					}
 					if len(f.Order) == 1 && a.keys[f.Order[0]] != "" && b.keys[f.Order[0]] != "" {
 						if a.keys[f.Order[0]] != b.keys[f.Order[0]] {
 							return a.keys[f.Order[0]] < b.keys[f.Order[0]]
 						}
 					}
-					x, y := slices.Index(f.Order, a.keys[numberKey]), slices.Index(f.Order, b.keys[numberKey])
-					if x < 0 {
-						x = len(f.Order)
-					}
-					if y < 0 {
-						y = len(f.Order)
-					}
-					if x != y {
+					if x, y := rank(f.Order, a.keys[numberKey]), rank(f.Order, b.keys[numberKey]); x != y {
 						return x < y
 					}
 					return a.item.ID < b.item.ID
@@ -398,28 +376,20 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 							continue
 						}
 						if len(c.indices) > 1 && !strings.Contains(d.File, "{date") && !strings.Contains(d.File, "{year}") {
-							date := keys["year"]
-							if date == "" {
-								date = keys["date.start"]
+							dateOf := func(index int) string {
+								k, added := keysOf(c.item, index+1), c.item.Revisions[index].Added
+								if len(added) >= 10 {
+									added = added[:10]
+								} else {
+									added = ""
+								}
+								return cmp.Or(k["year"], k["date.start"], added)
 							}
-							if date == "" && len(r.Added) >= 10 {
-								date = r.Added[:10]
-							}
-							if date == "" {
-								date = strconv.Itoa(c.item.RevisionNumber(r.Ref()))
-							}
+							date := cmp.Or(dateOf(index), strconv.Itoa(c.item.RevisionNumber(r.Ref())))
 							// Same-year rescans still need a distinct date/version suffix.
 							duplicates := 0
 							for _, other := range c.indices {
-								otherKeys := keysOf(c.item, other+1)
-								otherDate := otherKeys["year"]
-								if otherDate == "" {
-									otherDate = otherKeys["date.start"]
-								}
-								if otherDate == "" && len(c.item.Revisions[other].Added) >= 10 {
-									otherDate = c.item.Revisions[other].Added[:10]
-								}
-								if otherDate == date {
+								if dateOf(other) == date {
 									duplicates++
 								}
 							}

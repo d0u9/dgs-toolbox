@@ -103,7 +103,8 @@ drawn as the shared tag pills, on one line cut at the column's edge. A field's d
 Along the top, in one row whatever is chosen, are search (fields, tags and
 the text on the page; a field linking to another Item matches by that Item's
 name too, so a plate finds every document about the car), the filter steps,
-a **+ Filter** chip, a **★ Frequent** chip that shows only the frequent
+a **+ Filter** chip, **Owner**, **Country**, **Type**, **Issuer** and **About** chips that open
+the dialog at that field's values, a **★ Frequent** chip that shows only the frequent
 Items, the count, and the layout and sort. Filtering is walked into one step
 after another, as Values lists a field's values: + Filter opens a large dialog over the
 page, the steps so far and how many Items they leave at its top, and two
@@ -125,8 +126,9 @@ step offers only what the Items left hold. Clicking a bubble goes back to that
 step: the steps after it are taken away and its key is offered again. Its ×
 takes only that step away. Bubbles that do not fit scroll sideways; the row
 never wraps. The steps are kept when the page is left and come Back. The
-Items sort by date added, expiry, name or type; frequent Items always come first
-and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
+Items sort by date added, expiry, name or type; in the default date-added
+order frequent Items come first and retired ones last; any other sort is by its
+column alone. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
 its middle. A card's name wraps to a second line before it is cut short.
 Picking one opens a detail panel beside the cards. At its top,
@@ -664,6 +666,22 @@ both and leaves the choice.
   (`CHN`). A name dgs does not know is refused. Two documents whose country
   is written differently, `AU` in an older sidecar and `澳大利亚` now, are
   the same document. The table is ISO 3166-1, in `internal/doc/country`.
+
+A field may carry `when`, naming other fields of the form and the values
+for which it is asked:
+
+```yaml
+- key: category
+  required: true
+  when: {form: [发票, 收据, 小票]}
+```
+
+The field is asked for only while every named field holds one of its listed
+values; a multiple field holds one when any of its values is listed. The page
+hides it otherwise, and saving drops its value and does not require it, so a
+receipt's `回执` needs no category. The page shows it just
+below the field its `when` names first. A child Template may add `when` to an
+inherited field that has none.
 
 A field of a document may be `per_revision: true`: Import asks for it again
 when recording a renewal. Every snapshot stores all fields, including the

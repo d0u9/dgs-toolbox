@@ -66,7 +66,7 @@ func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, sou
 			if r.Digest == digest && digest != "" {
 				next.Path = r.Path
 				next.Size = r.Size
-				next.Lost = r.Lost
+				next.Lost, next.LossAccepted = r.Lost, r.LossAccepted
 				next.SourceDigests = slices.Clone(r.SourceDigests)
 				next.Originals = slices.Clone(r.Originals)
 				break

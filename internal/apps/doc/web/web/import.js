@@ -245,7 +245,13 @@ function drawFields() {
   const shown = state.templates.filter((t) =>
     words.every((w) => (t.type + " " + (t.description || "")).toLowerCase().includes(w)));
   if (!shown.some((t) => t.type === selectedTemplate)) selectedTemplate = shown[0]?.type || "";
-  $("template").replaceChildren(...shown.map((choice) => {
+  // Templates are grouped under the abstract type each extends, in a
+  // tree; those extending record alone come last. Headers only label.
+  const parentOf = (t) => t.lineage?.[1] || "record";
+  const groups = [...new Set(shown.map(parentOf))].sort((a, b) => (a === "record") - (b === "record") || a.localeCompare(b));
+  $("template").replaceChildren(...groups.flatMap((group) => [
+    el("div", { className: "template-group" }, group === "record" ? "other" : group),
+    ...shown.filter((t) => parentOf(t) === group).map((choice) => {
     const button = el("button", { type: "button", title: (choice.description || choice.type) + " (" + choice.kind + ")", className: "template-choice" + (choice.type === selectedTemplate ? " selected" : "") },
       el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind),
       choice.type === suggestedType ? el("span", { className: "template-suggested" }, "suggested") : null);
@@ -258,7 +264,7 @@ function drawFields() {
       choose(choice.type);
     };
     return button;
-  }));
+  })]));
   const t = templateOf(state, selectedTemplate);
   $("import-button").disabled = !t;
   if (!t) {

@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/ui/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
+import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, nameKeys, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
 import { icon, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
@@ -36,12 +36,12 @@ const fieldOf = (key) => {
 };
 
 // tableKeys is the field columns of the list for the Items given, and what
-// Sort offers besides its own: the fields every Template requires, then,
+// Sort offers besides its own: name, the fields every Template requires, then,
 // when the Items are all of one type, that type's distinguishing keys in its
 // order. A key none of them has a value for is left out.
 function tableKeys(items) {
   const types = new Set(items.map((i) => i.type));
-  const keys = [...new Set([...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
+  const keys = [...new Set(["name", ...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
   return keys.filter((k) => items.some((i) => currentFields(i)[k]));
 }
 
@@ -231,6 +231,8 @@ function drawFacets() {
   valueTable.draw(values);
 }
 $("filter-add").onclick = () => openFacets();
+// The keys most often walked into open straight at their values.
+for (const b of $("filter-quick").querySelectorAll("[data-facet]")) b.onclick = () => openFacets(b.dataset.facet);
 $("facets-close").onclick = closeFacets;
 // A click on the backdrop, outside the dialog's box, closes it.
 $("facets").onclick = (event) => {
@@ -287,11 +289,12 @@ function shownItems() {
     : { added: addedAt, modified: modifiedAt, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
       tags: (i) => tagsAt(i, headOf(i)).join(" "),
       revisions: (i) => papersOf(i).length }[sort] || addedAt;
-  // Retired Items go last and frequent ones first, whatever the sort; the
-  // sort orders each part.
+  // In the default Added order, retired Items go last and frequent ones
+  // first; any other sort is by its column alone.
+  const grouped = sort === "added";
   return items.sort((x, y) => {
-    if (!!x.retired !== !!y.retired) return x.retired ? 1 : -1;
-    if (!!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
+    if (grouped && !!x.retired !== !!y.retired) return x.retired ? 1 : -1;
+    if (grouped && !!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
     const a = keyOf(x), b = keyOf(y);
     // No value sorts after any value, whichever way round.
     if ((sort === "expiry" || sort === "tags" || sort.startsWith("field:")) && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
@@ -354,14 +357,14 @@ function thumb(item) {
 // The fields a card shows under its title: what is not already in the name.
 function details(item) {
   const t = templateOf(state, item.type);
-  const named = new Set(t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : []);
+  const named = new Set(t ? nameKeys(t) : []);
   return Object.entries(currentFields(item)).filter(([k]) => !named.has(k) && !["expires", "expiry", "expires_at", "expiry_date", "valid_until"].includes(k))
     .map(([k, v]) => k + ": " + shown(item, k, v)).join(" · ");
 }
 
 function card(item) {
   const t = templateOf(state, item.type);
-  const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
+  const named = t ? nameKeys(t).map((k) => currentFields(item)[k]).filter(Boolean) : [];
   const li = el("li", { className: "card state-" + expiryOf(item).state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     thumb(item), star(item),
     el("div", { className: "card-body" },
@@ -404,16 +407,22 @@ const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added"
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
   const fields = [...new Set([...(state.mandatory || []), ...items.flatMap((i) => Object.keys(currentFields(i)))])]
-    .sort((a, b) => a.localeCompare(b));
+    .filter((k) => k !== "name").sort((a, b) => a.localeCompare(b));
   return [
     { id: "thumb", text: "", fixed: true, width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
     { id: "frequent", text: "Frequent", icon: "star", tip: "Frequent", fixed: true, width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
     // The card's name without its type, which the Type column, or the type
-    // filter, already says.
-    { id: "name", text: "Item", fixed: true, width: 340, cell: (item) => {
-      const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
+    // filter, already says, and without name, which has its own column. Its
+    // kind, issuer and date are shown too, so an Item named by name alone is
+    // not left with only its owner.
+    { id: "name", text: "Item", fixed: true, width: 240, cell: (item) => {
+      const t = templateOf(state, item.type);
+      const name = (t ? nameKeys(t, ["category", "form", "issuer", "date"]) : []).filter((k) => k !== "name").map((k) => currentFields(item)[k]).filter(Boolean).join(" · ") || item.type;
       return el("td", { className: "table-name", title: label(state, item) }, name);
     } },
+    // Name stands beside Item, where the eye is, rather than among the fields.
+    { id: "field:name", text: "Name", about: fieldOf("name")?.description, fixed: true, width: 200,
+      cell: (item) => el("td", {}, currentFields(item).name || "") },
     { id: "type", text: "Type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
     ...fields.map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, width: k === "country" ? 90 : 130, group: "Fields",
       cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
@@ -1200,10 +1209,10 @@ const fileCheckTable = listTable($("file-problems"), {
       return item ? label(state, item) : "—";
     } },
     { id: "path", text: "Recorded path", width: 280, cell: (p) => p.confirmed || p.Path },
-    { id: "detail", text: "Result", width: 240, cell: (p) => p.confirmed ? "Recorded" : p.Detail },
+    { id: "detail", text: "Result", width: 240, cell: (p) => p.forgotten ? "Loss accepted" : p.confirmed ? "Recorded" : p.Detail },
     { id: "candidates", text: "Found paths / Confirm", width: 260, sortable: false, cell: (p) => {
       const cell = el("td", {});
-      if (p.confirmed) return cell;
+      if (p.confirmed || p.forgotten) return cell;
       for (const path of p.candidates || []) {
         const button = el("button", { className: "button secondary small-button", type: "button", textContent: "Use this path" });
         button.onclick = async () => {
@@ -1212,21 +1221,61 @@ const fileCheckTable = listTable($("file-problems"), {
             await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path });
             p.confirmed = path;
             fileCheckTable.draw(fileProblems);
+            drawFileCheckAll();
             await reload();
           } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
         };
         cell.append(el("div", { className: "file-check-candidate" }, el("span", {}, path), button));
+      }
+      // A lost file found nowhere can be forgotten: the revision keeps its
+      // fields and digest, and checks stop reporting it.
+      if (p.lost && !p.candidates?.length) {
+        const button = el("button", { className: "button secondary small-button", type: "button", textContent: "Accept loss" });
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await post("/api/files/accept-loss", { item: p.item, digest: p.digest });
+            p.forgotten = true;
+            fileCheckTable.draw(fileProblems);
+            await reload();
+          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
+        };
+        cell.append(button);
       }
       return cell;
     } },
   ],
   empty: "No files or definitions need attention.",
 });
+// Each Problem with exactly one found path is unambiguous; confirm those in
+// order and leave the rest for a choice.
+const singleMatches = () => fileProblems.filter((p) => !p.confirmed && !p.forgotten && p.candidates?.length === 1);
+const drawFileCheckAll = () => {
+  const n = singleMatches().length;
+  $("file-check-all").hidden = !n;
+  $("file-check-all").textContent = "Use all single matches (" + n + ")";
+};
+$("file-check-all").onclick = async () => {
+  $("file-check-all").disabled = true;
+  try {
+    for (const p of singleMatches()) {
+      await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path: p.candidates[0] });
+      p.confirmed = p.candidates[0];
+    }
+  } catch (e) { say($("file-check-summary"), e.message, true); }
+  finally {
+    $("file-check-all").disabled = false;
+    fileCheckTable.draw(fileProblems);
+    drawFileCheckAll();
+    await reload();
+  }
+};
 $("file-check-close").onclick = () => $("file-check-report").close();
 $("check-files").onclick = async () => {
   $("check-files").disabled = true;
   $("file-check-report").showModal();
   fileProblems = [];
+  drawFileCheckAll();
   $("file-problems").hidden = true;
   say($("file-check-summary"), "Checking recorded files… Unlocked changes will be recorded as new revisions.");
   try {
@@ -1240,6 +1289,7 @@ $("check-files").onclick = async () => {
     fileProblems = problems;
     $("file-problems").hidden = !problems.length;
     fileCheckTable.draw(fileProblems);
+    drawFileCheckAll();
   } catch (e) { say($("file-check-summary"), e.message, true); }
   finally { $("check-files").disabled = false; }
 };

@@ -10,16 +10,20 @@ import (
 	"strings"
 )
 
-func SourcePath(dir, path string, all ...bool) (string, error) {
+// SourcePath is the file a request names under an opened folder, by a
+// relative path that cannot climb out of it, and not hidden or linked. all
+// accepts any file kind, not only PDFs and images.
+func SourcePath(dir, path string, all bool) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", errors.New("open a folder by its full path")
 	}
-	if !fs.ValidPath(path) || path == "." || (!docfile.Importable(path) && !(len(all) > 0 && all[0])) {
-		return "", errors.New("not a PDF or image in the opened folder")
+	errNotSource := errors.New("not a PDF or image in the opened folder")
+	if !fs.ValidPath(path) || path == "." || (!docfile.Importable(path) && !all) {
+		return "", errNotSource
 	}
 	for _, part := range strings.Split(path, "/") {
 		if strings.HasPrefix(part, ".") {
-			return "", errors.New("not a PDF in the opened folder")
+			return "", errNotSource
 		}
 	}
 	full := filepath.Join(dir, filepath.FromSlash(path))

@@ -97,6 +97,25 @@ type Field struct {
 	// Names are a select field's values in other languages, for a layout's
 	// {key:en}: {en: {房租: rent}}. A value without one is written as kept.
 	Names map[string]map[string]string `yaml:"names,omitempty" json:"names,omitempty"`
+	// When asks for the field only while each named field of this form holds
+	// one of the listed values: {form: [发票, 收据]}. A multiple field holds
+	// one when any of its values is listed. Otherwise the page hides the
+	// field, and saving drops its value and does not require it.
+	When map[string][]string `yaml:"when,omitempty" json:"when,omitempty"`
+}
+
+// asked is whether f's When holds for fields: always, without one.
+func (f Field) asked(fields map[string]string) bool {
+	for key, allowed := range f.When {
+		held := false
+		for _, v := range strings.Split(fields[key], MultipleSeparator) {
+			held = held || slices.Contains(allowed, strings.TrimSpace(v))
+		}
+		if !held {
+			return false
+		}
+	}
+	return true
 }
 
 // ValueName is value in lang, as Names give it; value itself when they
@@ -338,6 +357,14 @@ func (t Template) Validate() error {
 			groups[g.Name] = true
 			if len(g.Values) == 0 {
 				return fmt.Errorf("type %s: key %s: group %s holds no values", t.Type, f.Key, g.Name)
+			}
+		}
+		for key, allowed := range f.When {
+			if key == f.Key || !t.has(key) {
+				return fmt.Errorf("type %s: key %s: when %s is not another field of this Template", t.Type, f.Key, key)
+			}
+			if len(allowed) == 0 {
+				return fmt.Errorf("type %s: key %s: when %s lists no values", t.Type, f.Key, key)
 			}
 		}
 		if len(f.Names) > 0 && f.Type != FieldSelect {

@@ -31,11 +31,17 @@ them only read, so the reading part can later be served on its own.
 - In-place only: `POST /api/files/check` takes `{}` and answers
   `{report, recorded}`. The report uses `Items`, `Checked`, `Bytes`, `Problems`;
   each problem has `Kind`, `Path`, `Detail`, and file problems also carry
-  `item`, `digest`, `candidates?`, `actual?`, `locked?`, `lost?`, `original?`.
+  `item`, `digest`, `candidates?`, `actual?`, `locked?`, `lost?`, `accepted?`,
+  `original?`.
   Missing content found elsewhere has kind `moved`; paths wait for confirmation.
   Unlocked changed PDFs are recorded as revisions and their Item IDs are in
   `recorded`. Per-file write failures remain in the report; successful writes
   stand and the Item cache follows them.
+- In-place only: `POST /api/files/accept-loss` takes `{item, digest}` and
+  answers `{item}`. Every lost revision with that digest is marked
+  `loss_accepted`; it keeps its fields, digest and path, and checks report it
+  only when its bytes are found elsewhere. A digest with no lost revision is
+  rejected.
 - In-place only: `POST /api/files/confirm` takes
   `{item, digest, previous, path}` and answers `{item}`. The sidecar's previous
   path and candidate bytes are checked again before publication. Metadata

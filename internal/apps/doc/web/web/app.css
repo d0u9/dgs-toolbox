@@ -48,6 +48,8 @@ body { display: flex; flex-direction: column; }
   background: none; border: 0; border-bottom: 1px solid var(--hairline); line-height: 24px;
 }
 .template-choice:last-child { border-bottom: 0; }
+.template-group { flex: none; padding: 6px 10px 2px; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite); text-transform: uppercase; letter-spacing: 0.04em; }
+.template-group ~ .template-choice { padding-left: 24px; }
 .template-choice:hover { background: var(--hover); }
 .template-choice.selected { background: var(--selected); }
 .template-choice.selected::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 0 2px 2px 0; background: var(--primary); }
@@ -258,7 +260,7 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .filter > span { font-weight: 600; white-space: nowrap; }
 .filter-x { margin-left: -4px; padding: 0 4px; color: var(--graphite); }
 .filter-search { width: 16em; flex: 0 1 16em; min-width: 8em; }
-#filter-add, #filter-frequent, .filter-result, .filter-view { flex: none; white-space: nowrap; }
+#filter-add, #filter-quick, #filter-frequent, .filter-result, .filter-view { flex: none; white-space: nowrap; }
 /* The steps taken, as chips in one row; too many scroll sideways. */
 .filter-steps { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 10em; overflow-x: auto; scrollbar-width: thin; }
 .filter-steps:empty { display: none; }
@@ -693,6 +695,8 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .segmented .chip:focus-visible { outline: 2px solid var(--primary-soft, #c9e0fc); outline-offset: 1px; }
 .segmented .icon-chip { display: inline-flex; align-items: center; justify-content: center; width: 30px; padding: 0; }
 .segmented .icon-chip svg { display: block; }
+/* Quick filters read as words, in the page font, not the key font. */
+#filter-quick .chip { font-family: inherit; font-size: var(--font-size-sm); }
 
 .detail-picture.without-pdf { flex: none; height: auto !important; min-height: 0; }
 .detail-picture.without-pdf .detail-frame { display: none; }

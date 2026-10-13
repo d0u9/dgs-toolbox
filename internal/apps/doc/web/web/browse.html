@@ -50,6 +50,7 @@
     <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
     <div id="filter-steps" class="filter-steps" aria-label="Filters"></div>
     <button id="filter-add" class="chip" type="button" aria-haspopup="true" aria-controls="facets" title="Narrow by a field, one step after another">+ Filter</button>
+    <span id="filter-quick" class="segmented" role="group" aria-label="Filter by"><button class="chip" type="button" data-facet="owner" title="Filter by owner">Owner</button><button class="chip" type="button" data-facet="country" title="Filter by country">Country</button><button class="chip" type="button" data-facet="type" title="Filter by type">Type</button><button class="chip" type="button" data-facet="issuer" title="Filter by issuer">Issuer</button><button class="chip" type="button" data-facet="about" title="Filter by the Item it is about">About</button></span>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent"><span data-icon="star"></span> Frequent</button>
     <button id="check-files" class="chip" type="button" hidden>Check files</button>
     <div class="filter-result">
@@ -96,7 +97,7 @@
   <h3 id="file-check-title">File check</h3>
   <p id="file-check-summary" class="message" role="status"></p>
   <div id="file-problems" class="file-check-list"></div>
-  <div class="dialog-buttons"><button id="file-check-close" class="button" type="button">Close</button></div>
+  <div class="dialog-buttons"><button id="file-check-all" class="button secondary" type="button" hidden>Use all single matches</button><button id="file-check-close" class="button" type="button">Close</button></div>
 </dialog>
 <main class="work">
   <section id="items-pane" class="browse-pane" aria-label="Items">

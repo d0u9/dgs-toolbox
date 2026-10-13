@@ -254,6 +254,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/items/meta", s.setMetadata)
 	mux.HandleFunc("POST /api/files/check", s.checkFiles)
 	mux.HandleFunc("POST /api/files/confirm", s.confirmFilePath)
+	mux.HandleFunc("POST /api/files/accept-loss", s.acceptLostFile)
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/init", s.initialize)
 	mux.HandleFunc("GET /api/issuers", s.issuers)
@@ -400,11 +401,6 @@ func within(parent, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// sourcePath is the file a request names: a PDF under an opened folder, by a
-// relative path that cannot climb out of it, and not hidden or linked. Only
-// what pdflist would list is accepted.
-func sourcePath(dir, path string) (string, error) { return tree.SourcePath(dir, path) }
-
 // sourceFile serves a PDF under an opened folder for preview.
 func (s server) sourceFile(w http.ResponseWriter, r *http.Request) {
 	sources, err := sourcePaths(r.URL.Query())
@@ -471,10 +467,8 @@ func (s server) originalPath(id, digest string) (string, int, error) {
 			for _, o := range rev.Originals {
 				if o.Digest == digest {
 					if path := s.documents.OriginalPath(item, rev.Digest, o); path != "" {
-						{
-							if _, err := os.Stat(path); err != nil {
-								return "", http.StatusNotFound, fmt.Errorf("Item %s: file is not at its recorded location: %s: %w", item.ID, o.Path, err)
-							}
+						if _, err := os.Stat(path); err != nil {
+							return "", http.StatusNotFound, fmt.Errorf("Item %s: file is not at its recorded location: %s: %w", item.ID, o.Path, err)
 						}
 						return path, 0, nil
 					}
@@ -647,7 +641,7 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 	}
 	var paths []string
 	for _, p := range request.Paths {
-		if full, err := sourcePath(request.Dir, p); err == nil {
+		if full, err := tree.SourcePath(request.Dir, p, false); err == nil {
 			paths = append(paths, full)
 		}
 	}
@@ -822,7 +816,7 @@ func (s server) pagesOf(w http.ResponseWriter, dir string, pages []string) ([]st
 // sourcePaths is the files a preview query names: path under dir, then the
 // images of more pages after it, pages, a JSON list.
 func sourcePaths(query url.Values) ([]string, error) {
-	first, err := sourcePath(query.Get("dir"), query.Get("path"))
+	first, err := tree.SourcePath(query.Get("dir"), query.Get("path"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -835,7 +829,7 @@ func sourcePaths(query url.Values) ([]string, error) {
 		return nil, fmt.Errorf("pages: %w", err)
 	}
 	for _, p := range pages {
-		full, err := sourcePath(query.Get("dir"), p)
+		full, err := tree.SourcePath(query.Get("dir"), p, false)
 		if err != nil {
 			return nil, err
 		}

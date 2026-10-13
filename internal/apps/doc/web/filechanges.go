@@ -37,6 +37,20 @@ func (s server) checkFiles(w http.ResponseWriter, r *http.Request) {
 	}{report, recorded})
 }
 
+func (s server) acceptLostFile(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string `json:"item"`
+		Digest string `json:"digest"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := s.documents.AcceptLostFile(r.Context(), request.Item, request.Digest, s.now())
+	answer(w, item, err)
+}
+
 func (s server) confirmFilePath(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Item     string `json:"item"`

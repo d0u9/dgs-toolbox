@@ -32,7 +32,10 @@ type Revision struct {
 	Size   *int64 `yaml:"size,omitempty" json:"size,omitempty"`
 	Path   string `yaml:"path,omitempty" json:"path,omitempty"`
 	Lost   bool   `yaml:"lost,omitempty" json:"lost,omitempty"`
-	Added  string `yaml:"added" json:"added"`
+	// LossAccepted marks a lost file the owner chose to forget: checks stop
+	// reporting it unless its bytes turn up again.
+	LossAccepted bool   `yaml:"loss_accepted,omitempty" json:"loss_accepted,omitempty"`
+	Added        string `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`

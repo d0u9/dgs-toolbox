@@ -55,6 +55,7 @@ func (st *Store) FindFilePaths(ctx context.Context, digests []string) (map[strin
 	if err != nil {
 		return nil, err
 	}
+	var candidates []string
 	err = filepath.WalkDir(root, func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -102,31 +103,34 @@ func (st *Store) FindFilePaths(ctx context.Context, digests []string) (map[strin
 		if !allSizes && !sizes[info.Size()] {
 			return nil
 		}
-		digest, _, err := st.recordedDigest(ctx, rel)
-		if err != nil {
-			return err
-		}
-		if wanted[digest] {
-			found[digest] = append(found[digest], rel)
-		}
+		candidates = append(candidates, rel)
 		return nil
 	})
-	return found, err
+	if err != nil {
+		return nil, err
+	}
+	// Hashing is the slow part; the walk keeps its order in the result.
+	hashes := make([]string, len(candidates))
+	err = Each(ctx, len(candidates), FileWorkers, func(i int) error {
+		digest, _, err := st.recordedDigest(ctx, candidates[i])
+		hashes[i] = digest
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, digest := range hashes {
+		if wanted[digest] {
+			found[digest] = append(found[digest], candidates[i])
+		}
+	}
+	return found, nil
 }
 
 // ConfirmFilePath rechecks an offer before updating every reference within
 // the Item. No files are moved and no other Item's sidecar is written.
 func (st *Store) ConfirmFilePath(ctx context.Context, id, digest, previous, next string, now time.Time) (Item, error) {
-	if err := st.Require(); err != nil {
-		return Item{}, err
-	}
-	if !st.InPlace() {
-		return Item{}, unsupportedLayout()
-	}
-	if err := ctx.Err(); err != nil {
-		return Item{}, err
-	}
-	item, err := st.GetItem(id)
+	item, err := st.inPlaceItem(ctx, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -151,7 +155,7 @@ func (st *Store) ConfirmFilePath(ctx context.Context, id, digest, previous, next
 	for i := range item.Revisions {
 		r := &item.Revisions[i]
 		if r.Digest == digest {
-			r.Path, r.Lost = next, false
+			r.Path, r.Lost, r.LossAccepted = next, false, false
 		}
 		for j := range r.Originals {
 			if r.Originals[j].Digest == digest {
@@ -166,19 +170,32 @@ func (st *Store) ConfirmFilePath(ctx context.Context, id, digest, previous, next
 	return item, st.WriteItem(item)
 }
 
+// AcceptLostFile records that the owner will not restore a lost file. Every
+// revision with that digest keeps its fields, digest and path, stays lost,
+// and is no longer reported by checks; confirming a found path revives it.
+func (st *Store) AcceptLostFile(ctx context.Context, id, digest string, now time.Time) (Item, error) {
+	item, err := st.inPlaceItem(ctx, id)
+	if err != nil {
+		return Item{}, err
+	}
+	accepted := false
+	for i := range item.Revisions {
+		r := &item.Revisions[i]
+		if r.Digest == digest && r.Lost {
+			r.LossAccepted, accepted = true, true
+		}
+	}
+	if !accepted {
+		return Item{}, fmt.Errorf("no lost file with digest %s in Item %s", digest, id)
+	}
+	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "accept_lost_file", Digest: digest})
+	return item, st.WriteItem(item)
+}
+
 // RecordFileChange records content edited outside doc. It rechecks both the
 // sidecar and bytes; locked Items and stale reports cannot create snapshots.
 func (st *Store) RecordFileChange(ctx context.Context, id, digest, recorded, expected string, now time.Time) (Item, error) {
-	if err := st.Require(); err != nil {
-		return Item{}, err
-	}
-	if !st.InPlace() {
-		return Item{}, unsupportedLayout()
-	}
-	if err := ctx.Err(); err != nil {
-		return Item{}, err
-	}
-	item, err := st.GetItem(id)
+	item, err := st.inPlaceItem(ctx, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -219,9 +236,9 @@ func (st *Store) RecordFileChange(ctx context.Context, id, digest, recorded, exp
 		r := &item.Revisions[i]
 		switch r.Digest {
 		case digest:
-			r.Lost = true
+			r.Lost, r.LossAccepted = true, false
 		case actual:
-			r.Path, r.Lost = recorded, false
+			r.Path, r.Lost, r.LossAccepted = recorded, false, false
 			r.Size = new(size)
 		}
 	}
@@ -230,6 +247,20 @@ func (st *Store) RecordFileChange(ctx context.Context, id, digest, recorded, exp
 		return Item{}, err
 	}
 	return item, st.WriteItem(item)
+}
+
+// inPlaceItem loads an Item for a file action, which only in-place trees have.
+func (st *Store) inPlaceItem(ctx context.Context, id string) (Item, error) {
+	if err := st.Require(); err != nil {
+		return Item{}, err
+	}
+	if !st.InPlace() {
+		return Item{}, unsupportedLayout()
+	}
+	if err := ctx.Err(); err != nil {
+		return Item{}, err
+	}
+	return st.GetItem(id)
 }
 
 // recordedDigest uses an os.Root handle so a replaced symlink cannot make

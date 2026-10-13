@@ -25,7 +25,7 @@ var (
 	}
 	oneItem = map[string]bool{
 		"/api/revisions": true, "/api/head": true, "/api/revisions/delete": true, "/api/fields": true,
-		"/api/files/confirm": true, "/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
+		"/api/files/confirm": true, "/api/files/accept-loss": true, "/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
 	}
 	notItems = map[string]bool{
 		"/api/rules/layout": true, "/api/rules/if": true, "/api/snapshots/take": true,
