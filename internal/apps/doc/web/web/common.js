@@ -148,6 +148,15 @@ const NAME_LAST = ["fy", "date", "from", "to"];
 const nameRank = (k) => NAME_FIRST.includes(k) ? NAME_FIRST.indexOf(k) - NAME_FIRST.length : NAME_LAST.includes(k) ? 1 + NAME_LAST.indexOf(k) : 0;
 export const nameKeys = (t, also = []) => [...new Set(["name", ...also, ...t.fields.filter((f) => f.distinguishing).map((f) => f.key)])].sort((a, b) => nameRank(a) - nameRank(b));
 
+// itemNames names the Items an item field links, one or several joined by
+// ", "; an ID the tree lacks is shown as it is.
+export function itemNames(state, value) {
+  return String(value || "").split(", ").map((id) => {
+    const other = state.items.find((i) => i.id === id);
+    return other ? label(state, other) : id;
+  }).join(", ");
+}
+
 export function label(state, item) {
   const t = templateOf(state, item.type);
   const keys = t ? nameKeys(t) : Object.keys(item.fields);
@@ -327,6 +336,30 @@ export function inputFor(field, value, placeholder, state, self, type, country =
     // The Template's options come first, then the values saved.
     const known = () => loaded ||= saved().then((values) => [...new Set([...(field.options || []), ...values])]);
     return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, known, { arrow: true }));
+  } else if (field.type === "item" && field.multiple) {
+    // Several Items: one finder each, and + for another. Only the hidden
+    // input holds the field, the IDs joined by ", ", as the server keeps them.
+    control = el("input", { ...common, type: "hidden", value: value || "" });
+    const list = el("div", { className: "item-list" });
+    const join = () => {
+      control.value = [...new Set([...list.querySelectorAll("input[type=hidden]")].map((i) => i.value).filter(Boolean))].join(", ");
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const add = (id) => {
+      const one = inputFor({ ...field, multiple: false, description: "" }, id, placeholder, state, self, type, country);
+      one.querySelector(".field-name")?.remove();
+      const input = one.querySelector("input.field-input[type=hidden]");
+      input.removeAttribute("name");
+      input.classList.remove("field-input");
+      input.addEventListener("input", join);
+      list.append(one);
+    };
+    const values = String(value || "").split(",").map((v) => v.trim()).filter(Boolean);
+    for (const id of values.length ? values : [""]) add(id);
+    const more = el("button", { type: "button", className: "button", title: "Link another Item" }, "+");
+    more.onclick = () => add("");
+    return el("div", { className: "form-field" }, ...fieldHead(field), list, more, control);
   } else if (field.type === "revision" || field.type === "item") {
     // An Item, then for a revision field one of its revisions, HEAD when the
     // Item is picked. The value, <item-id> or <item-id>@<revision>, is in a

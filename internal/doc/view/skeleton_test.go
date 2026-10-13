@@ -1,6 +1,7 @@
 package view
 
 import (
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -161,5 +162,45 @@ func TestSkeletonChildrenFirstAndTakeNarrows(t *testing.T) {
 	}
 	if paths["a"] != "PL/Rust/01-A.pdf" || paths["b"] != "PL/01-B.pdf" || paths["c"] != "" {
 		t.Fatal(paths)
+	}
+}
+
+func TestSkeletonItemAboutSeveralAnchors(t *testing.T) {
+	a := skeletonItem("trip-a", "tenancy", "alice", "中国", "A")
+	b := skeletonItem("trip-b", "tenancy", "alice", "中国", "B")
+	ticket := skeletonItem("ticket", "bill", "alice", "中国", "Ticket")
+	ticket.Fields["about"] = "trip-a, trip-b"
+	result, err := BuildFolders([]Folder{{Name: "{name}", Each: "tenancy"}, {Name: "rest", Take: Values{"bill"}}}, []tree.Item{a, b, ticket}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var placed []string
+	for _, f := range result.Files {
+		if f.Item == "ticket" {
+			placed = append(placed, path.Dir(f.Path))
+		}
+	}
+	if strings.Join(placed, " ") != "A B" {
+		t.Fatal("ticket placed under", placed)
+	}
+}
+
+func TestFollowFirstOfSeveralLinks(t *testing.T) {
+	a, b := "01M4TAPN1KG778GCHW2ARHM45M", "01M4TJXMKDD5E8XT3XPEMZB6AM"
+	items := map[string]tree.Item{a: item(a, "trip", map[string]string{"name": "A"}, "d1"), b: item(b, "trip", map[string]string{"name": "B"}, "d2")}
+	keys := map[string]string{"about": a + ", " + b}
+	Follow(keys, items)
+	if keys["about.name"] != "A" {
+		t.Fatal(keys)
+	}
+}
+
+func TestFollowAtTheAnchorItIsUnder(t *testing.T) {
+	a, b := "01M4TAPN1KG778GCHW2ARHM45M", "01M4TJXMKDD5E8XT3XPEMZB6AM"
+	items := map[string]tree.Item{a: item(a, "trip", map[string]string{"name": "A"}, "d1"), b: item(b, "trip", map[string]string{"name": "B"}, "d2")}
+	keys := map[string]string{"about": a + ", " + b}
+	FollowAt(keys, items, b)
+	if keys["about.name"] != "B" {
+		t.Fatal(keys)
 	}
 }

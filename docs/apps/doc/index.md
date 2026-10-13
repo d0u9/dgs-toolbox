@@ -653,9 +653,15 @@ span `start` and `end` and their short name `name`, so one `within` and one
 `{about.name}` serve every kind. A document's `about` field links it to
 one; a rule places a tenancy's leases, bills and receipts with
 `rental/{about.address}/{about.start:compact}-{about.end:compact}/`, and
-tells the kinds apart with `about.type`. A document is about one anchor; a
-date two anchors' spans hold, such as a tenancy's and a car's, suggests
-both and leaves the choice.
+tells the kinds apart with `about.type`. A document is usually about one
+anchor; a date two anchors' spans hold, such as a tenancy's and a car's,
+suggests both and leaves the choice. With `multiple: true`, `about` may
+link several anchors, as a flight two overlapping trips share: the IDs are
+kept joined by `, `, the page offers one finder per Item and `+` for
+another, an `each` per anchor places the document under every anchor it
+names. `{about.name}` and the other linked keys come, inside the folder an
+`each` made for one of those anchors, from that anchor, and elsewhere from
+the first.
 - `country` — `options` may give a fixed list: the page then picks from
   them as from a select, as cards up to six, with no free input. Without
   `options`, the page suggests countries already used in the tree and any
@@ -1659,7 +1665,8 @@ holds several, kept in the options' order joined by `, ` (`电, 水`), each
 toggled on the page; its options may not hold a comma. A text field with
 `multiple: true` holds several values the same way, in the order typed
 (`alice, bob`), each a bubble on the page as tags are, with its options and
-saved values offered. A rule writes the
+saved values offered. An `item` field with `multiple: true` links several
+Items the same way, each checked against the tree. A rule writes the
 joined value, and a condition asks for one of them with `is` (`service is
 水`). A text field with `suggest: true` offers, as it is typed,
 the values Items of the same type hold for it now, in any country,
