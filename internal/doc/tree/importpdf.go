@@ -303,38 +303,44 @@ func (st *Store) linked(t Template, items []Item, fields map[string]string, self
 		if !ok || value == "" || (f.Type != FieldItem && f.Type != FieldRevision) {
 			continue
 		}
-		id, ref := value, ""
+		ids, ref := []string{value}, ""
 		if f.Type == FieldRevision {
+			var id string
 			id, ref, _ = SplitRevisionLink(value)
+			ids = []string{id}
+		} else if f.Multiple {
+			ids = strings.Split(value, MultipleSeparator)
 		}
-		if id == self {
-			return fmt.Errorf("%s: an Item cannot link to itself", f.Key)
-		}
-		var found *Item
-		for i := range items {
-			if items[i].ID == id {
-				found = &items[i]
-				break
+		for _, id := range ids {
+			if id == self {
+				return fmt.Errorf("%s: an Item cannot link to itself", f.Key)
 			}
-		}
-		if found == nil {
-			return fmt.Errorf("%s: no Item %s in this tree", f.Key, id)
-		}
-		if ref != "" && !found.hasRevision(ref) {
-			return fmt.Errorf("%s: Item %s has no revision %s", f.Key, id, ref)
-		}
-		for theirs, ours := range f.Match {
-			want := MatchValue(ours, fields)
-			if theirs == AnchorKey && anchors == nil {
-				templates, err := st.LoadTemplates()
-				if err != nil {
-					return err
+			var found *Item
+			for i := range items {
+				if items[i].ID == id {
+					found = &items[i]
+					break
 				}
-				anchors = AnchorTypes(templates)
 			}
-			got := Theirs(theirs, *found, anchors)
-			if want != "" && got != want {
-				return fmt.Errorf("%s: Item %s has %s %q, not the %q %s says", f.Key, id, theirs, got, want, ours)
+			if found == nil {
+				return fmt.Errorf("%s: no Item %s in this tree", f.Key, id)
+			}
+			if ref != "" && !found.hasRevision(ref) {
+				return fmt.Errorf("%s: Item %s has no revision %s", f.Key, id, ref)
+			}
+			for theirs, ours := range f.Match {
+				want := MatchValue(ours, fields)
+				if theirs == AnchorKey && anchors == nil {
+					templates, err := st.LoadTemplates()
+					if err != nil {
+						return err
+					}
+					anchors = AnchorTypes(templates)
+				}
+				got := Theirs(theirs, *found, anchors)
+				if want != "" && got != want {
+					return fmt.Errorf("%s: Item %s has %s %q, not the %q %s says", f.Key, id, theirs, got, want, ours)
+				}
 			}
 		}
 	}

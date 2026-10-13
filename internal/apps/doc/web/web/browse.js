@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/ui/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, nameKeys, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
+import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, itemNames, nameKeys, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
 import { icon, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
@@ -69,6 +69,8 @@ function valuesOf(i, key) {
   const v = currentFields(i)[key];
   if (v === undefined || v === null || v === "") return key === "owner" ? i.shared_with || [] : [];
   const f = fieldOf(key);
+  // An item field linking several Items is filtered by each.
+  if (f && f.type === "item" && f.multiple) return String(v).split(", ");
   const one = f && (f.type === "date" || f.type === "month") ? String(v).slice(0, 4) : String(v);
   // Filtering by owner shows an Item shared with that person too.
   return key === "owner" ? [one, ...(i.shared_with || [])] : [one];
@@ -85,8 +87,7 @@ function valueName(key, value) {
 // its name, any other value as kept.
 function labelOf(key, value) {
   const f = fieldOf(key);
-  const other = f && f.type === "item" && state.items.find((i) => i.id === value);
-  return other ? label(state, other) : value;
+  return f && f.type === "item" ? itemNames(state, value) : value;
 }
 
 // passes says whether an Item meets the search, Frequent and the first n
@@ -693,8 +694,7 @@ function shown(item, key, value) {
     const r = other && other.revisions.find((x) => (x.id || x.digest) === ref);
     return other ? label(state, other) + " @ " + (r ? revisionName(r, false) : ref) : value;
   }
-  const other = f && f.type === "item" && state.items.find((i) => i.id === value);
-  return other ? label(state, other) : value;
+  return f && f.type === "item" ? itemNames(state, value) : value;
 }
 
 function pick(id, digest) {

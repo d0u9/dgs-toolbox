@@ -106,7 +106,8 @@ type Skeleton struct {
 }
 
 // BuildFolders fills explicit folders in order. assigned is shared through
-// an Outline's mounts; an Item belongs to the first folder that places it.
+// an Outline's mounts; an Item belongs to the first folder that places it,
+// except that an Item about several anchors goes under each of them.
 func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Defaults, pins map[string]Pin, at string, assigned map[string]bool, folderNumbers map[string]map[int]string, now time.Time) (Skeleton, error) {
 	out := Skeleton{Plan: Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}}
 	if err := ValidateFolders(folders); err != nil {
@@ -133,9 +134,12 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 			pinned[id] = folder
 		}
 	}
-	keysOf := func(item tree.Item, n int) map[string]string {
+	// keysOf is an Item's keys at revision n, its links followed; inside a
+	// folder made per anchor, a link naming that anchor among others
+	// follows it.
+	keysOf := func(item tree.Item, n int, anchor string) map[string]string {
 		keys := KeysOf(item, n)
-		Follow(keys, byID)
+		FollowAt(keys, byID, anchor)
 		for lang, name := range types.Names(keys["type"]) {
 			keys["type:"+lang] = name
 		}
@@ -166,8 +170,12 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 		indices []int
 		keys    map[string]string
 	}
-	var walk func([]Folder, string, []tree.Item, Defaults, map[string]string, []expr.Expr) error
-	walk = func(list []Folder, parent string, pool []tree.Item, inherited Defaults, context map[string]string, conditions []expr.Expr) error {
+	// under holds, for an Item placed inside a folder each made per anchor,
+	// the anchors it was placed under; another anchor it is about may still
+	// place it.
+	under := map[string]map[string]bool{}
+	var walk func([]Folder, string, []tree.Item, Defaults, map[string]string, []expr.Expr, string) error
+	walk = func(list []Folder, parent string, pool []tree.Item, inherited Defaults, context map[string]string, conditions []expr.Expr, anchor string) error {
 		for _, f := range list {
 			d := f.Defaults.Inherit(inherited)
 			if f.File != "" {
@@ -206,9 +214,9 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 						if anchor.Type != f.Each && !types.Is(anchor.Type, f.Each) {
 							continue
 						}
-						g := group{value: anchor.ID, keys: keysOf(anchor, len(anchor.Revisions))}
+						g := group{value: anchor.ID, keys: keysOf(anchor, len(anchor.Revisions), "")}
 						for _, i := range pool {
-							if i.ID == anchor.ID || i.CurrentFields()["about"] == anchor.ID {
+							if i.ID == anchor.ID || slices.Contains(strings.Split(i.CurrentFields()["about"], tree.MultipleSeparator), anchor.ID) {
 								g.items = append(g.items, i)
 							}
 						}
@@ -217,7 +225,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 				} else {
 					values := map[string][]tree.Item{}
 					for _, i := range pool {
-						keys := keysOf(i, len(i.Revisions))
+						keys := keysOf(i, len(i.Revisions), anchor)
 						e := env{keys: keys, item: i, types: types}
 						for _, v := range e.Values(f.Each) {
 							values[v] = append(values[v], i)
@@ -253,12 +261,16 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 				out.Folders = append(out.Folders, folder)
 				// The folders below take first; a folder with take keeps what
 				// none of them took.
-				if err := walk(f.Folders, folder, g.items, d, g.keys, filters); err != nil {
+				inner := anchor
+				if _, isType := types.byType[f.Each]; isType {
+					inner = g.value
+				}
+				if err := walk(f.Folders, folder, g.items, d, g.keys, filters, inner); err != nil {
 					return err
 				}
 				var choices []choice
 				for _, item := range g.items {
-					if assigned[item.ID] {
+					if assigned[item.ID] && (inner == "" || under[item.ID] == nil || under[item.ID][inner]) {
 						continue
 					}
 					forced := pinned[item.ID] == folder
@@ -274,7 +286,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 						if r.Digest == "" || !latest[r.Ref()] || d.Revision == Head && r.Ref() != item.Current() {
 							continue
 						}
-						keys := keysOf(item, n+1)
+						keys := keysOf(item, n+1, inner)
 						expired := item.SupersededBy != "" || (keys["date.end"] != "" && keys["date.end"] < now.Format("2006-01-02"))
 						if d.Valid == "today" && expired || d.Valid == "expired" && !expired {
 							continue
@@ -366,7 +378,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 					}
 					for _, index := range c.indices {
 						r := c.item.Revisions[index]
-						keys := keysOf(c.item, index+1)
+						keys := keysOf(c.item, index+1, inner)
 						name, lacking, err := renderName(d.File, keys, n)
 						if err != nil {
 							return err
@@ -377,7 +389,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 						}
 						if len(c.indices) > 1 && !strings.Contains(d.File, "{date") && !strings.Contains(d.File, "{year}") {
 							dateOf := func(index int) string {
-								k, added := keysOf(c.item, index+1), c.item.Revisions[index].Added
+								k, added := keysOf(c.item, index+1, inner), c.item.Revisions[index].Added
 								if len(added) >= 10 {
 									added = added[:10]
 								} else {
@@ -416,6 +428,12 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 						out.Files = append(out.Files, File{Path: path.Join(folder, name), Item: c.item.ID, Digest: r.Digest, Revision: index + 1, Node: folder, Number: n, NumberName: keys[numberKey]})
 					}
 					assigned[c.item.ID] = true
+					if inner != "" {
+						if under[c.item.ID] == nil {
+							under[c.item.ID] = map[string]bool{}
+						}
+						under[c.item.ID][inner] = true
+					}
 				}
 				if f.Each != "" && len(out.Files) == filesBefore {
 					out.Folders = out.Folders[:foldersBefore]
@@ -426,7 +444,7 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 		}
 		return nil
 	}
-	if err := walk(folders, at, items, defaults, map[string]string{}, nil); err != nil {
+	if err := walk(folders, at, items, defaults, map[string]string{}, nil, ""); err != nil {
 		return out, err
 	}
 	out.Files, out.Clashes = separate(out.Files)
