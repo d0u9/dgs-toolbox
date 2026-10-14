@@ -3,6 +3,7 @@ package gpx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,8 +27,7 @@ import (
 // Two writes are not held back, because each is a file the user asked for by
 // name: the sidecar of a file just written by *Save as…* or by saving a
 // planned route, which belongs to the new file and not to an edit of an open
-// one. A track renamed in a GPX dgs wrote is likewise written into that file
-// at once — see renamePart, which names the file itself rather than a sidecar.
+// one.
 type pendingStore struct {
 	mu    sync.Mutex
 	edits map[string]sidecar.File
@@ -103,6 +103,9 @@ func flush(path string) error {
 		return err
 	}
 	pending.forget(path)
+	if err := trashUnlinked(path); err != nil {
+		return fmt.Errorf("saved %s; photo cleanup failed: %w", path, err)
+	}
 	return nil
 }
 
@@ -125,17 +128,21 @@ func (a api) saveFiles(w http.ResponseWriter, r *http.Request) {
 		paths = pending.paths()
 	}
 	saved := []string{}
+	warnings := []string{}
 	for _, path := range paths {
 		if !pending.has(path) {
 			continue
 		}
 		if err := flush(path); err != nil {
-			writeError(w, statusFor(err), err)
-			return
+			if pending.has(path) {
+				writeError(w, statusFor(err), err)
+				return
+			}
+			warnings = append(warnings, err.Error())
 		}
 		saved = append(saved, path)
 	}
-	writeJSON(w, map[string]any{"ok": true, "saved": saved})
+	writeJSON(w, map[string]any{"ok": true, "saved": saved, "warnings": warnings})
 }
 
 // revertFiles drops unsaved edits: the files read as they are on disk again.

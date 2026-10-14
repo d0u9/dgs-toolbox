@@ -1087,9 +1087,9 @@ const dirtyPaths = () => [...state.tracks].filter(([, entry]) => entry.track.uns
 async function saveFiles(paths = dirtyPaths()) {
   if (paths.length === 0) return;
   try {
-    const { saved } = await api.saveFiles(paths);
+    const { saved, warnings = [] } = await api.saveFiles(paths);
     for (const path of saved) await reloadEntry(path);
-    showMessage(saved.length === 1 ? `Saved ${basename(saved[0])}` : `Saved ${saved.length} files`);
+    showMessage(warnings.length ? warnings.join("\n") : saved.length === 1 ? `Saved ${basename(saved[0])}` : `Saved ${saved.length} files`, warnings.length > 0);
   } catch (error) {
     showMessage(error.message, true);
   }
@@ -1140,7 +1140,14 @@ async function closeTracks(paths) {
       danger: true,
     });
     if (!ok) return;
-    if (dirty.length) await api.revertFiles(dirty).catch(() => {});
+    try {
+      for (const path of drafts) await api.discardDraft(path);
+      const files = dirty.filter((path) => !drafts.includes(path));
+      if (files.length) await api.revertFiles(files);
+    } catch (error) {
+      showMessage(error.message, true);
+      return;
+    }
   }
   for (const path of paths) removeTrack(path);
   clearSelection();

@@ -846,8 +846,13 @@ func statusFor(err error) int {
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("encode response: %w", err))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(value)
+	_, _ = w.Write(append(data, '\n'))
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {

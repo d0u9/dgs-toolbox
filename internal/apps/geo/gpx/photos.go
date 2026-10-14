@@ -39,6 +39,10 @@ var photoName = regexp.MustCompile(`^[0-9a-f]{12}\.webp$`)
 // photoDir is the folder beside a GPX that holds its photos, as a GPX link
 // names it: trip.gpx has trip.photos.
 func photoDir(path string) string {
+	if isDraft(path) {
+		id, _, _ := strings.Cut(strings.TrimPrefix(path, draftPrefix), "/")
+		return "draft-" + id + ".photos"
+	}
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".photos"
 }
 
@@ -74,6 +78,75 @@ func waypointPhotos(a analysis, key string, wpt gpxfile.Waypoint) sidecar.Photos
 	}
 	_, photos := splitLinks(wpt.Links, photoDir(a.path))
 	return sidecar.Photos{Description: wpt.Description, Photos: photos}
+}
+
+// transferWaypoint copies the edited waypoint and its photos before any source is removed.
+func transferWaypoint(a analysis, key string, wpt gpxfile.Waypoint, target string) (gpxfile.Waypoint, error) {
+	shown := waypointPhotos(a, key, wpt)
+	others, _ := splitLinks(wpt.Links, photoDir(a.path))
+	if name, ok := a.cleaning.Names[key]; ok {
+		wpt.Name = name
+	}
+	wpt.Description = shown.Description
+	photos := make([]sidecar.Photo, 0, len(shown.Photos))
+	for _, photo := range shown.Photos {
+		data, err := readPhoto(a.path, photo.Name)
+		if err != nil {
+			return wpt, err
+		}
+		var name string
+		if isDraft(target) {
+			name, err = drafts.keepPhoto(target, data)
+		} else {
+			name, err = publishPhoto(filepath.Join(filepath.Dir(target), photoDir(target)), data)
+		}
+		if err != nil {
+			return wpt, err
+		}
+		photos = append(photos, sidecar.Photo{Name: name, Caption: photo.Caption})
+	}
+	wpt.Links = photoLinks(others, photos, photoDir(target))
+	return wpt, nil
+}
+
+func readPhoto(path, name string) ([]byte, error) {
+	if !photoName.MatchString(name) {
+		return nil, errors.New("invalid photo name")
+	}
+	if !isDraft(path) {
+		return os.ReadFile(filepath.Join(filepath.Dir(path), photoDir(path), name))
+	}
+	drafts.mu.Lock()
+	defer drafts.mu.Unlock()
+	data, ok := drafts.photos[path][name]
+	if !ok {
+		return nil, fmt.Errorf("%s: %w", name, os.ErrNotExist)
+	}
+	return data, nil
+}
+
+func (s *draftStore) keepPhoto(path string, data []byte) (string, error) {
+	if _, format, err := image.DecodeConfig(bytes.NewReader(data)); err != nil || format != "webp" {
+		return "", errors.New("a photo is sent as WebP")
+	}
+	sum := sha256.Sum256(data)
+	name := hex.EncodeToString(sum[:])[:12] + ".webp"
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.drafts[path]; !ok {
+		return "", errNoDraft
+	}
+	if s.photos == nil {
+		s.photos = map[string]map[string][]byte{}
+	}
+	if s.photos[path] == nil {
+		s.photos[path] = map[string][]byte{}
+	}
+	if before, ok := s.photos[path][name]; ok && !bytes.Equal(before, data) {
+		return "", errors.New("photo name is already occupied by different bytes")
+	}
+	s.photos[path][name] = data
+	return name, nil
 }
 
 // ownGPX refuses any path but a GPX dgs wrote, on disk: a draft has no folder
@@ -124,11 +197,19 @@ func (a api) addPhoto(w http.ResponseWriter, r *http.Request) {
 // only once a same-folder .dgs-part file reads back to the same SHA-256 and
 // decodes as a WebP.
 func publishPhoto(dir string, data []byte) (string, error) {
+	if _, format, err := image.DecodeConfig(bytes.NewReader(data)); err != nil || format != "webp" {
+		return "", errors.New("a photo is sent as WebP")
+	}
 	sum := sha256.Sum256(data)
 	name := hex.EncodeToString(sum[:])[:12] + ".webp"
 	final := filepath.Join(dir, name)
-	if _, err := os.Stat(final); err == nil {
+	if before, err := os.ReadFile(final); err == nil {
+		if !bytes.Equal(before, data) {
+			return "", fmt.Errorf("%s: photo name is already occupied by different bytes", final)
+		}
 		return name, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -139,7 +220,7 @@ func publishPhoto(dir string, data []byte) (string, error) {
 		return "", err
 	}
 	defer os.Remove(part)
-	if _, err := file.Write(data); err == nil {
+	if _, err = file.Write(data); err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
@@ -158,8 +239,17 @@ func publishPhoto(dir string, data []byte) (string, error) {
 	if _, format, err := image.DecodeConfig(bytes.NewReader(back)); err != nil || format != "webp" {
 		return "", fmt.Errorf("%s: the photo read back does not decode", part)
 	}
-	if err := verifiedcopy.Publish(part, final); err != nil && !errors.Is(err, os.ErrExist) {
-		return "", err
+	if err := verifiedcopy.Publish(part, final); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
+		existing, err := os.ReadFile(final)
+		if err != nil {
+			return "", err
+		}
+		if !bytes.Equal(existing, data) {
+			return "", fmt.Errorf("%s: photo name is already occupied by different bytes", final)
+		}
 	}
 	return name, verifiedcopy.SyncDirectory(dir)
 }
@@ -225,6 +315,10 @@ func (a api) setPhotos(w http.ResponseWriter, r *http.Request) {
 // included. Any other name is refused, so no other file is read.
 func (a api) servePhoto(w http.ResponseWriter, r *http.Request) {
 	path, name := r.URL.Query().Get("path"), r.URL.Query().Get("name")
+	if !photoName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, errors.New("invalid photo name"))
+		return
+	}
 	result, err := analyse(path, stops.Defaults())
 	if err != nil {
 		writeError(w, statusFor(err), err)
@@ -234,6 +328,16 @@ func (a api) servePhoto(w http.ResponseWriter, r *http.Request) {
 		for _, photo := range waypointPhotos(result, result.keys.Waypoints[i], wpt).Photos {
 			if photo.Name == name {
 				w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+				if isDraft(path) {
+					data, err := readPhoto(path, name)
+					if err != nil {
+						writeError(w, statusFor(err), err)
+						return
+					}
+					w.Header().Set("Content-Type", "image/webp")
+					_, _ = w.Write(data)
+					return
+				}
 				http.ServeFile(w, r, filepath.Join(filepath.Dir(path), photoDir(path), name))
 				return
 			}
@@ -245,15 +349,18 @@ func (a api) servePhoto(w http.ResponseWriter, r *http.Request) {
 // trashUnlinked moves every photo no waypoint of the saved GPX links to into
 // the photo folder's .trash/.
 func trashUnlinked(path string) error {
+	file, err := gpxfile.Open(path)
+	if err != nil {
+		return err
+	}
+	if !file.IsOurs() {
+		return nil
+	}
 	dir := filepath.Join(filepath.Dir(path), photoDir(path))
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	file, err := gpxfile.Open(path)
 	if err != nil {
 		return err
 	}

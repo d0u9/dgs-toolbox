@@ -141,7 +141,10 @@ func Summarise(line Line, distances []float64) Stats {
 	}
 	stats.Distance = distances[len(distances)-1]
 	reference, haveReference := 0.0, false
-	for _, sample := range line {
+	for i, sample := range line {
+		if i > 0 && (sample.Segment != line[i-1].Segment || sample.Track != line[i-1].Track) {
+			haveReference = false
+		}
 		stats.Bounds = stats.Bounds.Extend(sample.LatLon)
 		// A file's tracks need not be in time order, as when one is added from
 		// another file: the span runs from the earliest time to the latest.

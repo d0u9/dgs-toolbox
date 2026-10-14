@@ -13,6 +13,41 @@ const plain = value => JSON.parse(JSON.stringify(value));
 import {Element,documentStub} from '../../../webui/test_dom.mjs';
 const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};};
 
+test('closing drafts discards server state; cancellation or a failed discard keeps the workspace',async()=>{
+ const app=source('app');
+ for(const outcome of ['closed','cancelled','failed']){
+  const calls=[],state={tracks:new Map([
+   ['draft:1/Synthetic.gpx',{track:{draft:true,unsaved:true,name:'Synthetic'}}],
+   ['source.gpx',{track:{unsaved:true,name:'Source'}}],
+  ])};
+  const context=vm.createContext({state,
+   confirmDialog:async()=>outcome!=='cancelled',
+   api:{discardDraft:async path=>{calls.push(['discard',path]);if(outcome==='failed')throw Error('Discard refused');},revertFiles:async paths=>calls.push(['revert',plain(paths)])},
+   removeTrack:path=>state.tracks.delete(path),clearSelection(){},renderTracks(){},showMessage:(...args)=>calls.push(['message',...args]),
+  });
+  vm.runInContext(app.slice(app.indexOf('async function closeTracks('),app.indexOf('const basename')),context);
+  await context.closeTracks([...state.tracks.keys()]);
+  if(outcome==='closed'){
+   assert.equal(state.tracks.size,0);
+   assert.deepEqual(calls,[['discard','draft:1/Synthetic.gpx'],['revert',['source.gpx']]]);
+  }else{
+   assert.equal(state.tracks.size,2);
+   assert.deepEqual(calls,outcome==='cancelled'?[]:[['discard','draft:1/Synthetic.gpx'],['message','Discard refused',true]]);
+  }
+ }
+});
+
+test('Save refreshes published files and shows cleanup warnings without treating them as unsaved',async()=>{
+ const calls=[],state={focus:null};
+ const context=vm.createContext({state,api:{saveFiles:async()=>({saved:['source.gpx'],warnings:['Photo cleanup failed']})},
+  reloadEntry:async path=>calls.push(['reload',path]),showMessage:(...args)=>calls.push(['message',...args]),renderTracks:()=>calls.push(['render']),basename:path=>path,
+ });
+ const app=source('app');
+ vm.runInContext(app.slice(app.indexOf('async function saveFiles('),app.indexOf('// revertFiles')),context);
+ await context.saveFiles(['source.gpx']);
+ assert.deepEqual(calls,[['reload','source.gpx'],['message','Photo cleanup failed',true],['render']]);
+});
+
 function loadShared(name,context){
   if(name === "dialog" && !context.window)context.window={addEventListener(){}};
   const original=sharedSource(name),names=[...original.matchAll(/export (?:function|class|const) (\w+)/g)].map(match=>match[1]);

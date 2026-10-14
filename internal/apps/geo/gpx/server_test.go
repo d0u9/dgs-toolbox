@@ -524,7 +524,7 @@ func TestAddedTracksAreSavedAsANewFile(t *testing.T) {
 	if len(saved.Cuts) != 1 || saved.Cuts[0] != 10 {
 		t.Fatalf("merged cuts = %v", saved.Cuts)
 	}
-	if original.Added != 0 || len(original.Points) != n || original.Clean.Counts.Manual != 0 || len(original.Cuts) != 1 {
+	if original.Added != 0 || len(original.Points) != n || original.Clean.Counts.Manual != 0 || len(original.Cuts) != 0 {
 		t.Fatalf("original: added %d points %d manual %d", original.Added, len(original.Points), original.Clean.Counts.Manual)
 	}
 	if code, _ := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": watch, "target": merged}); code != http.StatusConflict {

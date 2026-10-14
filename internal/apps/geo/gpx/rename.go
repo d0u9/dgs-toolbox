@@ -104,6 +104,10 @@ func (s *draftStore) rename(path, name string) (string, error) {
 	}
 	s.drafts[target] = file
 	delete(s.drafts, path)
+	if photos, ok := s.photos[path]; ok {
+		s.photos[target] = photos
+		delete(s.photos, path)
+	}
 	return target, nil
 }
 

@@ -154,6 +154,9 @@ func Parse(r io.Reader) (*File, error) {
 		for _, seg := range trk.Segments {
 			segment := Segment{Points: make([]Point, 0, len(seg.Points))}
 			for _, pt := range seg.Points {
+				if !pt.validPosition() {
+					return nil, fmt.Errorf("parse GPX: track point is off the globe")
+				}
 				segment.Points = append(segment.Points, pt.point())
 			}
 			track.Segments = append(track.Segments, segment)
@@ -163,11 +166,17 @@ func Parse(r io.Reader) (*File, error) {
 	for _, rte := range doc.Routes {
 		route := Route{Name: strings.TrimSpace(rte.Name), Points: make([]Point, 0, len(rte.Points))}
 		for _, pt := range rte.Points {
+			if !pt.validPosition() {
+				return nil, fmt.Errorf("parse GPX: route point is off the globe")
+			}
 			route.Points = append(route.Points, pt.point())
 		}
 		file.Routes = append(file.Routes, route)
 	}
 	for _, wpt := range doc.Waypoints {
+		if !wpt.validPosition() {
+			return nil, fmt.Errorf("parse GPX: waypoint is off the globe")
+		}
 		file.Waypoints = append(file.Waypoints, Waypoint{
 			Point:       wpt.point(),
 			Name:        strings.TrimSpace(wpt.Name),
@@ -202,6 +211,10 @@ func (pt xmlPoint) point() Point {
 		}
 	}
 	return point
+}
+
+func (pt xmlPoint) validPosition() bool {
+	return pt.Lat >= -90 && pt.Lat <= 90 && pt.Lon >= -180 && pt.Lon <= 180
 }
 
 func parseFloat(text *string) (float64, bool) {
