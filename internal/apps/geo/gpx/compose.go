@@ -255,8 +255,8 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := filepath.Abs(strings.TrimSpace(body.Target))
-	if err != nil || !strings.EqualFold(filepath.Ext(target), ".gpx") {
-		writeError(w, http.StatusBadRequest, errors.New("the new file must be a .gpx file"))
+	if err != nil || !namedGPX(target) {
+		writeError(w, http.StatusBadRequest, errors.New("the new file must be a named .gpx file"))
 		return
 	}
 	source := body.Path
@@ -337,7 +337,7 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		pending.drop(body.Path)
+		pending.forget(body.Path)
 	}
 	writeJSON(w, map[string]any{"ok": true, "path": target})
 }

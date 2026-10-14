@@ -150,7 +150,7 @@ func TestTrackCarriesSeries(t *testing.T) {
 	if n == 0 || len(got.Distance) != n || len(got.Elevation) != n || len(got.Speed) != n || len(got.Time) != n {
 		t.Fatalf("series lengths differ: %d points", n)
 	}
-	if got.Name != "hangzhou-jiande-drive" || got.Segments[n-1] != 1 || got.Stats.Distance < 90000 || got.Stats.Start == nil {
+	if got.Name != "Hangzhou to Jiande" || got.Segments[n-1] != 1 || got.Stats.Distance < 90000 || got.Stats.Start == nil {
 		t.Fatalf("track = %s, %d segments, %.0f m", got.Name, got.Segments[n-1]+1, got.Stats.Distance)
 	}
 
@@ -1118,7 +1118,8 @@ func TestARecordingIsNeverWritten(t *testing.T) {
 		}},
 		{"segments", http.MethodPut, "/api/segments", map[string]any{"path": source, "cuts": []int{1}}},
 		{"part-name", http.MethodPut, "/api/part-name", map[string]any{"path": source, "key": "t0", "name": "Walk home"}},
-		{"file-name", http.MethodPut, "/api/file-name", map[string]any{"path": source, "name": "Renamed recording"}},
+		{"undo", http.MethodPost, "/api/undo", map[string]any{"path": source}},
+		{"redo", http.MethodPost, "/api/redo", map[string]any{"path": source}},
 		{"waypoint", http.MethodPost, "/api/waypoint", map[string]any{"path": source, "name": "Here", "lat": 30.4, "lon": 120.4}},
 		{"fill", http.MethodPost, "/api/fill", map[string]any{
 			"path": source, "first": 0, "last": 2, "profile": "foot", "route": [][]float64{{120.0, 30.0}, {120.1, 30.1}},
@@ -1151,6 +1152,17 @@ func TestARecordingIsNeverWritten(t *testing.T) {
 			t.Fatalf("%s wrote the recording", call.name)
 		}
 	}
+
+	// Renaming is the one change that reaches a recording: its name, never its
+	// bytes. It is made last, since the file is then under another path.
+	renamed := filepath.Join(folder, "Renamed recording.gpx")
+	if code, body := send(t, server, http.MethodPut, "/api/file-name", map[string]any{"path": source, "name": "Renamed recording"}); code != http.StatusOK {
+		t.Fatalf("file-name = %d %v", code, body)
+	}
+	if after, err := os.ReadFile(renamed); err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("renaming changed the recording: %v", err)
+	}
+	source = renamed
 
 	// Writing a new file never writes over one that is there, either: the
 	// rule protects any file the user already has, not only a recording.

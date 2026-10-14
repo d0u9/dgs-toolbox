@@ -51,7 +51,9 @@ func (s *pendingStore) get(path string) (sidecar.File, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	file, ok := s.edits[pendingKey(path)]
-	return file, ok
+	// A copy: a handler edits what it reads before it is held again, and the
+	// state held now must stay as it is for undo.
+	return cloneSidecar(file), ok
 }
 
 func (s *pendingStore) set(path string, file sidecar.File) {
@@ -64,6 +66,13 @@ func (s *pendingStore) drop(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.edits, pendingKey(path))
+}
+
+// forget drops a file's held edits and its undo history: what was saved,
+// reverted or discarded is not undone.
+func (s *pendingStore) forget(path string) {
+	s.drop(path)
+	history.forget(path)
 }
 
 func (s *pendingStore) has(path string) bool {
@@ -93,7 +102,7 @@ func flush(path string) error {
 	if err := writeSidecarNow(path, file); err != nil {
 		return err
 	}
-	pending.drop(path)
+	pending.forget(path)
 	return nil
 }
 
@@ -153,7 +162,7 @@ func (a api) revertFiles(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("a new GPX has nothing on disk to go back to; remove it from the workspace instead"))
 			return
 		}
-		pending.drop(path)
+		pending.forget(path)
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }

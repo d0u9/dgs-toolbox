@@ -72,7 +72,7 @@ test('renaming a workspace file preserves its order, identity, selection and cam
  assert.equal(state.selection.has('draft:4/Old.gpx'),false);
  assert.equal(state.anchor,'draft:4/New.gpx');
  assert.equal(state.fill.preview.path,'draft:4/New.gpx');
- assert.equal(entry.track.name,'New');
+ assert.equal(entry.track.name,'Old'); // the name comes from the server on reload, not the path
  assert.equal(entry.track.path,'draft:4/New.gpx');
  assert.equal(context.planner.source,'draft:4/New.gpx');
  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{fit:false}]);

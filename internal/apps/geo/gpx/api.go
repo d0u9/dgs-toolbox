@@ -143,7 +143,10 @@ func configuredMap(tile config.GeoGPXTile) baseMap {
 type trackJSON struct {
 	Path      string       `json:"path"`
 	Name      string       `json:"name"`
-	Points    [][2]float64 `json:"points"` // [lon, lat], the order map libraries take
+	Renamed   bool         `json:"renamed,omitempty"` // the name was given here, not the file's own
+	Undo      int          `json:"undo"`              // edits that can be undone
+	Redo      int          `json:"redo"`              // edits that can be redone
+	Points    [][2]float64 `json:"points"`            // [lon, lat], the order map libraries take
 	Segments  []int        `json:"segments"`
 	Distance  []float64    `json:"distance"`  // metres from the start
 	Elevation []*float64   `json:"elevation"` // metres
@@ -388,10 +391,8 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	line, index := result.Kept(source)
 	distances := track.Distances(line)
 	return analysis{
-		path: path,
-		// The file name is the one the reader chose; the name inside is often a
-		// recorder's timestamp.
-		name:       strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		path:       path,
+		name:       displayName(path, file.Name, cleaning.Names),
 		file:       &withAdded,
 		keys:       keys,
 		layout:     layout,
@@ -407,6 +408,18 @@ func analyse(path string, params stops.Params) (analysis, error) {
 		stops:      stops.Detect(line, params),
 		params:     params,
 	}, nil
+}
+
+// displayName is what a GPX is called: the name given here, then its own
+// <name>, then its file name. The file name may change; the name stays.
+func displayName(path, own string, names map[string]string) string {
+	if given := strings.TrimSpace(names[fileNameKey]); given != "" {
+		return given
+	}
+	if own != "" {
+		return own
+	}
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 }
 
 func trackResponse(a analysis) trackJSON {
@@ -442,6 +455,8 @@ func trackResponse(a analysis) trackJSON {
 	// they are saved, so a file can have unsaved edits and no sidecar yet, or
 	// a sidecar from an earlier save and unsaved edits over it.
 	response.Unsaved = pending.has(a.path) && !response.Draft
+	_, response.Renamed = a.cleaning.Names[fileNameKey]
+	response.Undo, response.Redo = history.counts(a.path)
 	if !response.Draft {
 		if _, err := os.Stat(sidecar.PathFor(a.path)); err == nil || a.sidecarErr != nil {
 			response.Clean.Sidecar = sidecar.PathFor(a.path)

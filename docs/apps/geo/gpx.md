@@ -22,6 +22,9 @@ that would be convenient:
   not to migrate its sidecar into it.
 - No command deletes or replaces a recording. Discarding a sidecar deletes the
   sidecar only.
+- *Rename file…* is the one change that reaches a recording: it changes the
+  file's name in its folder, with its sidecar and photos, never its bytes. The
+  contents are hashed before and checked under the new name.
 - Anything that wants the edits inside a GPX writes a **new** file and leaves
   the source alone: the server creates a file that is not there and never
   writes over one.
@@ -35,7 +38,8 @@ recovered is the one nothing may touch, and the cost of the rule — a copy on
 disk rather than a file converted in place — is paid every time without asking.
 
 `TestARecordingIsNeverWritten` pins it: every endpoint that changes anything
-runs against a recording, and the recording's bytes have to come out the same.
+runs against a recording, and the recording's bytes have to come out the same,
+under its new name after a rename.
 
 ## Two surfaces
 
@@ -68,8 +72,8 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops (with `center`, the mean position, and `anchor`, the kept sample index nearest the stop time midpoint, used for the marker) and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
-| `PUT /api/file-name` | Rename a draft or a GPX dgs created within its current folder; `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
-| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
+| `PUT /api/file-name` | Rename a draft or any GPX within its current folder (a recording keeps its bytes, checked by digest); `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
+| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
 | `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
 | `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
 | `POST /api/photo` | Takes one WebP, sent as an `image/webp` body, for the GPX `path` names — a dgs GPX on disk. Anything that does not decode as WebP is refused; the bytes are kept as the page encoded them. Publishes it into `<gpx name>.photos/` under the first 12 hex digits of the encoded bytes' SHA-256. Answers its `name`. An identical file already there is reused. Nothing is referenced until `PUT /api/waypoint-photos` holds it and the edit is saved. |
@@ -89,6 +93,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
 | `GET /api/unsaved` | The files holding edits that are not on disk, so a reloaded page shows the same marks again. |
 | `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote. Answers what was saved. |
+| `POST /api/undo`, `POST /api/redo` | Step one file's unsaved edits back or forward; `{path}` answers `moved`, false when there is nothing to step. A track's `undo` and `redo` say how many steps there are. |
 | `DELETE /api/pending` | Drops unsaved edits, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
@@ -196,6 +201,14 @@ map. It is the interface later milestones build on.
   and one page. They go when `dgs` stops. What is bought is that an edit can
   be taken back whole at any point, and that a half-finished edit never
   reaches the disk.
+- **Undo and redo.** ⌘Z (Ctrl+Z off a Mac) undoes the focused file's latest
+  unsaved edit and ⇧⌘Z redoes it, while no field has the keyboard. Each file
+  keeps its own history of up to 200 edits: every change held before saving —
+  removals, filters, cuts, fills, names, waypoints, parts added, moved or
+  deleted. A new edit ends what could be redone. Saving, *Revert* and
+  discarding forget a file's history, and what touched the disk at once —
+  *Rename file…*, *Save as…*, *Close* — is not undone. The history lives in the
+  `dgs` process, like the edits.
 - **Closing an edited file.** *Close* asks first when the file holds unsaved
   edits, or when it is a new GPX never saved — closing is the one way edits
   go without being seen again, because the file is not reopened with them.
@@ -211,10 +224,14 @@ map. It is the interface later milestones build on.
   and `Esc` clears the lot. Picking rows is not looking at one — only a plain
   click changes the map highlight and the profile to a file, so the focused row and the
   picked rows are drawn differently and mean different things.
-- **The context menu.** A right click on a draft or a GPX dgs created offers
-  *Rename…*: a draft changes its name in memory; a saved file and any companion
-  sidecar move to the new name in the same folder. Pending edits follow it and
-  remain unsaved; existing names are refused. A file's row also offers *Save* and
+- **The context menu.** A right click on a draft offers *Rename…*, which
+  changes its name in memory. On a saved file *Rename…* changes the GPX's own
+  name as an unsaved edit: saving writes it into a GPX dgs wrote, and into the
+  sidecar of a recording. Once a name is given, *Restore the name* drops it,
+  also as an unsaved edit, and the GPX's own name shows again. Every saved file also offers *Rename file…*: the
+  file and any companion sidecar move to the new name in the same folder, the
+  GPX's own name stays, a recording's bytes are unchanged, pending edits follow it and remain unsaved, and
+  existing names are refused. A file's row also offers *Save* and
   *Revert* for what is edited but not on disk, then *Save as…* and
   *Convert to a dgs GPX…*, then discarding its sidecar or its embedded edits,
   then *Close*, which takes it out of the workspace and changes nothing on
@@ -278,9 +295,10 @@ map. It is the interface later milestones build on.
   writes over one, so the dialog refuses a name that is already taken rather
   than offering to replace it. The full path it returns is what the server is
   asked to write.
-- **Names.** A track is named by its file name. The name inside a GPX file is
-  often only a recorder's timestamp; the file name is the one the reader chose.
-  File names run long, so the sidebar reads a size smaller, a name wraps to two
+- **Names.** A GPX is named by its own `<metadata><name>`, or the name given
+  it here, and only by its file name when it has neither. The file name may
+  change while the name stays.
+  Names run long, so the sidebar reads a size smaller, a name wraps to two
   lines (breaking anywhere, since names mix words, dates and CJK) before it is
   cut, details sit on a line of their own, and row buttons appear over the
   row's end on hover rather than reserving width. The full path is the row's
@@ -298,6 +316,10 @@ map. It is the interface later milestones build on.
   all of one kind — every track, route or waypoint; clicking one focuses its
   file without moving the map; double-clicking frames the part. Clicking a waypoint, in
   the list or on the map, opens its name, description, elevation and time.
+  Clicking a shown track on the map, outside a tool that takes the click,
+  expands its GPX in the workspace and selects that track's row. Where shown
+  tracks lie nearly over each other, the click lists them — part name, and the
+  file's name when they come from different files — to choose which to select.
   Which parts are hidden and which rows are expanded are remembered. Profile,
   stops and timeline still cover all the file's tracks together, but hatch the
   ranges of hidden tracks on both charts and the timeline, and a stop inside a
@@ -586,8 +608,10 @@ map. It is the interface later milestones build on.
 *Edit*, in the top bar beside *Browse*, opens the inspector — a column on the
 right of the page, dragged wider or narrower — for the selected track: one
 `<trk>` picked in the file's list or by a click on its line. Selecting the
-GPX file itself selects no track, even when it holds only one, so *Edit* is
-unavailable and closes; so it does for a route or a waypoint. Everything in
+GPX file itself selects no track, even when it holds only one, so *Edit*
+cannot be entered; already in *Edit*, the page stays there with an empty
+inspector and its tools greyed out until a track is selected again. So it does for a
+route or a waypoint. Everything in
 the inspector keeps to that track: its filters, its edits and fills, its
 segments and its counts, and the range, lasso, fill and cut tools pick only
 its points. Its
@@ -634,9 +658,9 @@ coloured by what removed them: spike red, drift orange, stop grey, by hand
 purple.
 
 **Removing by hand.** Every removal is one edit, listed in the panel newest
-first with what it removed and when. *Undo*, or ⌘Z (Ctrl+Z off a Mac) while
-the panel is open and no field has the keyboard, takes back the latest; any
-edit's `×` restores just that one.
+first with what it removed and when. *Undo* takes back the latest removal, and ⌘Z
+undoes the file's latest edit of any kind (see *Undo and redo*); any edit's
+`×` restores just that one.
 
 - **Range.** With *Range* on, dragging across the timeline removes the points
   in that stretch; zoom the timeline to place it to the second. Or click the
@@ -767,9 +791,16 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   through it, shown on the timeline as a dashed mark. Clicking one selects it;
   its right-click menu offers *Cut here*;
   *Cut at every stop* takes them all.
+- **The selected segment's time.** With the timeline's *Segment* switch on,
+  the default, selecting one segment on the Segments tab narrows the timeline
+  to that segment's time; switching it off shows the whole track again.
+  Selecting several segments, or none, leaves the timeline as it is. The
+  switch is remembered with the page.
 - **Editing cuts.** On the Segments tab, pointing at the focused track on the
   map marks the point a cut would fall on. Clicking selects a point, and
-  right-clicking offers *Cut here*. Timeline clicks also select, while dragging
+  right-clicking offers *Cut here*. Under any other Edit tool, right-clicking
+  the focused track also offers *Cut here*, which opens the Segments tab and
+  cuts there. Timeline clicks also select, while dragging
   still scrubs. Cuts are yellow handles: drag one to move it, or right-click
   for *Remove cut*. The segment row also offers removal in its right-click
   menu. The first segment has no cut before it.

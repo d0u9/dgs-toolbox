@@ -47,7 +47,7 @@ func (s *draftStore) get(path string) (sidecar.File, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	file, ok := s.drafts[path]
-	return file, ok
+	return cloneSidecar(file), ok
 }
 
 func (s *draftStore) set(path string, file sidecar.File) error {
@@ -62,8 +62,9 @@ func (s *draftStore) set(path string, file sidecar.File) error {
 
 func (s *draftStore) remove(path string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.drafts, path)
+	s.mu.Unlock()
+	history.forget(path)
 }
 
 // checkGPX says whether a path is a GPX the server can read: a .gpx file on
@@ -133,6 +134,7 @@ func loadSidecar(path string) (sidecar.File, bool, error) {
 // edits are held in memory until they are saved, as pending.go describes. A
 // draft has no disk of its own, so it keeps its own record as before.
 func saveSidecar(path string, file sidecar.File) error {
+	history.record(path, heldState(path))
 	if isDraft(path) {
 		return drafts.set(path, file)
 	}
@@ -201,7 +203,7 @@ func (a api) discardSidecar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Everything done to the file goes, saved or not.
-	pending.drop(body.Path)
+	pending.forget(body.Path)
 	if _, err := os.Stat(sidecar.PathFor(body.Path)); errors.Is(err, os.ErrNotExist) {
 		if parsed, err := gpxfile.Open(body.Path); err == nil && parsed.IsOurs() {
 			if err := gpxfile.WriteState(body.Path, nil); err != nil {

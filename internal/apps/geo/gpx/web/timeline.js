@@ -46,7 +46,11 @@ export class Timeline {
       if (event.key === "Shift") this.shiftDown = true;
     });
     document.addEventListener("keyup", (event) => {
-      if (event.key === "Shift") this.shiftDown = false;
+      if (event.key !== "Shift") return;
+      this.shiftDown = false;
+      // Releasing Shift ends a Shift-wheel pan at once; the idle tail would
+      // otherwise keep a continuing wheel panning instead of zooming.
+      if (this.wheelMode === "pan") this.clearWheelAnchor();
     });
     window.addEventListener("blur", () => {
       this.shiftDown = false;

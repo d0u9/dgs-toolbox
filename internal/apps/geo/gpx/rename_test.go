@@ -120,7 +120,7 @@ func TestRenameOwnFileMovesCompanionSidecar(t *testing.T) {
 	}
 }
 
-func TestRenameRejectsRecordingsInvalidNamesAndOccupiedTargets(t *testing.T) {
+func TestRenameRejectsInvalidNamesAndOccupiedTargets(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{}))
 	defer server.Close()
 	source := ownRenameGPX(t)
@@ -164,11 +164,13 @@ func TestRenameRejectsRecordingsInvalidNamesAndOccupiedTargets(t *testing.T) {
 	if err := os.WriteFile(foreign, []byte(`<gpx version="1.1" creator="recorder"><trk><name>Walk</name></trk></gpx>`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := send(t, server, http.MethodPut, "/api/file-name", map[string]any{"path": foreign, "name": "Changed"}); code != http.StatusForbidden {
+	recorded, _ := os.ReadFile(foreign)
+	// A recording is renamed with its bytes as recorded.
+	if code, _ := send(t, server, http.MethodPut, "/api/file-name", map[string]any{"path": foreign, "name": "Changed"}); code != http.StatusOK {
 		t.Fatalf("recording = %d", code)
 	}
-	if _, err := os.Stat(foreign); err != nil {
-		t.Fatal("recording moved")
+	if data, err := os.ReadFile(filepath.Join(filepath.Dir(foreign), "Changed.gpx")); err != nil || !bytes.Equal(data, recorded) {
+		t.Fatalf("renamed recording changed: %v", err)
 	}
 }
 
@@ -209,5 +211,73 @@ func TestDraftNamesKeepDotsAndRejectInvalidNames(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid draft name accepted: %q", name)
 		}
+	}
+}
+
+func TestNamedGPXRejectsBareExtension(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/data/a.gpx": true, "/data/A.GPX": true, "/data/.gpx": false, "/data/ .gpx": false, "/data/a.txt": false,
+	} {
+		if got := namedGPX(path); got != want {
+			t.Errorf("namedGPX(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestFileNameIsHeldThenWrittenAndSurvivesFileRename(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	path := ownRenameGPX(t)
+	target := filepath.Join(filepath.Dir(path), "Other file.gpx")
+	defer pending.drop(path)
+	defer pending.drop(target)
+	if code, _ := send(t, server, http.MethodPut, "/api/part-name", map[string]any{"path": path, "key": "f", "name": "Hike"}); code != http.StatusOK {
+		t.Fatalf("part-name = %d", code)
+	}
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Name != "Hike" || !track.Unsaved || !track.Renamed {
+		t.Fatalf("held name: %q unsaved %v", track.Name, track.Unsaved)
+	}
+	if parsed, _ := gpxfile.Open(path); parsed.Name == "Hike" {
+		t.Fatal("name written before save")
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	if parsed, err := gpxfile.Open(path); err != nil || parsed.Name != "Hike" {
+		t.Fatalf("saved name = %+v %v", parsed, err)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/file-name", map[string]any{"path": path, "name": "Other file"}); code != http.StatusOK {
+		t.Fatalf("file-name = %d", code)
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(target), &track)
+	if track.Name != "Hike" {
+		t.Fatalf("name after file rename = %q", track.Name)
+	}
+}
+
+func TestRestoreNameOfRecording(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "rec.gpx")
+	if err := os.WriteFile(path, []byte(`<gpx version="1.1" creator="device"><metadata><name>Recorded</name></metadata><trk><trkseg><trkpt lat="1" lon="1"/></trkseg></trk></gpx>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer pending.drop(path)
+	send(t, server, http.MethodPut, "/api/part-name", map[string]any{"path": path, "key": "f", "name": "Given"})
+	send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path})
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Name != "Given" || !track.Renamed {
+		t.Fatalf("given: %q %v", track.Name, track.Renamed)
+	}
+	if code, r := send(t, server, http.MethodPut, "/api/part-name", map[string]any{"path": path, "key": "f", "name": ""}); code != http.StatusOK {
+		t.Fatalf("restore = %d %v", code, r)
+	}
+	track = trackJSON{}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Name != "Recorded" || track.Renamed || !track.Unsaved {
+		t.Fatalf("restored: %q renamed %v unsaved %v", track.Name, track.Renamed, track.Unsaved)
 	}
 }

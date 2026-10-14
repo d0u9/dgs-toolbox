@@ -70,6 +70,8 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("PUT /api/clean", api.saveClean)
 	mux.HandleFunc("PUT /api/segments", api.saveSegments)
 	mux.HandleFunc("PUT /api/part-name", api.renamePart)
+	mux.HandleFunc("POST /api/undo", api.undoEdit)
+	mux.HandleFunc("POST /api/redo", api.redoEdit)
 	mux.HandleFunc("PUT /api/file-name", api.renameFile)
 	mux.HandleFunc("POST /api/waypoint", api.addWaypoint)
 	mux.HandleFunc("PUT /api/waypoint", api.moveWaypoint)

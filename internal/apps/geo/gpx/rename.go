@@ -1,21 +1,23 @@
 package gpx
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"dgs-toolbox/internal/filebrowse"
-	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/sidecar"
 )
 
-// renameFile changes a draft's name or a dgs-created file's name in its
-// current folder. Embedded state moves with the file; pending edits keep
-// their unsaved status under the new path.
+// renameFile changes a draft's name, or a file's name in its current folder,
+// whoever wrote it. The sidecar and photos move with the file; a recording's
+// bytes are not touched. Pending edits keep their unsaved status under the
+// new path.
 func (a api) renameFile(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
@@ -38,13 +40,21 @@ func (a api) renameFile(w http.ResponseWriter, r *http.Request) {
 	if isDraft(body.Path) {
 		target, err = drafts.rename(body.Path, name)
 	} else {
-		var parsed *gpxfile.File
-		parsed, err = openGPX(body.Path)
-		if err == nil && !parsed.IsOurs() {
-			err = gpxfile.ErrNotOurs
-		}
+		// A recording may be renamed too: its bytes stay as recorded, and the
+		// digest taken before is checked against the file under its new name.
+		// A GPX dgs wrote is ours: its photo links are rewritten for the new name.
+		parsed, openErr := openGPX(body.Path)
+		recording := openErr != nil || !parsed.IsOurs()
+		var before [sha256.Size]byte
+		before, err = fileDigest(body.Path)
 		if err == nil {
 			target, err = renameOwnFile(body.Path, name)
+		}
+		if err == nil && recording {
+			var after [sha256.Size]byte
+			if after, err = fileDigest(target); err == nil && after != before {
+				err = fmt.Errorf("%s: contents changed while it was renamed", target)
+			}
 		}
 	}
 	if err != nil {
@@ -52,13 +62,11 @@ func (a api) renameFile(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, filebrowse.ErrExists) {
 			status = http.StatusConflict
 		}
-		if errors.Is(err, gpxfile.ErrNotOurs) {
-			status = http.StatusForbidden
-		}
 		writeError(w, status, err)
 		return
 	}
 	pending.move(body.Path, target)
+	history.move(body.Path, target)
 	writeJSON(w, map[string]string{"path": target})
 }
 
@@ -101,6 +109,14 @@ func (s *draftStore) rename(path, name string) (string, error) {
 
 // A companion sidecar, if present, follows the GPX. Refuse occupied names
 // before moving either file, and roll the GPX back if the sidecar move fails.
+func fileDigest(path string) ([sha256.Size]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return sha256.Sum256(data), nil
+}
+
 func renameOwnFile(path, name string) (string, error) {
 	full, err := filepath.Abs(path)
 	if err != nil {
@@ -154,4 +170,11 @@ func (s *pendingStore) move(from, to string) {
 		s.edits[to] = file
 		delete(s.edits, from)
 	}
+}
+
+// namedGPX says whether a path is a .gpx file with a name before the
+// extension: ".gpx" alone would be a hidden file listed with no name.
+func namedGPX(path string) bool {
+	ext := filepath.Ext(path)
+	return strings.EqualFold(ext, ".gpx") && strings.TrimSpace(strings.TrimSuffix(filepath.Base(path), ext)) != ""
 }

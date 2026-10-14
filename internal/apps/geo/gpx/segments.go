@@ -172,8 +172,8 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 	if isDraft(body.Target.Path) && body.Target.Mode == "add" {
 		target = body.Target.Path
 	}
-	if err != nil || !strings.EqualFold(filepath.Ext(target), ".gpx") {
-		writeError(w, http.StatusBadRequest, errors.New("the target must be a .gpx file"))
+	if err != nil || !namedGPX(target) {
+		writeError(w, http.StatusBadRequest, errors.New("the target must be a named .gpx file"))
 		return
 	}
 	source := body.Path

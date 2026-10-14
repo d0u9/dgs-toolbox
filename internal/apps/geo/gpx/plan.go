@@ -65,8 +65,8 @@ func (a api) saveRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := filepath.Abs(strings.TrimSpace(body.Target))
-	if err != nil || !strings.EqualFold(filepath.Ext(target), ".gpx") {
-		writeError(w, http.StatusBadRequest, errors.New("the route must be saved as a .gpx file"))
+	if err != nil || !namedGPX(target) {
+		writeError(w, http.StatusBadRequest, errors.New("the route must be saved as a named .gpx file"))
 		return
 	}
 	if err := body.Plan.Check(a.wayIDs()); err != nil {

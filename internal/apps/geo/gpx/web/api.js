@@ -34,6 +34,9 @@ export const api = {
   saveClean: (path, first, clean) => sendJSON("PUT", "api/clean", { path, first, clean }),
   // renamePart names one <trk>, <rte> or <wpt> of a file, keyed "t0", "r0", "w0".
   renamePart: (path, key, name) => sendJSON("PUT", "api/part-name", { path, key, name }),
+  // undo and redo step one file's unsaved edits back or forward.
+  undo: (path) => postJSON("api/undo", { path }),
+  redo: (path) => postJSON("api/redo", { path }),
   addWaypoint: (path, name, description, lon, lat) => postJSON("api/waypoint", { path, name, description, lon, lat }),
   // saveSegments records a track's cuts and segment names in its sidecar.
   saveSegments: (path, cuts, names) => sendJSON("PUT", "api/segments", { path, cuts, names }),
