@@ -1146,8 +1146,8 @@ func renderDetail(l InspectData, kind, id string) (string, error) {
 		return renderServiceDetail(l, id)
 	case "port":
 		return renderPortDetail(l, id)
-	case "secretinst", "secretport":
-		// A grouping row in the Secrets tree; its children carry the
+	case "group", "secretinst", "secretport":
+		// A grouping row — a Nodes group or a Secrets heading; its children carry the
 		// detail, and a heading has none of its own.
 		return "", nil
 	default:

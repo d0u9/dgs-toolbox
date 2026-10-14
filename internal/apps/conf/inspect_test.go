@@ -1002,3 +1002,40 @@ func TestInspectRefreshNoticeClearsOnNextKey(t *testing.T) {
 		t.Fatalf("notice = %q, want cleared on next key", m.notice)
 	}
 }
+
+// Every row on every list tab must render a detail: a new row kind that
+// renderDetail does not know shows up here, not as an error in the pane.
+func TestInspect_EveryRowRendersDetail(t *testing.T) {
+	root := buildInspectRoot(t)
+	writeFile(t, filepath.Join(root, "nodes", "cloud", "edge.yaml"), `
+id: edge
+instances:
+  - id: ss-edge
+    service: ssserver
+    ports:
+      main: {port: 38251, self: [psk.main]}
+`)
+	m := openHolders(newInspectModel(root, ""))
+	m.width, m.height = 100, 24
+	kinds := map[string]bool{}
+	for _, tab := range []int{tabNodes, tabUsers, tabServices, tabSecrets} {
+		m.setTab(tab)
+		for i := 0; ; i++ {
+			item, ok := m.list.ItemAt(i)
+			if !ok {
+				break
+			}
+			if !m.list.SelectID(item.ID) {
+				t.Fatalf("tab %d: SelectID(%q) failed", tab, item.ID)
+			}
+			kind, _, _, err := m.currentDetail()
+			if err != nil {
+				t.Fatalf("tab %d row %q: %v", tab, item.ID, err)
+			}
+			kinds[kind] = true
+		}
+	}
+	if !kinds["group"] {
+		t.Fatalf("fixture has no group row; kinds seen = %v", kinds)
+	}
+}
