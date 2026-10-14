@@ -160,6 +160,11 @@ CAPTURES              CAPTURE                             ARCHIVE
   had written and leaves the Capture where it was, so a failed move is a
   Capture still in one piece in one place.
 
+Archive and reject destinations must not be inside the Capture being moved,
+including through symbolic links or case aliases. Validation runs before any
+destination directory is created. Copying is attempted only for a
+cross-filesystem rename error; other rename failures leave the source intact.
+
 ## Configuration
 
 ```json
