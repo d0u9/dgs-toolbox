@@ -162,21 +162,65 @@ function dialog({
     // The bar over the listing: the folder above, where we are, and refresh.
     const bar = document.createElement("div");
     bar.className = "file-bar";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "icon-button";
+    back.innerHTML = iconSvg("arrow-left");
+    back.title = "The folder shown before";
+    back.setAttribute("aria-label", "Back");
+    back.disabled = true;
     const up = document.createElement("button");
     up.type = "button";
     up.className = "icon-button";
     up.innerHTML = iconSvg("arrow-up");
     up.title = "The folder above";
     up.setAttribute("aria-label", "The folder above");
-    const where = document.createElement("input");
+    const where = document.createElement("input"); where.autocomplete = "off"; where.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
     where.type = "text";
     where.setAttribute("aria-label", "Folder path");
     where.title = "Type a path; Enter opens it, Tab completes it, Escape restores it.";
-    const candidates = document.createElement("datalist");
-    candidates.id = "file-path-candidates";
-    where.setAttribute("list", candidates.id);
-    bar.append(candidates);
     where.className = "file-where";
+    where.hidden = true;
+    // Where we are reads as a trail of folders, each a button that opens it,
+    // as in a desktop file manager; a click beside them edits the path as text.
+    const crumbs = document.createElement("div");
+    crumbs.className = "file-where file-crumbs";
+    crumbs.title = "Click a folder to open it; click beside them to type a path.";
+    const drawCrumbs = () => {
+      crumbs.replaceChildren();
+      let at = "";
+      here.split(separator).forEach((name, i) => {
+        if (i > 0 && !name) return;
+        at = i === 0 ? (name ? name + separator : separator) : at + (at.endsWith(separator) ? "" : separator) + name;
+        if (i > 0 || name) {
+          const sep = document.createElement("span");
+          sep.className = "file-crumb-separator";
+          sep.textContent = "›";
+          if (crumbs.childElementCount) crumbs.append(sep);
+        }
+        const crumb = document.createElement("button");
+        crumb.type = "button";
+        crumb.className = "file-crumb";
+        crumb.textContent = name || separator;
+        const target = at;
+        crumb.addEventListener("click", (event) => { event.stopPropagation(); open(target); });
+        crumbs.append(crumb);
+      });
+      // A deep folder keeps its end in view: that is where the reader is.
+      crumbs.scrollLeft = crumbs.scrollWidth;
+    };
+    const editPath = (editing) => {
+      crumbs.hidden = editing;
+      where.hidden = !editing;
+      if (editing) { where.focus(); where.select(); }
+    };
+    crumbs.addEventListener("click", () => editPath(true));
+    where.addEventListener("blur", () => { ++completionRequest; where.value = here; editPath(false); });
+    const editPathButton = document.createElement("button");
+    editPathButton.type = "button";
+    editPathButton.className = "text-button";
+    editPathButton.textContent = "Edit path";
+    editPathButton.addEventListener("click", () => editPath(true));
     const refresh = document.createElement("button");
     refresh.type = "button";
     refresh.className = "icon-button";
@@ -193,7 +237,7 @@ function dialog({
     eye.className = "text-button file-preview-toggle";
     eye.textContent = "Preview";
     eye.title = "Show the picked file beside the listing";
-    bar.append(up, where, refresh, eye);
+    bar.append(back, up, crumbs, where, editPathButton, refresh, eye);
     if (writable) bar.append(newFolder);
     form.append(bar);
 
@@ -251,7 +295,7 @@ function dialog({
     // toggle, and the two buttons.
     const foot = document.createElement("div");
     foot.className = "file-foot";
-    const input = document.createElement("input");
+    const input = document.createElement("input"); input.autocomplete = "off"; input.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
     input.type = "text";
     input.className = "file-name";
     input.value = name;
@@ -433,6 +477,10 @@ function dialog({
 
     // open reads a folder and draws it. A folder that cannot be read falls
     // back to the next one the caller offered, and says why when none is left.
+    // visited are the folders shown before this one, for Back; going back
+    // does not add the folder it leaves.
+    const visited = [];
+    let lastShown = "";
     const open = async (path, ...rest) => {
       problem.hidden = true;
       let listing;
@@ -445,10 +493,13 @@ function dialog({
         return;
       }
       if (listing.writable === false) writable = false;
+      if (lastShown && listing.path !== lastShown && !open.goingBack) visited.push(lastShown);
+      lastShown = listing.path;
+      back.disabled = visited.length === 0;
       here = listing.path;
       parent = listing.parent || "";
       where.value = here;
-      candidates.replaceChildren();
+      drawCrumbs();
       newFolder.hidden = !writable;
       up.disabled = !parent;
       chosen = new Set();
@@ -494,7 +545,7 @@ function dialog({
     // what is drawn.
     const askName = (cell, value, commit) => {
       editing = true;
-      const field = document.createElement("input");
+      const field = document.createElement("input"); field.autocomplete = "off"; field.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
       field.type = "text";
       field.className = "file-rename";
       field.setAttribute("aria-label", "Rename");
@@ -615,6 +666,8 @@ function dialog({
         if (!typedName) return;
         if (/[\\/]/.test(typedName)) return say("A name cannot hold a path.");
         const full = withExtension(typedName);
+        // ".gpx" alone has no name: it would be a hidden file.
+        if (extensions().some((ext) => full.toLowerCase() === dotted(ext).toLowerCase())) return say("Give the file a name.");
         if (!(await replaces(full))) return;
         answer = `${here.replace(/[\\/]$/, "")}${separator}${full}`;
       } else {
@@ -633,6 +686,7 @@ function dialog({
     // Right or Enter steps into a folder, Left or Backspace goes up, and
     // typing jumps to the row whose name starts that way.
     const keys = (event) => {
+      if (event.target === editPathButton) return;
       if (event.target === input || event.target === where || event.target.closest(".context-menu") || editing) return;
       if (event.key === "F2" && writable) { event.preventDefault(); return renameChosen(); }
       const index = rows.findIndex((entry) => chosen.has(entry.path));
@@ -670,32 +724,41 @@ function dialog({
     };
 
     let completionRequest = 0;
-    const completePath = async (tab = false) => {
+    // Completion is inline, as in an address bar: what the path can only go on
+    // to is added after the caret and selected, so typing on replaces it.
+    const completePath = async (tab = false, inline = false) => {
       const value = where.value;
       const request = ++completionRequest;
       try {
         const result = await getJSON(`${endpoint}complete?${new URLSearchParams({ path: value, base: here })}`);
         if (request !== completionRequest || where.value !== value || !dialog.open) return;
-        candidates.replaceChildren(...result.matches.map((path) => {
-          const option = document.createElement("option");
-          option.value = path;
-          return option;
-        }));
-        if (tab && result.matches.length) {
+        if (inline && result.matches.length && result.completion.length > value.length && result.completion.startsWith(value)) {
+          where.value = result.completion;
+          where.setSelectionRange(value.length, where.value.length);
+        } else if (tab && result.matches.length) {
           where.value = result.completion;
           where.setSelectionRange(where.value.length, where.value.length);
         }
       } catch (error) { if (tab) say(error.message); }
     };
-    where.addEventListener("input", () => completePath());
+    // Only typing completes: deleting must not bring back what was deleted.
+    where.addEventListener("input", (event) => {
+      if (event.inputType?.startsWith("insert") && where.selectionEnd === where.value.length) completePath(false, true);
+    });
     where.addEventListener("keydown", (event) => {
       event.stopPropagation();
-      if (event.key === "Enter") { event.preventDefault(); open(where.value); }
+      if (event.key === "Enter") { event.preventDefault(); open(where.value); where.blur(); }
       if (event.key === "Tab" && !event.shiftKey) { event.preventDefault(); completePath(true); }
-      if (event.key === "Escape") { event.preventDefault(); ++completionRequest; where.value = here; candidates.replaceChildren(); }
+      if (event.key === "Escape") { event.preventDefault(); ++completionRequest; where.value = here; where.blur(); }
     });
     let answer = null;
     up.addEventListener("click", () => parent && open(parent));
+    back.addEventListener("click", async () => {
+      if (!visited.length) return;
+      open.goingBack = true;
+      try { await open(visited.pop()); } finally { open.goingBack = false; }
+      back.disabled = visited.length === 0;
+    });
     refresh.addEventListener("click", () => open(here));
     // Changing the filter changes the name's extension with it, as a save
     // dialog does: the name stays, the type follows the choice.

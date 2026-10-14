@@ -30,6 +30,7 @@ test('shared prompt validates text, returns a trimmed name and restores focus',a
   const dialog=document.body.children[0],input=form(dialog).children[0];
   assert.equal(dialog.open,true);assert.equal(input.focused,true);assert.equal(input.textSelected,true);
   assert.equal(input.attributes['aria-label'],'Name track');
+  assert.equal(input.value,'Initial');assert.equal(input.className,'field prompt-input');
   input.value='  ';const invalid=await form(dialog).fire('submit');assert.equal(invalid.defaultPrevented,true);assert.equal(dialog.open,true);
   input.value='  Named trip  ';await form(dialog).fire('submit');dialog.close();
   assert.equal(await pending,'Named trip');assert.equal(document.body.children.length,0);assert.equal(opener.focused,true);
