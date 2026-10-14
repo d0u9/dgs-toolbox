@@ -281,3 +281,26 @@ func TestRestoreNameOfRecording(t *testing.T) {
 		t.Fatalf("restored: %q renamed %v unsaved %v", track.Name, track.Renamed, track.Unsaved)
 	}
 }
+
+func TestRenameRecordingWithPhotos(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rec.gpx")
+	recorded := []byte(`<gpx version="1.1" creator="device"><trk><trkseg><trkpt lat="1" lon="1"/></trkseg></trk></gpx>`)
+	if err := os.WriteFile(path, recorded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "rec.photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := send(t, server, http.MethodPut, "/api/file-name", map[string]any{"path": path, "name": "New"}); code != http.StatusOK {
+		t.Fatalf("rename = %d %v", code, body)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "New.gpx")); err != nil || !bytes.Equal(data, recorded) {
+		t.Fatalf("recording changed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "New.photos")); err != nil {
+		t.Fatal("photos did not follow")
+	}
+}

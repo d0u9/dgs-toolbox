@@ -28,7 +28,7 @@ function loadModule(name,context){
 function treeHarness(track){
   const calls=[];
   const entry={id:'a',color:'#0072b2',visible:true,hiddenParts:new Set(),track};
-  const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
+  const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),partPicks:new Set(),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
     tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',DIAMOND:'ours',DIAMOND_OPEN:'recording',FOLDER:'folder',
     iconSvg:name=>`<svg data-icon="${name}"></svg>`,PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
@@ -969,7 +969,7 @@ test('Alt, Cmd and Ctrl dragging copy tracks and waypoints without moving the so
  for(const kind of ['track','waypoint'])for(const modifier of ['altKey','metaKey','ctrlKey']){
   const calls=[],part={key:'p0',kind,name:'Synthetic part'},row={dataset:{path:'target.gpx'}};
   const context=vm.createContext({dragRow:{path:'source.gpx',key:'p0',kind},dragGap:{at:()=>({row,above:true})},
-   $:()=>({getBoundingClientRect:()=>({left:0,right:100})}),state:{focus:null,tracks:new Map([['source.gpx',{track:{name:'Source',parts:[part]}}],['target.gpx',{track:{name:'Target',ours:true,parts:[]}}]])},
+   $:()=>({getBoundingClientRect:()=>({left:0,right:100})}),state:{focus:null,partPicks:new Set(),tracks:new Map([['source.gpx',{track:{name:'Source',parts:[part]}}],['target.gpx',{track:{name:'Target',ours:true,parts:[]}}]])},
    api:{copyPart:async(...args)=>calls.push(args)},reloadEntry:async path=>calls.push(['reload',path]),renderTracks(){},showMessage(){},basename:path=>path});
   vm.runInContext(app.slice(app.indexOf('const copyModifier'),app.indexOf('// afterFile')),context);
   const target=context.dropAt(50,50,{[modifier]:true});assert.equal(target.kind,'into');assert.equal(target.copy,true);
@@ -979,6 +979,86 @@ test('Alt, Cmd and Ctrl dragging copy tracks and waypoints without moving the so
   assert.deepEqual(calls,[['source.gpx','p0','target.gpx',false],['reload','target.gpx']]);
   context.state.tracks.get('target.gpx').track.ours=false;
   assert.equal(context.dropAt(50,50,{[modifier]:true}).kind,'refused');
+ }
+});
+
+test('picked parts drag together: copied in listed order, moved out last first, mixed kinds never reorder',async()=>{
+ const app=source('app'),calls=[];
+ const parts=[{key:'w0',kind:'waypoint',name:'A'},{key:'w1',kind:'waypoint',name:'B'},{key:'t0',kind:'track',name:'T'}];
+ const listed=['w0','w1','t0'].map(key=>({dataset:{path:'source.gpx',key}}));
+ const state={focus:null,partPicks:new Set(),tracks:new Map([['source.gpx',{track:{name:'Source',ours:true,parts}}],['target.gpx',{track:{name:'Target',ours:true,parts:[]}}]])};
+ let row={dataset:{path:'target.gpx'}};
+ const context=vm.createContext({state,gap:{at:()=>({row,above:true})},
+  $:()=>({children:listed,getBoundingClientRect:()=>({left:0,right:100})}),
+  api:{copyPart:async(...args)=>calls.push(['copy',...args]),deletePart:async(...args)=>calls.push(['delete',...args])},
+  reloadEntry:async()=>{},renderTracks(){},showMessage(){},basename:path=>path});
+ vm.runInContext(app.slice(app.indexOf('const partId'),app.indexOf('// afterFile')),context);
+ vm.runInContext(app.slice(app.indexOf('async function dropIntoFile('),app.indexOf('// renamePart')),context);
+ state.partPicks=new Set(['source.gpx\nw1','source.gpx\nw0']);
+ const held={kind:'waypoint',path:'source.gpx',key:'w1'};held.group=context.heldGroup(held);
+ assert.equal(held.group.length,2);
+ context.held=held;vm.runInContext('dragRow=held;dragGap=gap',context);
+ const target=context.dropAt(50,50,{});assert.equal(target.kind,'into');
+ await context.dropIntoFile(held,target);
+ assert.deepEqual(plain(calls),[['copy','source.gpx','w0','target.gpx',false],['copy','source.gpx','w1','target.gpx',false],['delete','source.gpx','w1'],['delete','source.gpx','w0']]);
+ state.partPicks=new Set(['source.gpx\nw0','source.gpx\nt0']);
+ const mixed={kind:'waypoint',path:'source.gpx',key:'w0'};mixed.group=context.heldGroup(mixed);context.held=mixed;vm.runInContext('dragRow=held',context);
+ row={dataset:{path:'source.gpx',kind:'waypoint',key:'w1'}};
+ assert.equal(context.dropAt(50,50,{}),null,'a track and a waypoint picked together do not reorder');
+});
+
+test('moving reordered added waypoints preserves unselected siblings and deletes numeric keys high first',async()=>{
+ const app=source('app');
+ for(const picked of [[1,0],[10,2]]){
+  const remaining=Array.from({length:Math.max(...picked)+2},(_,i)=>`Waypoint ${i}`);
+  const expected=remaining.filter((_,i)=>!picked.includes(i)),copied=[],deleted=[];
+  const parts=remaining.map((name,i)=>({name,key:`w${i}`,kind:'waypoint'}));
+  const state={focus:null,partPicks:new Set(picked.map(i=>`source.gpx\nw${i}`)),tracks:new Map([
+   ['source.gpx',{track:{parts}}],['target.gpx',{track:{name:'Target',parts:[]}}],
+  ])};
+  const context=vm.createContext({state,partId:(path,key)=>`${path}\n${key}`,
+   $:()=>({children:[...picked.map(i=>parts[i]),...parts.filter((_,i)=>!picked.includes(i))].map(part=>({dataset:{path:'source.gpx',key:part.key}}))}),
+   api:{copyPart:async(path,key)=>copied.push(remaining[Number(key.slice(1))]),
+    deletePart:async(path,key)=>{deleted.push(key);remaining.splice(Number(key.slice(1)),1);}},
+   reloadEntry:async()=>{},renderTracks(){},showMessage(message,error){assert.equal(error,undefined,message);},basename:path=>path,
+  });
+  vm.runInContext(app.slice(app.indexOf('async function dropIntoFile('),app.indexOf('// editPhotos')),context);
+  await context.dropIntoFile({path:'source.gpx',group:picked.map(i=>({path:'source.gpx',key:`w${i}`}))},{path:'target.gpx',copy:false});
+  assert.deepEqual(copied,picked.map(i=>`Waypoint ${i}`),'copy order follows the list');
+  assert.deepEqual(deleted,[...picked].sort((a,b)=>b-a).map(i=>`w${i}`));
+  assert.deepEqual(remaining,expected,'unselected waypoints survive');
+ }
+});
+
+test('partial transfers refresh changed files, report progress and clear the old batch before retry',async()=>{
+ const app=source('app');
+ for(const stage of ['copy','delete'])for(const copy of stage==='copy'?[true,false]:[false]){
+  const parts=[{key:'w0',kind:'waypoint',name:'A'},{key:'w1',kind:'waypoint',name:'B'}];
+  const state={focus:null,partPicks:new Set(['source.gpx\nw0','source.gpx\nw1']),partAnchor:'source.gpx\nw0',partSelection:{path:'source.gpx',key:'w0'},tracks:new Map([
+   ['source.gpx',{track:{parts,unsaved:false}}],['target.gpx',{track:{name:'Target',parts:[],unsaved:false}}],
+  ])};
+  let copies=0,deletes=0;
+  const reloaded=[],messages=[];
+  const context=vm.createContext({state,
+   $:()=>({children:parts.map(part=>({dataset:{path:'source.gpx',key:part.key}}))}),
+   api:{copyPart:async()=>{if(stage==='copy'&&copies===1)throw Error('Copy refused');copies++;},
+    deletePart:async()=>{if(deletes===1)throw Error('Delete refused');deletes++;}},
+   reloadEntry:async path=>{reloaded.push(path);state.tracks.get(path).track.unsaved=path==='target.gpx'?copies>0:deletes>0;},
+   renderTracks(){},showMessage:(...args)=>messages.push(args),basename:path=>path,
+  });
+  vm.runInContext(app.slice(app.indexOf('const partId'),app.indexOf('// ---- dragging rows')),context);
+  vm.runInContext(app.slice(app.indexOf('async function dropIntoFile('),app.indexOf('// editPhotos')),context);
+  const held={kind:'waypoint',path:'source.gpx',key:'w0'};held.group=context.heldGroup(held);
+  await context.dropIntoFile(held,{path:'target.gpx',copy});
+  assert.deepEqual(reloaded,copy?['target.gpx']:['target.gpx','source.gpx']);
+  assert.equal(state.tracks.get('target.gpx').track.unsaved,true,'accepted copies appear as unsaved');
+  assert.equal(state.tracks.get('source.gpx').track.unsaved,stage==='delete');
+  assert.equal(state.partPicks.size,0);assert.equal(state.partAnchor,null);assert.equal(state.partSelection,null);
+  assert.deepEqual(plain(context.heldGroup({kind:'waypoint',path:'source.gpx',key:'w1'})),[{kind:'waypoint',path:'source.gpx',key:'w1'}],'a new drag cannot replay the old batch');
+  assert.equal(messages.at(-1)[1],true);
+  assert.match(messages.at(-1)[0],new RegExp(`Copied ${stage==='copy'?1:2} of 2`));
+  if(!copy)assert.match(messages.at(-1)[0],new RegExp(`removed ${deletes} of 2 from sources`));
+  assert.match(messages.at(-1)[0],stage==='copy'?/Copy refused/:/Delete refused/);
  }
 });
 

@@ -61,7 +61,7 @@ test('renaming a workspace file preserves its order, identity, selection and cam
  const source = readFileSync(new URL('./web/app.js', import.meta.url), 'utf8');
  const code = source.slice(source.indexOf('function replaceTrackPath('), source.indexOf('async function renameGPX('));
  const entry = {id:4,track:{name:'Old',path:'draft:4/Old.gpx'},hiddenParts:new Set(['t1'])};
- const state = {tracks:new Map([['a',{}],['draft:4/Old.gpx',entry],['b',{}]]), selection:new Set(['draft:4/Old.gpx']), anchor:'draft:4/Old.gpx',focus:'draft:4/Old.gpx',fill:{preview:{path:'draft:4/Old.gpx'}}};
+ const state = {tracks:new Map([['a',{}],['draft:4/Old.gpx',entry],['b',{}]]), partPicks:new Set(['draft:4/Old.gpx\nt0','draft:4/Old.gpx\nw0','b\nw0']),partAnchor:'draft:4/Old.gpx\nt0',selection:new Set(['draft:4/Old.gpx']), anchor:'draft:4/Old.gpx',focus:'draft:4/Old.gpx',fill:{preview:{path:'draft:4/Old.gpx'}}};
  const calls=[];
  const context=vm.createContext({state,cutPanel:null,planner:{source:'draft:4/Old.gpx'},basename:path=>path.split('/').pop(),setFocus:(path,options)=>{if(state.focus!==path)state.fill.preview=null;state.focus=path;calls.push(options);},renderTracks:()=>{},save:()=>{}});
  vm.runInContext(code,context);
@@ -71,6 +71,8 @@ test('renaming a workspace file preserves its order, identity, selection and cam
  assert.equal(state.selection.has('draft:4/New.gpx'),true);
  assert.equal(state.selection.has('draft:4/Old.gpx'),false);
  assert.equal(state.anchor,'draft:4/New.gpx');
+ assert.deepEqual([...state.partPicks],['draft:4/New.gpx\nt0','draft:4/New.gpx\nw0','b\nw0']);
+ assert.equal(state.partAnchor,'draft:4/New.gpx\nt0');
  assert.equal(state.fill.preview.path,'draft:4/New.gpx');
  assert.equal(entry.track.name,'Old'); // the name comes from the server on reload, not the path
  assert.equal(entry.track.path,'draft:4/New.gpx');

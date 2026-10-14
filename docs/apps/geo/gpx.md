@@ -401,7 +401,20 @@ map. It is the interface later milestones build on.
   moving at once is a scroll. Until then the press is a click like any other.
   A copy of the held row follows the pointer, and the rows it passes slide
   aside to open the gap it would land in; the map list sorts the same way. `Esc`
-  during a drag leaves everything as it was. Where it lands says what it does:
+  during a drag leaves everything as it was.
+
+  Several rows go together. Files are picked with `Cmd`/`Ctrl` click and
+  `Shift` click, and part rows the same way, across files too; a plain click
+  picks one alone. Dragging a picked row carries every picked row of its kind
+  — files with files, parts with parts — and the others carried are marked
+  where they lie. Picked files keep their order among themselves; picked
+  parts land in the order listed, and a move removes them by descending
+  numeric key within each source and kind, so added parts keep the right keys.
+  If a batch fails partway, completed edits remain, affected files refresh,
+  and the page reports how many parts were copied and removed. A partially
+  completed batch clears its selection; choose the remaining parts to retry.
+  Parts reorder within a file only when all are of one kind in
+  that file. Where it lands says what it does:
 
   - A **file** over another file lists the workspace in that order. The order
     is the page's own — no file is written — and is remembered with the
