@@ -1,6 +1,6 @@
 // Package recipients reads the recipient folder: the hosts dgs cred can
 // encrypt for, each with its public keys, and the groups of those hosts. The
-// folder is edited by hand, so a mistake in one file leaves that file out and
+// folder may also be edited by hand, so a mistake leaves that file out and
 // is reported, rather than refusing the whole folder.
 //
 // The layout, and which problems are errors and which are warnings, are in

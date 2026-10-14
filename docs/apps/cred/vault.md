@@ -89,8 +89,9 @@ recipients of a file already there is E3 and not part of this.
    chosen, opening at the home directory with hidden entries hidden (`H` shows
    them).
 3. **Recipients.** A checklist of groups, then hosts with their keys beneath
-   them. Checking a group or a host checks every key under it, and a key can then
-   be unchecked on its own; a group or host shows `[x]`, `[-]` or `[ ]` for all,
+   them. Each entry occupies one row, with its count or key information inline;
+   narrow widths shorten or omit that information. Checking a group or a host
+   checks every key under it, and a key can then be unchecked on its own; a group or host shows `[x]`, `[-]` or `[ ]` for all,
    some or none of its keys. The keys this machine holds an identity for start
    checked.
    - `p` opens **Passphrase** instead: the passphrase and a repeat of it, in

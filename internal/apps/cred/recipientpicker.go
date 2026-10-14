@@ -43,6 +43,7 @@ type recipientPicker struct {
 // checks the keys this machine holds.
 func newRecipientPicker(folder recipients.Folder, held map[string]bool, initial map[string]bool, outside []record.Recipient) *recipientPicker {
 	p := &recipientPicker{folder: folder, held: held, checked: map[string]bool{}, list: scrolllist.New()}
+	p.list.InlineDetail(true)
 	if initial == nil {
 		initial = held
 	}
@@ -103,22 +104,21 @@ func (p *recipientPicker) refresh() {
 	groups := 0
 	for i, row := range p.rows {
 		box := p.checkbox(row)
-		// Two rows each, so a long description is not cut off by the key.
 		var label, detail string
 		switch row.kind {
 		case rowGroup:
 			groups++
 			label = fmt.Sprintf("%s %s", box, row.group.Name)
-			detail = "    " + plural(len(row.group.Hosts), "host")
+			detail = plural(len(row.group.Hosts), "host")
 		case rowHost:
 			label = fmt.Sprintf("%s %s", box, row.host.Name)
-			detail = "    " + plural(len(row.host.Keys), "key")
+			detail = plural(len(row.host.Keys), "key")
 			if len(row.host.Keys) == 0 {
-				detail = "    no keys; nothing to check"
+				detail = "no keys; nothing to check"
 			}
 		case rowKey:
 			label = fmt.Sprintf("    %s %s", box, row.key.Description)
-			detail = "        " + shortKey(row.key.PublicKey)
+			detail = shortKey(row.key.PublicKey)
 			if p.held[row.key.Key] {
 				detail += "  ● this machine"
 			}
@@ -131,7 +131,7 @@ func (p *recipientPicker) refresh() {
 				name = "recorded key"
 			}
 			label = fmt.Sprintf("%s %s", box, name)
-			detail = "    " + shortenText(row.outside.PublicKey) + "  not in the recipient folder"
+			detail = shortenText(row.outside.PublicKey) + "  not in the recipient folder"
 		}
 		items[i] = scrolllist.Item{ID: fmt.Sprint(i), Label: label, Detail: detail}
 	}

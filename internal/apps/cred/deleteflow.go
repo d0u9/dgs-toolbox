@@ -18,6 +18,7 @@ type deleteFlow struct {
 	// path is the identity file moved to the trash, or empty to unregister only.
 	path      string
 	publicKey string
+	group     *recipients.GroupDraft
 	// host is set when a whole host is deleted: its file goes to the trash and
 	// it leaves every group.
 	host   string
@@ -58,6 +59,21 @@ func (m *keysModel) startDelete() {
 	var hosts []string
 	var subject string
 	switch {
+	case m.tab == tabGroups:
+		draft, err := m.selectedGroupDraft()
+		if err != nil {
+			m.notice = "! " + err.Error()
+			return
+		}
+		flow.group = &draft
+		flow.path = filepath.Join(m.snap.settings.Recipients, recipients.GroupsDir, draft.Name+recipients.FileSuffix)
+		flow.dialog = confirm.New(confirm.Config{
+			Title: "DELETE GROUP", Message: "Move " + draft.Name + " to the trash?",
+			Detail:       "Hosts and keys are kept. Existing encrypted files keep their recipients.",
+			ConfirmLabel: "Delete", CancelLabel: "Keep",
+		})
+		m.deleteFlow = flow
+		return
 	case m.tab == tabIdentities:
 		identity, ok := m.selectedIdentity()
 		if !ok {
@@ -223,6 +239,15 @@ func (m keysModel) updateDelete(key string) (tea.Model, tea.Cmd) {
 		flow := *m.deleteFlow
 		m.deleteFlow = nil
 		root, trash := m.snap.settings.Recipients, m.trash
+		if flow.group != nil {
+			return m, func() tea.Msg {
+				if err := recipients.CheckGroupUnchanged(root, *flow.group); err != nil {
+					return deletedMsg{err: err}
+				}
+				trashed, err := trash(flow.path)
+				return deletedMsg{trashed: trashed, err: err}
+			}
+		}
 		if flow.host != "" {
 			return m, func() tea.Msg {
 				var msg deletedMsg
