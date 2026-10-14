@@ -187,3 +187,70 @@ func TestInlineDetail(t *testing.T) {
 		t.Fatalf("SelectRow(0) did not select the first item: cursor %d", m.Cursor())
 	}
 }
+
+func TestBlankRowsCannotSelectHiddenItems(t *testing.T) {
+	for _, divider := range []bool{false, true} {
+		for _, scroll := range []int{0, 2} {
+			m := New()
+			height := 5
+			if divider {
+				height++
+			}
+			m.SetSize(30, height)
+			m.SetItems([]Item{
+				{Label: "host-a", Detail: "one"}, {Label: "host-b", Detail: "two"},
+				{Label: "host-c", Detail: "three"}, {Label: "host-d", Detail: "four"},
+				{Label: "host-e", Detail: "five"},
+			})
+			if divider {
+				m.SetDivider(1, "HOSTS")
+			}
+			m.Scroll(scroll)
+			cursor := m.Cursor()
+			lines := strings.Split(ansi.Strip(m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())), "\n")
+			blanks := 0
+			for row, line := range lines {
+				if strings.TrimSpace(line) != "" {
+					continue
+				}
+				blanks++
+				if m.SelectRow(row) || m.Cursor() != cursor {
+					t.Fatalf("divider=%v scroll=%d: blank row %d selected an item", divider, scroll, row)
+				}
+			}
+			if blanks == 0 {
+				t.Fatal("test needs a blank row")
+			}
+		}
+	}
+}
+
+func TestInlineLongLabelsStayWithinWidth(t *testing.T) {
+	for _, width := range []int{20, 60, 96} {
+		for _, hideNumbers := range []bool{false, true} {
+			m := New()
+			m.SetSize(width, 4)
+			m.HideNumbers(hideNumbers)
+			m.InlineDetail(true)
+			m.SetItems([]Item{
+				{Label: strings.Repeat("description ", 10), Detail: "key information"},
+				{Label: strings.Repeat("界", 100), Detail: "key information"},
+				{Label: "short", Detail: "key information"},
+			})
+			for _, focused := range []bool{false, true} {
+				lines := strings.Split(ansi.Strip(m.View(focused, lipgloss.NewStyle(), lipgloss.NewStyle())), "\n")
+				if len(lines) != 4 {
+					t.Fatalf("got %d rows, want 4", len(lines))
+				}
+				for _, line := range lines {
+					if ansi.StringWidth(line) > width {
+						t.Fatalf("width=%d hideNumbers=%v: row overflow: %q", width, hideNumbers, line)
+					}
+				}
+				if strings.Contains(lines[0], "key information") || strings.Contains(lines[1], "key information") {
+					t.Fatal("a full-width label must omit its detail")
+				}
+			}
+		}
+	}
+}

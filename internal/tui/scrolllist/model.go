@@ -252,7 +252,7 @@ func (m *Model) SelectRow(row int) bool {
 		}
 	}
 	index := m.top + row/m.rowsPerItem()
-	if index >= len(m.items) {
+	if index >= min(len(m.items), m.top+m.visibleItems()) {
 		return false
 	}
 	m.cursor = index
@@ -281,20 +281,19 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		}
 		label := ansi.Cut(m.items[index].Label, m.horizontal, m.horizontal+labelWidth)
 		if m.inlineDetail && m.items[index].Detail != "" {
-			column := m.detailColumn(labelWidth)
+			column := max(m.detailColumn(labelWidth), ansi.StringWidth(label)+1)
 			// A detail that does not fit ends in an ellipsis rather than mid
 			// word, and one with no room for a word is left out: the label
 			// is the row, and "1 creden" reads as a mistake.
 			room := labelWidth - column
-			detail := ""
 			if room >= minInlineDetail {
-				detail = ansi.Truncate(m.items[index].Detail, room, "…")
-			}
-			padded := label + strings.Repeat(" ", max(1, column-ansi.StringWidth(label)))
-			if selected {
-				label = padded + detail
-			} else {
-				label = padded + muted.Render(detail)
+				detail := ansi.Truncate(m.items[index].Detail, room, "…")
+				label += strings.Repeat(" ", column-ansi.StringWidth(label))
+				if selected {
+					label += detail
+				} else {
+					label += muted.Render(detail)
+				}
 			}
 		}
 		row := marker + label
