@@ -85,3 +85,45 @@ func TestDestinationKeepsTheDirectoryName(t *testing.T) {
 		t.Fatalf("destination = %q", got)
 	}
 }
+
+func TestMoveRefusesNestedArchiveBeforeWriting(t *testing.T) {
+	for _, alias := range []bool{false, true} {
+		capture := writeCapture(t, t.TempDir(), "capture")
+		base := capture
+		if alias {
+			base = filepath.Join(t.TempDir(), "alias")
+			if err := os.Symlink(capture, base); err != nil {
+				t.Skip(err)
+			}
+		}
+		for _, root := range []string{base, filepath.Join(base, "archive", "nested")} {
+			if _, err := Move(capture, root); err == nil {
+				t.Fatal("nested archive accepted")
+			}
+			entries, err := os.ReadDir(capture)
+			if err != nil || len(entries) != 1 || entries[0].Name() != "index.json" {
+				t.Fatalf("source changed: %v %v", entries, err)
+			}
+		}
+	}
+}
+
+func TestMoveDoesNotCopyAfterPermissionFailure(t *testing.T) {
+	parent := t.TempDir()
+	capture := writeCapture(t, parent, "capture")
+	root := t.TempDir()
+	if err := os.Chmod(parent, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(parent, 0755)
+	if _, err := Move(capture, root); err == nil {
+		t.Skip("filesystem permits renaming from a read-only directory")
+	}
+	if _, err := os.Stat(filepath.Join(capture, "index.json")); err != nil {
+		t.Fatal("source was changed after failed rename")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed rename started a copy: %v %v", entries, err)
+	}
+}

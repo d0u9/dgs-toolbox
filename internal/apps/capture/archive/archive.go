@@ -40,6 +40,9 @@ func Move(capturePath, root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := checkArchiveRoot(source, root); err != nil {
+		return "", err
+	}
 	destination := Destination(root, source)
 	if _, err := os.Lstat(destination); err == nil {
 		return "", fmt.Errorf("%s: %w", filepath.Base(destination), ErrExists)
@@ -51,6 +54,8 @@ func Move(capturePath, root string) (string, error) {
 	}
 	if err := os.Rename(source, destination); err == nil {
 		return destination, nil
+	} else if !errors.Is(err, crossDeviceError) {
+		return "", err
 	}
 	if err := copyTree(source, destination); err != nil {
 		// The destination is the half-written copy, so it is what gets removed:
@@ -108,4 +113,46 @@ func copyFile(source, destination string, mode os.FileMode) error {
 		return err
 	}
 	return out.Close()
+}
+
+// checkArchiveRoot compares filesystem identities so links and case-insensitive
+// paths cannot disguise a destination inside the Capture being moved.
+func checkArchiveRoot(source, root string) error {
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	ancestor, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	for {
+		resolved, err := filepath.EvalSymlinks(ancestor)
+		if err == nil {
+			ancestor = resolved
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return err
+		}
+		ancestor = parent
+	}
+	for {
+		info, err := os.Stat(ancestor)
+		if err != nil {
+			return err
+		}
+		if os.SameFile(sourceInfo, info) {
+			return errors.New("archive folder must not be inside the Capture being moved")
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return nil
+		}
+		ancestor = parent
+	}
 }
