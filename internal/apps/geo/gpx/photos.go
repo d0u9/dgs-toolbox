@@ -301,6 +301,11 @@ func renamePhotos(from, to string) error {
 	if err != nil {
 		return err
 	}
+	// A recording's photos are named in its sidecar, by file name only: the
+	// folder moving is all. Only a GPX dgs wrote links them itself.
+	if !file.IsOurs() {
+		return nil
+	}
 	return gpxfile.Update(to, func(staged string) error {
 		for i, wpt := range file.Waypoints {
 			others, photos := splitLinks(wpt.Links, photoDir(from))

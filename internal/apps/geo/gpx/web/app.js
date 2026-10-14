@@ -57,6 +57,8 @@ const state = {
   // profile draw, the selection is what the next command acts on.
   selection: new Set(),
   anchor: null, // the row a Shift click reaches back to
+  // partPicks are the part rows picked together, by Cmd or Shift click: "path\nkey".
+  partPicks: new Set(),
   nextId: 0,
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
@@ -926,6 +928,9 @@ function replaceTrackPath(path, target) {
   state.tracks = new Map([...state.tracks].map(([key, value]) => [key === path ? target : key, value]));
   if (state.selection.delete(path)) state.selection.add(target);
   if (state.anchor === path) state.anchor = target;
+  const prefix = `${path}\n`;
+  state.partPicks = new Set([...state.partPicks].map((id) => id.startsWith(prefix) ? target + id.slice(path.length) : id));
+  if (state.partAnchor?.startsWith(prefix)) state.partAnchor = target + state.partAnchor.slice(path.length);
   if (state.partSelection?.path === path) state.partSelection.path = target;
   if (state.fill.preview?.path === path) state.fill.preview.path = target;
   entry.track.path = target;
@@ -1613,6 +1618,7 @@ function trackRow(path, entry) {
   // Selecting a file never changes whether it is shown.
   li.addEventListener("click", (event) => {
     state.partSelection = null;
+    state.partPicks.clear();
     const double = doubleRowClick(JSON.stringify([path]), event);
     const toggle = event.metaKey || event.ctrlKey;
     select(path, { toggle, range: event.shiftKey });
@@ -1676,7 +1682,7 @@ function partRow(path, entry, part) {
   const hidden = entry.hiddenParts.has(part.key);
   const li = document.createElement("li");
   li.className = "part-row ui-file-row" + (hidden || !entry.visible ? " hidden-track" : "")
-    + (state.partSelection?.path === path && state.partSelection.key === part.key ? " selected" : "");
+    + (state.partPicks.has(partId(path, part.key)) || (state.partSelection?.path === path && state.partSelection.key === part.key) ? " selected" : "");
 
   const eye = iconButton("eye icon-button ui-row-icon", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
@@ -1752,9 +1758,58 @@ function partRow(path, entry, part) {
       onSelect: () => deletePart(path, entry, part),
     }],
   ]));
-  li.addEventListener("click", (event) => showPart(path, part, { fit: doubleRowClick(JSON.stringify([path, part.key]), event) }));
+  li.addEventListener("click", (event) => {
+    const fit = doubleRowClick(JSON.stringify([path, part.key]), event);
+    if (pickPart(path, part.key, event)) return;
+    showPart(path, part, { fit });
+  });
   bindRowDrag(li, { kind: part.kind, path, key: part.key });
   return li;
+}
+
+const partId = (path, key) => `${path}\n${key}`;
+
+// pickPart picks part rows together: Cmd or Ctrl adds or takes one away,
+// Shift reaches from the last picked to this one in the order listed. A
+// plain click picks this one alone and answers false, so the row is shown.
+function pickPart(path, key, event) {
+  const id = partId(path, key);
+  const toggle = event.metaKey || event.ctrlKey;
+  if (!toggle && !event.shiftKey) {
+    state.partPicks = new Set([id]);
+    state.partAnchor = id;
+    return false;
+  }
+  if (event.shiftKey && state.partAnchor) {
+    const listed = [...$("track-list").children].filter((row) => row.dataset.key).map((row) => partId(row.dataset.path, row.dataset.key));
+    const from = listed.indexOf(state.partAnchor), to = listed.indexOf(id);
+    if (from >= 0 && to >= 0) {
+      if (!toggle) state.partPicks.clear();
+      for (const one of listed.slice(Math.min(from, to), Math.max(from, to) + 1)) state.partPicks.add(one);
+    }
+  } else {
+    if (state.partPicks.size === 0 && state.partSelection) state.partPicks.add(partId(state.partSelection.path, state.partSelection.key));
+    if (state.partPicks.has(id)) state.partPicks.delete(id); else state.partPicks.add(id);
+    state.partAnchor = id;
+  }
+  renderTracks();
+  return true;
+}
+
+// heldGroup is what a drag carries: every picked row when the one grabbed is
+// among them, else that row alone. Files carry the picked files.
+function heldGroup(held) {
+  if (held.kind === "file") {
+    const files = state.selection.has(held.path) && state.selection.size > 1
+      ? [...state.tracks.keys()].filter((path) => state.selection.has(path)) : [held.path];
+    return files.map((path) => ({ kind: "file", path }));
+  }
+  if (!state.partPicks.has(partId(held.path, held.key)) || state.partPicks.size < 2) return [held];
+  return [...state.partPicks].map((id) => {
+    const [path, key] = id.split("\n");
+    const part = state.tracks.get(path)?.track.parts.find((one) => one.key === key);
+    return part ? { kind: part.kind, path, key } : null;
+  }).filter(Boolean);
 }
 
 // ---- dragging rows in the workspace ----
@@ -1778,7 +1833,7 @@ function bindRowDrag(li, held) {
   li.cancelDrag = longPressDrag(li, {
     onStart: () => {
       doubleRowClick.reset();
-      dragRow = { ...held, row: li };
+      dragRow = { ...held, row: li, group: heldGroup(held) };
       const rows = [...$("track-list").children].filter((row) => !row.classList.contains("drag-ghost"));
       // A file is carried with every row under it, down to the next file.
       let carried = [li];
@@ -1790,6 +1845,10 @@ function bindRowDrag(li, held) {
       }
       dragGap = new SortGap(rows, carried);
       li.classList.add("dragging");
+      // The other rows carried along are marked where they lie.
+      for (const row of rows) {
+        if (dragRow.group.some((one) => one.path === row.dataset.path && (one.kind === "file" ? row.dataset.kind === "file" : one.key === row.dataset.key))) row.classList.add("dragging");
+      }
       document.body.classList.add("row-dragging");
     },
     onMove: (x, y, event) => markDrop(dropAt(x, y, event)),
@@ -1837,15 +1896,19 @@ function dropAt(x, y, event) {
 
   if (held.kind === "file") {
     // A file lands between files; the rows of a file's parts belong to it.
-    if (targetPath === held.path) return null;
+    if ((held.group || [held]).some((one) => one.path === targetPath)) return null;
     return { kind: "files", before: above ? targetPath : afterFile(targetPath) };
   }
 
   const heldEntry = state.tracks.get(held.path);
   if (!heldEntry) return null;
   // Reorder only among siblings of the same kind in a writable GPX.
-  if (targetPath === held.path) {
-    if (!writable(heldEntry) || row.dataset.kind !== held.kind || row.dataset.key === held.key) return null;
+  const group = held.group || [held];
+  if (group.some((one) => one.path === targetPath)) {
+    // Several parts reorder only together: all of one kind in this one file.
+    if (group.some((one) => one.path !== held.path || one.kind !== held.kind)) return null;
+    if (targetPath !== held.path) return null;
+    if (!writable(heldEntry) || row.dataset.kind !== held.kind || group.some((one) => one.key === row.dataset.key)) return null;
     return { kind: "parts", before: above ? row.dataset.key : afterPart(heldEntry, held.kind, row.dataset.key) };
   }
 
@@ -1854,8 +1917,10 @@ function dropAt(x, y, event) {
   if (!writable(targetEntry)) {
     return { kind: "refused", row, reason: `${targetEntry.track.name} was not written by dgs, so nothing is written into it.` };
   }
-  if (!copy && !takeable(heldEntry, held.key)) {
-    return { kind: "refused", row, reason: `${heldEntry.track.name} was not written by dgs, so nothing is taken out of it; hold Alt, Ctrl or Cmd to copy instead.` };
+  const stuck = copy ? null : group.find((one) => !takeable(state.tracks.get(one.path), one.key));
+  if (stuck) {
+    const name = state.tracks.get(stuck.path).track.name;
+    return { kind: "refused", row, reason: `${name} was not written by dgs, so nothing is taken out of it; hold Alt, Ctrl or Cmd to copy instead.` };
   }
   return { kind: "into", path: targetPath, copy };
 }
@@ -1930,7 +1995,7 @@ async function applyDrop(held, target) {
     return;
   }
   if (target.kind === "files") {
-    reorderFiles(held.path, target.before);
+    reorderFiles((held.group || [held]).map((one) => one.path), target.before);
     return;
   }
   if (target.kind === "parts") { await reorderParts(held, target.before); return; }
@@ -1939,10 +2004,11 @@ async function applyDrop(held, target) {
 
 // reorderFiles lists the workspace in another order. The order is the page's
 // own: it is remembered with the rest of the session and changes no file.
-function reorderFiles(path, before) {
-  const paths = [...state.tracks.keys()].filter((one) => one !== path);
+function reorderFiles(moved, before) {
+  moved = [moved].flat();
+  const paths = [...state.tracks.keys()].filter((one) => !moved.includes(one));
   const at = before == null ? paths.length : paths.indexOf(before);
-  paths.splice(at < 0 ? paths.length : at, 0, path);
+  paths.splice(at < 0 ? paths.length : at, 0, ...moved);
   const entries = new Map(state.tracks);
   state.tracks = new Map(paths.map((one) => [one, entries.get(one)]));
   renderTracks();
@@ -1955,9 +2021,10 @@ async function reorderParts(held, before) {
   const entry = state.tracks.get(held.path);
   if (!entry) return;
   const keys = entry.track.parts.filter((part) => part.kind === held.kind).map((part) => part.key);
-  const without = keys.filter((key) => key !== held.key);
+  const moved = keys.filter((key) => (held.group || [held]).some((one) => one.key === key));
+  const without = keys.filter((key) => !moved.includes(key));
   const at = before == null ? without.length : without.indexOf(before);
-  without.splice(at < 0 ? without.length : at, 0, held.key);
+  without.splice(at < 0 ? without.length : at, 0, ...moved);
   if (without.join() === keys.join()) return;
   try {
     await api.orderParts(held.path, held.kind, without);
@@ -1972,17 +2039,52 @@ async function reorderParts(held, before) {
 // dropIntoFile moves a part into another GPX of the workspace, or copies it
 // there when Alt, Ctrl or Cmd was held.
 async function dropIntoFile(held, target) {
-  const entry = state.tracks.get(held.path);
-  const part = entry?.track.parts.find((one) => one.key === held.key);
-  if (!part) return;
+  // Copy in list order; delete by descending numeric key so added parts do not shift under later deletions.
+  const group = (held.group || [held]).filter((one) => state.tracks.get(one.path)?.track.parts.some((part) => part.key === one.key));
+  if (group.length > 1) {
+    const listed = [...$("track-list").children].filter((row) => row.dataset.key).map((row) => partId(row.dataset.path, row.dataset.key));
+    group.sort((a, b) => listed.indexOf(partId(a.path, a.key)) - listed.indexOf(partId(b.path, b.key)));
+  }
+  if (!group.length) return;
+  const first = state.tracks.get(group[0].path).track.parts.find((one) => one.key === group[0].key);
+  let copied = 0, removed = 0, failure = null;
   try {
-    await api.copyPart(held.path, held.key, target.path, !target.copy);
-    await reloadEntry(target.path);
-    if (!target.copy) await reloadEntry(held.path);
+    if (group.length === 1) {
+      await api.copyPart(group[0].path, group[0].key, target.path, !target.copy);
+      copied = 1;
+      if (!target.copy) removed = 1;
+    } else {
+      for (const one of group) {
+        await api.copyPart(one.path, one.key, target.path, false);
+        copied++;
+      }
+      if (!target.copy) for (const one of [...group].sort((a, b) => Number(b.key.slice(1)) - Number(a.key.slice(1)))) {
+        await api.deletePart(one.path, one.key);
+        removed++;
+      }
+    }
+  } catch (error) {
+    failure = error;
+  }
+  if (copied) {
+    state.partPicks.clear();
+    state.partAnchor = null;
+    if (failure) state.partSelection = null;
+  }
+  for (const path of new Set([target.path, ...(!target.copy ? group.map((one) => one.path) : [])])) {
+    try { await reloadEntry(path); } catch (error) { failure ??= error; }
+  }
+  try {
     renderTracks();
-    if (state.focus && (state.focus === held.path || state.focus === target.path)) setFocus(state.focus, { fit: false });
+    if (state.focus && (group.some((one) => one.path === state.focus) || state.focus === target.path)) setFocus(state.focus, { fit: false });
+    if (failure) {
+      const progress = copied ? `Copied ${copied} of ${group.length}${target.copy ? "" : `; removed ${removed} of ${group.length} from sources`}. Selection cleared. ` : "";
+      showMessage(progress + failure.message, true);
+      return;
+    }
     const name = state.tracks.get(target.path)?.track.name || basename(target.path);
-    showMessage(`${target.copy ? "Copied" : "Moved"} ${part.name} to ${name}`);
+    const what = group.length === 1 ? first.name : `${group.length} parts`;
+    showMessage(`${target.copy ? "Copied" : "Moved"} ${what} to ${name}`);
   } catch (error) {
     showMessage(error.message, true);
   }
