@@ -16,7 +16,8 @@ import (
 )
 
 // renamePart sets the name of one <trk>, <rte> or <wpt>, keyed as the page
-// keys them: "t0", "r0", "w0". An empty name puts back the file's own.
+// keys them: "t0", "r0", "w0"; the key "f" names the GPX itself, its
+// <metadata><name>. An empty name puts back the file's own.
 func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
@@ -27,7 +28,7 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	if _, _, err := partKey(body.Key); err != nil {
+	if _, _, err := partKey(body.Key); err != nil && body.Key != fileNameKey {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -45,10 +46,12 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
 		return
 	}
-	at, err := locate(result, body.Key)
-	if err != nil {
-		writeError(w, statusFor(err), err)
-		return
+	var at place
+	if body.Key != fileNameKey {
+		if at, err = locate(result, body.Key); err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
 	}
 	// Every name is kept beside the file until the edit is saved. Saving puts
 	// it where it belongs: into a GPX dgs wrote, and into the sidecar of a
@@ -63,6 +66,10 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		file.Names = map[string]string{}
 	}
 	file.Names[body.Key] = name
+	if body.Key == fileNameKey && name == "" {
+		// An empty name gives the GPX back its own <name>, or its file name.
+		delete(file.Names, body.Key)
+	}
 	if len(file.Names) == 0 {
 		file.Names = nil
 	}
@@ -72,6 +79,9 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{"ok": true, "name": name})
 }
+
+// fileNameKey keys the name of the GPX itself among the part names.
+const fileNameKey = "f"
 
 // partKey reads a part key: its kind ('t', 'r' or 'w') and its index.
 func partKey(key string) (byte, int, error) {

@@ -253,7 +253,7 @@ export class CleanPanel {
     const undo = document.createElement("button");
     undo.className = "text-button";
     undo.textContent = "Undo";
-    undo.title = `Take back the latest removal (${format.keys.undo})`;
+    undo.title = "Take back the latest removal";
     undo.disabled = params.edits.length === 0;
     undo.addEventListener("click", () => this.undo());
     head.append(title, count, undo);
@@ -645,8 +645,10 @@ export class Lasso {
     this.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     this.svg.append(this.path);
     map.getCanvasContainer().append(this.svg);
+    // The open edge follows the pointer from the last boundary point.
     this.draw = () => {
       const points = this.points.map(point => { const p = map.project(point); return [p.x, p.y]; });
+      if (points.length && this.cursor) points.push(this.cursor);
       if (points.length) this.path.setAttribute("d", `M${points.map(p => p.join(",")).join("L")}Z`);
       else this.path.removeAttribute("d");
     };
@@ -664,19 +666,21 @@ export class Lasso {
       this.draw();
       if (points.length > 2) this.onDone(points, { restore: this.restore });
     };
+    this.onPointer = event => { this.cursor = [event.point.x, event.point.y]; this.draw(); };
     this.onKey = event => { if (event.key === "Escape") this.onCancel(); };
   }
 
   setActive(active) {
     if (active === this.active) return;
     this.active = active;
-    for (const [event, handler] of [["click", this.onClick], ["dblclick", this.onFinish], ["move", this.draw]]) {
+    for (const [event, handler] of [["click", this.onClick], ["dblclick", this.onFinish], ["move", this.draw], ["mousemove", this.onPointer]]) {
       if (active) this.map.on(event, handler); else this.map.off(event, handler);
     }
     if (active) window.addEventListener("keydown", this.onKey);
     else {
       window.removeEventListener("keydown", this.onKey);
       this.points = [];
+      this.cursor = null;
       this.draw();
     }
   }

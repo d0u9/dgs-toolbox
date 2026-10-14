@@ -79,6 +79,7 @@ const state = {
   timelineSnap: true, // the timeline's cursor sticks to stops, cuts and ends
   timelineCompress: false, // stops and empty time drawn narrow on the timeline
   timelineHideEmpty: true, // empty time left out of the timeline
+  timelineSegment: true, // on Segments, the timeline shows the selected segment alone
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   charts: { elevation: true, speed: true, layout: "side" }, // layout: "stacked" | "side"
@@ -134,6 +135,7 @@ function save() {
       timelineSnap: state.timelineSnap,
       timelineCompress: state.timelineCompress,
       timelineHideEmpty: state.timelineHideEmpty,
+      timelineSegment: state.timelineSegment,
       timelineStops: state.timelineStops,
       cleanOpen: state.cleanOpen,
       editTab: state.editTab,
@@ -343,9 +345,9 @@ function applyCleanPanel() {
   if (!timeline) return;
   const entry = focusedEntry();
   const part = editPart();
-  // Edit works on one track: selecting the file, a route or a waypoint leaves it.
-  if (state.cleanOpen && !part) state.cleanOpen = false;
-  const open = state.cleanOpen && Boolean(part) && !state.routeOpen;
+  // Edit works on one track: selecting the file, a route or a waypoint stays in
+  // Edit with an empty panel until a track is selected again.
+  const open = state.cleanOpen && !state.routeOpen;
   const wasOpen = !$("inspector").hidden;
   const wanted = open || state.routeOpen;
   $("inspector").hidden = !wanted || state.hidden.inspector;
@@ -358,18 +360,25 @@ function applyCleanPanel() {
   $("mode-edit").setAttribute("aria-pressed", String(open));
   $("mode-route").setAttribute("aria-pressed", String(state.routeOpen));
   if (planner && planner.active !== state.routeOpen) planner.setActive(state.routeOpen);
-  $("mode-edit").disabled = !part;
+  $("mode-edit").disabled = !part && !open;
   $("mode-edit").title = part
     ? "Edit the selected track: remove points by hand, fill along the road, clean automatically"
     : "Select a track in the workspace to edit it";
   if (wasOpen === $("inspector").hidden) map?.resize();
-  if (!open) {
+  if (!open || !part) {
     state.waypointTool = false;
     setLasso(false);
     setRangeTool(false);
     setFillTool(false);
     timeline.setEditing(null);
     applyEditTools();
+    if (open) {
+      cleanPanel.hide();
+      const empty = document.createElement("p");
+      empty.className = "clean-head";
+      empty.textContent = "Select a track in the workspace to edit it.";
+      $("clean-panel").replaceChildren(empty);
+    }
     return;
   }
   cleanPanel.timeZone = $("timezone").value;
@@ -520,13 +529,15 @@ function setCompare(on) {
 // applyEditTools shows the tool bar in edit mode, the tool in use, and a line
 // on the map saying what a click does now.
 function applyEditTools() {
-  const open = state.cleanOpen && Boolean(focusedEntry()) && !state.routeOpen;
-  $("map-tools").hidden = !open;
+  // The tool bar stays in Edit; its tools wait for a selected track.
+  $("map-tools").hidden = !(state.cleanOpen && !state.routeOpen);
+  const open = state.cleanOpen && Boolean(editPart()) && !state.routeOpen;
   // Tools that draw by dragging claim the left-button drag; Space+drag pans under every tool.
   gestures?.setToolDrag(false);
   const tool = cutting() ? "cut" : state.waypointTool ? "waypoint" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
   for (const name of ["select", "range", "lasso", "fill", "cut", "waypoint"]) {
     $(`tool-${name}`).setAttribute("aria-pressed", String(open && tool === name));
+    $(`tool-${name}`).disabled = !open;
   }
   $("tool-compare").setAttribute("aria-pressed", String(open && state.compare));
   $("tool-compare").disabled = !open;
@@ -918,7 +929,6 @@ function replaceTrackPath(path, target) {
   if (state.partSelection?.path === path) state.partSelection.path = target;
   if (state.fill.preview?.path === path) state.fill.preview.path = target;
   entry.track.path = target;
-  entry.track.name = basename(target).replace(/\.gpx$/i, "");
   if (state.focus === path) {
     // The same file is still focused; renaming must not discard its fill.
     state.focus = target;
@@ -929,11 +939,11 @@ function replaceTrackPath(path, target) {
 async function renameGPX(path) {
   const entry = state.tracks.get(path);
   const name = await promptDialog({
-    title: "Rename GPX",
+    title: entry.track.draft ? "Rename GPX" : "Rename file",
     message: entry.track.draft
       ? "Name this new GPX. It stays in memory until you save it."
-      : "Rename this GPX in its current folder. Unsaved edits stay unsaved. An existing file is not replaced.",
-    value: entry.track.name,
+      : `Rename this file in its current folder, with its sidecar and photos. The GPX's own name stays${entry.track.ours ? "" : ", and the recording's contents are not changed"}. Unsaved edits stay unsaved. An existing file is not replaced.`,
+    value: entry.track.draft ? entry.track.name : basename(path).replace(/\.gpx$/i, ""),
     confirm: "Rename",
   });
   if (!name) return;
@@ -947,6 +957,69 @@ async function renameGPX(path) {
   } catch (error) {
     showMessage(error.message, true);
   }
+}
+
+// renameName changes the GPX's own name, the one the workspace shows. It is
+// an unsaved edit: saving writes it into a GPX dgs wrote, or into the sidecar
+// of a recording.
+async function renameName(path) {
+  const entry = state.tracks.get(path);
+  const name = await promptDialog({
+    title: "Rename GPX",
+    message: entry.track.ours
+      ? "The name is written into the GPX when it is saved. The file name stays."
+      : "The name is kept in the sidecar when it is saved; the recorded file is not written. The file name stays.",
+    value: entry.track.name,
+    confirm: "Rename",
+  });
+  if (!name) return;
+  try {
+    await api.renamePart(path, "f", name);
+    await reloadEntry(path);
+    renderTracks();
+    if (state.focus === path) setFocus(path, { fit: false });
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+// restoreName drops the name given here, as an unsaved edit like any other.
+async function restoreName(path) {
+  try {
+    await api.renamePart(path, "f", "");
+    await reloadEntry(path);
+    renderTracks();
+    if (state.focus === path) setFocus(path, { fit: false });
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+// stepEdit undoes or redoes one unsaved edit of a file: Cmd+Z and
+// Shift+Cmd+Z, for the focused file. Saved edits are not undone.
+async function stepEdit(path, back) {
+  try {
+    const { moved } = await (back ? api.undo(path) : api.redo(path));
+    if (!moved) {
+      showMessage(back ? "Nothing to undo since the file was last saved" : "Nothing to redo");
+      return;
+    }
+    await reloadEntry(path);
+    renderTracks();
+    if (state.focus === path) setFocus(path, { fit: false });
+    showMessage(back ? "Undone" : "Redone");
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+// timelineToSegment narrows the timeline to the one selected segment on the
+// Segments tab, when the Segment switch is on. Several or none leave it.
+function timelineToSegment() {
+  if (!state.timelineSegment || !cutting() || cutPanel.selected.size !== 1) return;
+  const [first] = cutPanel.selected;
+  const piece = cutPanel.track?.pieces.find((p) => p.first === first);
+  if (piece?.start != null && piece.end != null && piece.end > piece.start) timeline.changeView([piece.start, piece.end]);
 }
 
 // newGPX starts an empty GPX in memory, shown in the workspace, to add
@@ -1475,7 +1548,13 @@ function trackRow(path, entry) {
       return;
     }
     openMenu(event, [
-    (track.draft || track.ours) ? [{ label: "Rename…", title: "Rename this GPX", onSelect: () => renameGPX(path) }] : [],
+    track.draft
+      ? [{ label: "Rename…", title: "Rename this GPX", onSelect: () => renameGPX(path) }]
+      : [
+        { label: "Rename…", title: "Change the GPX's own name; it is written when the file is saved", onSelect: () => renameName(path) },
+        ...(track.renamed ? [{ label: "Restore the name", title: "Drop the name given here; the GPX's own name shows again", onSelect: () => restoreName(path) }] : []),
+        { label: "Rename file…", title: "Rename the file in its folder; the GPX's own name stays", onSelect: () => renameGPX(path) },
+      ],
     [{
       label: "Save",
       title: track.unsaved
@@ -2401,11 +2480,17 @@ function bindMap() {
     const actions = [[{ label: "Add waypoint…", onSelect: () => addWaypointAt(position) }]];
     const found = waypointAt(event.point);
     const cutEntry = focusedEntry();
-    if (!found && cutting() && cutEntry) {
+    // Cut here is offered on the track under every Edit tool; cutting opens
+    // the Segments tab, where the cuts are listed.
+    const editing = state.cleanOpen && !state.routeOpen && Boolean(editPart());
+    if (!found && editing && cutEntry) {
       const index = layers.nearest(cutEntry.track, event.point, 24, pickHidden(cutEntry));
       if (index >= 0) {
         inspect(index);
-        actions.push([{ label: "Cut here", onSelect: () => cutPanel.addCut(index) }]);
+        actions.push([{ label: "Cut here", onSelect: () => {
+          if (!cutting()) setTool("cut");
+          cutPanel.addCut(index);
+        } }]);
       }
     }
     if (found) {
@@ -2471,20 +2556,32 @@ function bindMap() {
     const box = [[event.point.x - 4, event.point.y - 4], [event.point.x + 4, event.point.y + 4]];
     const layerIds = layers.lineLayers();
     if (!layerIds.length) return;
-    const hit = map.queryRenderedFeatures(box, { layers: layerIds })[0];
-    if (!hit) return;
-    const id = hit.layer.metadata.track;
-    for (const [path, entry] of state.tracks) {
-      if (entry.id !== id) continue;
-      // A click on a track's line selects that track.
-      state.partSelection = { path, key: hit.properties.part };
-      select(path);
-      if (path !== state.focus) setFocus(path, { fit: false });
-      else { showCharts(); renderTracks(); applyCutPanel(); applyCleanPanel(); }
-      const part = entry.track.parts.find(part => part.kind === "track" && part.key === hit.properties.part);
-      if (part && entry.visible && !entry.hiddenParts.has(part.key)) setMode("edit");
+    // Every shown track under the pointer: one is selected at once; several,
+    // drawn nearly over each other, are offered in a list to choose from.
+    const hits = [];
+    for (const feature of map.queryRenderedFeatures(box, { layers: layerIds })) {
+      for (const [path, entry] of state.tracks) {
+        if (entry.id !== feature.layer.metadata.track || !entry.visible) continue;
+        const part = entry.track.parts.find(part => part.kind === "track" && part.key === feature.properties.part);
+        if (!part || entry.hiddenParts.has(part.key) || hits.some(hit => hit.path === path && hit.part.key === part.key)) continue;
+        hits.push({ path, entry, part });
+      }
+    }
+    if (hits.length === 1) pickTrack(hits[0]);
+    else if (hits.length > 1) {
+      openMenu(event.originalEvent, [hits.map(hit => ({
+        label: hits.some(other => other.path !== hit.path) ? `${hit.part.name} — ${hit.entry.track.name}` : hit.part.name,
+        onSelect: () => pickTrack(hit),
+      }))]);
     }
   });
+}
+
+// pickTrack selects a track clicked on the map: its GPX opens in the
+// workspace, and the track's row is the selection.
+function pickTrack({ path, entry, part }) {
+  entry.expanded = true;
+  showPart(path, part);
 }
 
 // ---- layout ----
@@ -2816,6 +2913,9 @@ async function start() {
     // view in 3D, draws from memory instead of fetching again.
     maxTileCacheSize: 1024,
     refreshExpiredTiles: false,
+    // A click that moves a little is still a click, not a short pan: lasso
+    // points, cuts and waypoints are placed by clicks. MapLibre's default is 3px.
+    clickTolerance: 8,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   // Before any tool listens, so Space+drag reaches the map first.
@@ -2944,6 +3044,7 @@ async function start() {
       cutOverlay.highlight(cutPanel.track, piece);
       profile.setIndex(piece.first);
       timeline.setIndex(piece.first);
+      timelineToSegment();
       if (!fit) return;
       const box = pieceBounds(focusedEntry().track, piece);
       if (box) fitBox(box);
@@ -3002,16 +3103,16 @@ async function start() {
         return;
       }
     }
-    if (state.cleanOpen && !typing && plain) {
+    if (state.cleanOpen && editPart() && !typing && plain) {
       const tool = { r: "range", l: "lasso", f: "fill", c: "cut" }[event.key.toLowerCase()];
       if (tool) {
         event.preventDefault();
         setTool(tool);
       }
     }
-    if (state.cleanOpen && !typing && (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+    if (state.focus && !typing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
-      cleanPanel.undo();
+      stepEdit(state.focus, !event.shiftKey);
     }
   });
   timeline = new Timeline({
@@ -3066,6 +3167,14 @@ async function start() {
   $("timeline-compress").addEventListener("change", () => {
     state.timelineCompress = $("timeline-compress").checked;
     timeline.setCompress(state.timelineCompress);
+    save();
+  });
+  if (saved.timelineSegment === false) state.timelineSegment = false;
+  $("timeline-segment").checked = state.timelineSegment;
+  $("timeline-segment").addEventListener("change", () => {
+    state.timelineSegment = $("timeline-segment").checked;
+    if (state.timelineSegment) timelineToSegment();
+    else timeline.changeView(null);
     save();
   });
   if (saved.timelineHideEmpty === false) state.timelineHideEmpty = false;

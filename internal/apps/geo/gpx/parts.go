@@ -641,6 +641,11 @@ func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (side
 	for _, key := range held.Deleted {
 		deleted[key] = true
 	}
+	if name, ok := held.Names[fileNameKey]; ok {
+		if err := gpxfile.SetName(path, name); err != nil {
+			return held, err
+		}
+	}
 	// The names of the parts the file already holds.
 	for key, name := range held.Names {
 		kind, index, err := partKey(key)

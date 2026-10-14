@@ -708,3 +708,54 @@ func ReorderParts(path string, part Part, order []int) error {
 	b.Write(data[spans[count-1].end:])
 	return replaceFile(path, b.Bytes())
 }
+
+// SetName replaces the <metadata><name> of a file written by this program,
+// keeping every other byte. A file without <metadata> or <name> gets one;
+// an empty name leaves an empty <name>. A file created by something else is
+// refused.
+func SetName(path, name string) error {
+	data, _, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	var escaped bytes.Buffer
+	if err := xml.EscapeText(&escaped, []byte(name)); err != nil {
+		return err
+	}
+	var b bytes.Buffer
+	if open := bytes.Index(data, []byte("<metadata>")); open >= 0 {
+		end := bytes.Index(data[open:], []byte("</metadata>"))
+		if end < 0 {
+			return fmt.Errorf("%s: <metadata> is not closed", path)
+		}
+		body := open + len("<metadata>")
+		from, to := elementSpan(data[body:open+end], "name")
+		if from < 0 {
+			b.Write(data[:body])
+			b.WriteString("<name>")
+			b.Write(escaped.Bytes())
+			b.WriteString("</name>")
+			b.Write(data[body:])
+		} else {
+			b.Write(data[:body+from])
+			b.Write(escaped.Bytes())
+			b.Write(data[body+to:])
+		}
+		return replaceFile(path, b.Bytes())
+	}
+	root := bytes.Index(data, []byte("<gpx"))
+	if root < 0 {
+		return fmt.Errorf("%s: no <gpx> element", path)
+	}
+	tag := bytes.IndexByte(data[root:], '>')
+	if tag < 0 {
+		return fmt.Errorf("%s: <gpx> is not closed", path)
+	}
+	at := root + tag + 1
+	b.Write(data[:at])
+	b.WriteString("\n  <metadata><name>")
+	b.Write(escaped.Bytes())
+	b.WriteString("</name></metadata>")
+	b.Write(data[at:])
+	return replaceFile(path, b.Bytes())
+}
