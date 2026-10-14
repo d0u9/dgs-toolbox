@@ -52,7 +52,7 @@ const (
 	// documents, so reaching it from another machine is a design with access
 	// control rather than a setting.
 	DefaultDocWebHost = "127.0.0.1"
-	// DefaultDocWebPort sits next to the Box server's.
+	// DefaultDocWebPort is the document web server port.
 	DefaultDocWebPort = 8767
 )
 

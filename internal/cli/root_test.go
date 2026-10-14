@@ -315,3 +315,16 @@ func TestPhotoImportPreviewAndCleanupFlagsRunWithoutTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBoxCommandIsRemoved(t *testing.T) {
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		t.Fatal("removed Box command opened a TUI")
+		return nil
+	})
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"box"})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("removed Box command: %v", err)
+	}
+}

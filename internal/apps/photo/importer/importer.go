@@ -825,7 +825,7 @@ type prepared struct {
 //
 // The integrity contract — copy, read the destination back independently, and
 // publish under the final name only when the two digests agree — is
-// internal/verifiedcopy, which dgs box uses for the same guarantee. What is
+// internal/verifiedcopy. What is
 // left here is what belongs to Photo Import and to nothing else: the conflict
 // policy, Move, the pause controller and the progress events the TUI draws.
 func transferAll(ctx context.Context, index int, runs []*targetRun, completed func(int, outcome)) {

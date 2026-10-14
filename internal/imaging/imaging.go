@@ -1,6 +1,6 @@
 // Package imaging shrinks, turns and re-encodes pictures. It knows nothing of
 // where a picture came from or where it is going: bytes or an image in, bytes or
-// an image out, so a Box thumbnail and a Capture attachment are drawn by the
+// an image out, so a Doc page preview and a Capture attachment are drawn by the
 // same code.
 package imaging
 

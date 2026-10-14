@@ -529,7 +529,7 @@ and sort are remembered in this browser under the page's key. A page whose
 list follows a Sort control of its own, or keeps groups together, sorts the
 rows itself and the headers only set that order; a page with a set list of
 columns turns the chooser off. Every sortable list uses it: doc's Browse,
-Values and Snapshots' Add PDFs, box's Browse, and the file dialog.
+Values and Snapshots' Add PDFs, and the file dialog.
 Every list table looks the same: cells at `--font-size-sm`, headers at
 `--font-size-xs` in graphite, the sorted one in primary, rows padded
 `--row-pad-y` by `--row-pad-x` over a hairline, and the row states of *Rows:

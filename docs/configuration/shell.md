@@ -34,7 +34,6 @@ whatever else it reads from disk:
   capture/config.json
   capture/recipes/ workflows/ mappings/ templates/
   photo/config.json
-  box/config.json
   doc/config.json
   geo/config.json
   geo/gpx/tiles.json

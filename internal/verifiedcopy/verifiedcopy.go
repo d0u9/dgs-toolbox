@@ -2,8 +2,7 @@
 // final name until bytes read back independently from the destination produce
 // the same SHA-256 digest as the bytes that were read from the source.
 //
-// This is the integrity contract Photo Import states and dgs box inherits, and
-// it is the highest-priority requirement in either: a file that appears under
+// This is the integrity contract Photo Import requires: a file that appears under
 // its final name has been verified, and a file that has not been verified never
 // wears that name. Everything else — progress reporting, retries, what the
 // caller does afterwards — is arranged around that and belongs to the caller.
@@ -70,8 +69,7 @@ type Request struct {
 	ExpectedDigest string
 	// PreserveModTime applies the source's modification time to the copy before
 	// it is published, so the final name never denotes a file with incomplete
-	// metadata. A Box does not want this — a scan's intake date is a fact about
-	// the Box, not about the file it came from — and Photo Import does.
+	// metadata. Photo Import preserves the source modification time.
 	PreserveModTime bool
 	// Mode, when non-zero, is the permission the copy is published with. Zero
 	// keeps the owner-only 0600 the unpublished copy is created with. Photo

@@ -47,12 +47,7 @@ data in this repository, even temporarily or in an untracked or ignored file.**
   destination readback, verified atomic publication, whole-file retry and
   versioned `.dgs-state`. **Never publish the final name before readback matches
   the source digest.** Keep processing outside the TUI and test with filesystems.
-  Reuse `internal/verifiedcopy`, also used by Box.
-- Box: [designs](docs/apps/box/). Per-scan YAML sidecars are metadata truth;
-  publication follows the same readback contract. Paths encode event year/month
-  (intake date when absent); date changes move files by rename. Discard moves to
-  Box trash; nothing is deleted. Keep the in-memory index until the conditions
-  in [index.md](docs/apps/box/index.md) justify revisiting SQLite.
+  Reuse `internal/verifiedcopy`.
 - GPX: [design](docs/apps/geo/gpx.md). Never write to a GPX that `dgs` did not
   create. Edits belong in its sidecar; embedding them requires a new GPX.
   A recording cannot be recorded again; a sidecar can be entered again.

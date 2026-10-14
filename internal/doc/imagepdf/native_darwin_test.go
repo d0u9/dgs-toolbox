@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"dgs-toolbox/internal/box/scanmeta"
+	"dgs-toolbox/internal/doc/scanmeta"
 )
 
 func TestHEICConversion(t *testing.T) {

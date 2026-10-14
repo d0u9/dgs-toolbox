@@ -11,7 +11,7 @@ leaves imported files where they are:
   e-books, and the sidecars are kept together in one folder.
 
 The second layout exists so the owner can find files by hand in Finder in
-trees where that matters: Box's scans, moved into doc, keep their
+trees where that matters: scans imported into doc keep their
 `<YYYY>/<MM>` directories; a library of e-books is browsed by category and
 language. It is how the originals themselves are stored, not a copy. An export
 is what is handed to someone else; a second, browsable copy of the same files
@@ -128,8 +128,7 @@ today; no path is stored.
 
 ## Moves
 
-Editing a field the layout uses moves the PDFs it places, as Box's event-date
-correction does:
+Editing a field used by the layout moves the PDFs it places:
 
 1. The sidecar is written first, so a failure afterwards leaves a correct
    description.
@@ -475,8 +474,8 @@ revisions:
 ## Open
 
 - Where a PDF goes when a key its `path` needs is empty and not in brackets:
-  refused at import, or a fallback such as the import date, as Box places a
-  scan with no event date.
+  refused at import, or a fallback such as the import date for a scan with no
+  event date.
 
 ### Independent Outline format and file sizes
 

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dgs-toolbox/internal/box/scanmeta"
+	"dgs-toolbox/internal/doc/scanmeta"
 )
 
 func TestImagePageIsDeterministicAndFullSize(t *testing.T) {
