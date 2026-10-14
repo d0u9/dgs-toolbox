@@ -12,6 +12,8 @@ on:
         type: string
 
 env:
+  # Releases must build from pinned modules, without a developer workspace.
+  GOWORK: "off"
   RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
 permissions:
@@ -31,12 +33,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run tests
-        run: go test ./...
       - name: Set up Node for GPX web tests
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - name: Test timeline and bundled plugin parity
+        run: make test-timeline
+      - name: Run tests
+        run: go test ./...
       - name: Run GPX web unit tests
         run: make test-gpx-web
 
@@ -64,6 +68,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Build embedded plugins
+        run: make plugins
       - name: Build
         shell: bash
         env:
@@ -88,12 +94,15 @@ jobs:
         run: |
           set -euo pipefail
           archive="dgs_${RELEASE_VERSION}_${GOOS}_${GOARCH}"
+          suffix=""
+          if [[ "$GOOS" == "windows" ]]; then suffix=".exe"; fi
+          cp "package/dgs${suffix}" "${archive}${suffix}"
           if [[ "$GOOS" == "windows" ]]; then
             (cd package && zip -9 "../${archive}.zip" dgs.exe)
           else
             tar -C package -czf "${archive}.tar.gz" dgs
           fi
-      - name: Upload archive
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
           name: dgs-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -122,6 +131,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Build embedded plugins
+        run: make plugins
       - name: Build and sign
         shell: bash
         env:
@@ -136,14 +147,17 @@ jobs:
             -ldflags "-X dgs-toolbox/internal/buildinfo.Version=${RELEASE_VERSION} -X dgs-toolbox/internal/buildinfo.Commit=${commit} -X dgs-toolbox/internal/buildinfo.Date=${built} -linkmode=external -extldflags '-sectcreate __TEXT __info_plist ./internal/desktop/reminders/Info.plist'" \
             -o package/dgs ./cmd/dgs
           codesign --force --sign - --identifier dev.dgs-toolbox.dgs package/dgs
+          codesign --verify --strict package/dgs
+          package/dgs --version
       - name: Package
         shell: bash
         env:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
+          cp package/dgs "dgs_${RELEASE_VERSION}_darwin_${GOARCH}"
           tar -C package -czf "dgs_${RELEASE_VERSION}_darwin_${GOARCH}.tar.gz" dgs
-      - name: Upload archive
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
           name: dgs-darwin-${{ matrix.goarch }}
@@ -159,7 +173,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download archives
+      - name: Download release assets
         uses: actions/download-artifact@v4
         with:
           pattern: dgs-*
