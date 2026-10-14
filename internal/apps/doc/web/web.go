@@ -236,7 +236,7 @@ func Handler(settings Settings) http.Handler {
 	}
 	mux.Handle("GET /{$}", http.RedirectHandler("/browse/", http.StatusFound))
 	mux.Handle("GET /", serve)
-	return mux
+	return http.NewCrossOriginProtection().Handler(mux)
 }
 
 // api is one tree's API.
