@@ -10,5 +10,7 @@ Settings live in <config-directory>/cred/config.json: identities names the
 identity files; recipients names the host/group recipient folder;
 new_identity_dir is where newly created identities go.
 The workspace distinguishes this machine's private identities from public
-recipients. Follow its key hints and confirmations for changes.
+recipients. The GROUPS tab supports n New, e Edit, r Rename and d Delete.
+Group changes do not update recipients of existing encrypted files.
+Follow the workspace key hints and confirmations for changes.
 There are no positional identity paths or key-generation CLI flags.`

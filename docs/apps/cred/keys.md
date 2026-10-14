@@ -163,8 +163,8 @@ enforce it; any plain name is accepted within these limits:
 ### Errors and warnings
 
 A file with an **error** is left out, and the rest of the folder loads: the
-folder is edited by hand, and one mistake should not hide every other host. The
-error is shown on the keys page with its file. Errors are an invalid file name,
+folder can also be edited by hand, and one mistake should not hide every other
+host. The error is shown on the keys page with its file. Errors are an invalid file name,
 invalid JSON or an unknown field, and the key rules above; two names that differ
 only in case are an error on both files.
 
@@ -179,8 +179,8 @@ A **warning** leaves the file loaded:
 
 ## The keys page
 
-`dgs cred keys` is read-only. `dgs cred` opens a picker, since more commands
-will join it.
+`dgs cred keys` manages identities, recipient hosts and groups. `dgs cred`
+opens the Keys/Vault picker.
 
 It has three tabs — **IDENTITIES**, **HOSTS**, **GROUPS** — switched with `[`
 and `]` or a click. Each uses the two-column, leading-narrow skeleton: a list on
@@ -348,6 +348,60 @@ it, which cannot be opened again once the private key is gone. Files without a
 record are not known about, and an unreadable record is said to make the answer
 incomplete.
 
+## Managing groups
+
+The **GROUPS** tab provides `n` New, `e` Edit, `r` Rename and `d` Delete.
+New and Edit use the same overlay: New has an editable name, initially `g-`;
+Edit keeps the name in its heading and edits membership only. Rename edits
+only the name. Names follow the rules above, including case-insensitive
+uniqueness. Invalid files, directories and symlinks occupying a destination
+name are not overwritten. Problem rows cannot be edited or deleted here;
+fix their files by hand and reload. Group files that are symlinks can be
+viewed but cannot be edited, renamed or deleted from the page; a symlink to
+the recipient folder itself is supported.
+
+The Hosts field opens a scrolling checklist. Each host shows its key count;
+zero-key hosts are allowed and marked with a warning. Existing unresolved
+members remain checked and say their host is missing or has errors. Repeated
+members remain separate checked rows with a warning. Neither is silently
+removed: each raw member stays unless its own checkbox is cleared.
+`Space` toggles, Up/Down or `k/j` moves, `Enter` applies the selection to the
+form, and `Esc` discards checklist changes. Clicking a row toggles it; the
+mouse wheel scrolls. An empty group is allowed.
+
+The footer's Save (Rename for renaming), or `n` outside text editing and the
+checklist, performs the operation. Applying the checklist does not write a
+file. `Esc` cancels an active name edit first, restoring its prior value;
+otherwise it closes the form without writing. Saving errors retain the form
+and selections. Delete opens the shared confirmation with Keep selected by
+default, then moves only the group file to the native trash. Hosts, keys and
+existing encrypted files are unaffected. A trash failure reports the error
+and leaves the file in place, with no permanent-delete fallback.
+
+Editing reads the original JSON, rather than the resolved host list used by
+encryption. It refuses malformed JSON and unknown fields. Before Save, Rename
+or confirmed Delete, the group must still load unambiguously and match the
+bytes read when the form or confirmation opened. A conflict asks the user to
+cancel and reload; no automatic merge is attempted. This is a preflight
+check, not a lock: an unrelated writer can still race the final filesystem
+operation. Editing the same recipient folder concurrently is not supported.
+
+New groups are written to a same-directory temporary file, synced, read back
+and published without replacing an existing destination. Edits use a synced
+temporary file renamed over the original, retaining its permissions. Rename
+preserves the original bytes by linking the new name before removing the old
+one; a case-only rename on a case-insensitive filesystem uses native rename.
+Creating groups and renaming to another name require hard-link support, as
+vault publication does. An unsupported filesystem reports an error rather
+than falling back to an overwrite. If the new link succeeds but removing the
+old name fails, the error explicitly reports that both names remain. These
+operations do not promise a transaction with other writers or crash durability
+beyond the filesystem APIs used.
+
+Group membership is a shortcut for choosing hosts and keys when encrypting.
+Creating, changing, renaming or deleting a group never automatically
+re-encrypts existing vault files or changes their recorded recipients.
+
 ## Milestones
 
 1. **A1 — Recipient folder.** Load `cred/config.json`, and load hosts and
@@ -363,6 +417,9 @@ incomplete.
    passphrase is asked for in a masked field when a file needs it, unlocks the
    identity for that one file or recipient change, and is not kept. See
    [`vault.md`](vault.md#decrypting).
+6. **A6 — Managing groups.** Create, edit members, rename and trash groups
+   from the Groups tab, preserving unresolved members and checking for external
+   edits as described above. Built.
 
 ## Deferred
 
@@ -374,7 +431,6 @@ incomplete.
   new, replaced or renamed should be confirmed on this machine before it can be
   encrypted for, in the manner of SSH's `known_hosts`. Decryption is unaffected
   because it uses only local identities.
-- **Editing recipients from the page.** The folder is edited by hand.
 - **More key metadata** — kind (SSH user or host key), status (active or
   retired), history. Added when something needs them.
 - **Post-quantum age keys** (`age1pq1…`). Not used. age will not mix them with

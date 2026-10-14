@@ -7,6 +7,7 @@ stands. The designs are in [`keys.md`](keys.md), [`vault.md`](vault.md) and
 | Part | What | State |
 | --- | --- | --- |
 | A | Identities, recipients, groups; generating, importing, registering, adding and deleting keys | built |
+| A6 | Creating, editing, renaming and deleting groups from the Keys page | built |
 | A4 | Unlocking passphrase-protected SSH identities | built, for one file at a time, with C2 |
 | B | Browsing the vault and checking headers | built |
 | C | Opening a file into memory, with passphrases | built |
@@ -27,5 +28,5 @@ stands. The designs are in [`keys.md`](keys.md), [`vault.md`](vault.md) and
   an archive.
 - **Publishing without hard links**, for a vault on exFAT or a network share: see
   [`vault.md`](vault.md#limitations).
-- **Recipient trust confirmation**, **editing groups from the page**, and the
-  other items deferred in [`keys.md`](keys.md#deferred).
+- **Recipient trust confirmation** and the other items deferred in
+  [`keys.md`](keys.md#deferred).

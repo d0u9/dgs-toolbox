@@ -61,8 +61,7 @@ type problem struct {
 	message  string
 }
 
-// keysModel is dgs cred keys: a read-only view of the identities on this
-// machine and the recipient folder.
+// keysModel manages this machine's identities and the recipient folder.
 type keysModel struct {
 	width, height int
 	// path is the cred/config.json to read; empty means the default location.
@@ -92,6 +91,8 @@ type keysModel struct {
 	renameFlow *renameFlow
 	// hostComment is editing a host's comment while it is open.
 	hostComment *hostCommentFlow
+	groupFlow   *groupFlow
+	selectGroup string
 	// selectHost is a host name the next rebuild puts the cursor on, since the
 	// list IDs are positions and a renamed host sorts elsewhere.
 	selectHost string
@@ -145,11 +146,19 @@ func (m keysModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.finishRename(msg)
 		}
 		return m, nil
+	case groupSavedMsg:
+		if m.groupFlow != nil {
+			return m.finishGroup(msg)
+		}
+		return m, nil
 	case hostCommentSavedMsg:
 		if m.hostComment != nil {
 			return m.finishHostComment(msg)
 		}
 		return m, nil
+	}
+	if m.groupFlow != nil {
+		return m.updateGroupFlow(msg)
 	}
 	if m.deleteFlow != nil {
 		if key, ok := msg.(tea.KeyMsg); ok {
@@ -196,6 +205,10 @@ func (m *keysModel) setTab(tab int) {
 
 func (m keysModel) updateKey(key string) (tea.Model, tea.Cmd) {
 	m.notice = ""
+	if m.tab == tabGroups && (key == "n" || key == "e" || key == "r") {
+		m.startGroupFlow(key)
+		return m, nil
+	}
 	switch key {
 	case "[":
 		m.setTab((m.tab + tabCount - 1) % tabCount)
@@ -453,6 +466,14 @@ func (m *keysModel) rebuild() {
 		}
 		m.selectHost = ""
 	}
+	if m.selectGroup != "" {
+		for i, group := range snap.folder.Groups {
+			if group.Name == m.selectGroup {
+				m.lists[tabGroups].SelectID("group:" + strconv.Itoa(i))
+			}
+		}
+		m.selectGroup = ""
+	}
 	m.keysHost = ""
 	m.syncKeys()
 	m.layout()
@@ -647,6 +668,9 @@ func (m keysModel) View() string {
 	}
 	left, right := m.columns()
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top, m.leftColumn(left), " ", m.rightColumn(right))
+	if m.groupFlow != nil {
+		return overlay.Place(workspace, m.groupFlowView(), m.width, m.height)
+	}
 	if m.keyFlow != nil {
 		return overlay.Place(workspace, m.keyFlowView(), m.width, m.height)
 	}
@@ -664,6 +688,9 @@ func (m keysModel) View() string {
 
 // CapturesShellKey keeps Esc, q and Backspace inside an open key form.
 func (m keysModel) CapturesShellKey(key string) bool {
+	if m.groupFlow != nil {
+		return key == "esc" || key == "q" || key == "backspace"
+	}
 	if m.deleteFlow != nil {
 		return key == "esc" || key == "q"
 	}
@@ -789,6 +816,12 @@ func (m keysModel) groupDetail(group recipients.Group, width int) []string {
 }
 
 func (m keysModel) Status() tui.Status {
+	if m.deleteFlow != nil && m.deleteFlow.group != nil {
+		return tui.Status{Left: "DELETE GROUP"}
+	}
+	if m.groupFlow != nil {
+		return m.groupFlowStatus()
+	}
 	if m.keyFlow != nil {
 		return m.keyFlowStatus()
 	}
@@ -808,6 +841,8 @@ func (m keysModel) Status() tui.Status {
 	}
 	right := "↑↓ Move  [ ] Tab  R Reload"
 	switch {
+	case m.tab == tabGroups:
+		right = "↑↓ Move  n New  e Edit  r Rename  d Delete"
 	case m.tab == tabHosts && m.fields.Current() == keysField:
 		left = "KEYS"
 		right = "↑↓ Move  c Copy  d Unregister  tab Hosts"

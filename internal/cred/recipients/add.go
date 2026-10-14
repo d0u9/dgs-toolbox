@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"dgs-toolbox/internal/cred/publish"
 )
 
 // CheckHostName reports why name cannot be a host name, or nil.
@@ -170,24 +172,7 @@ func writeJSON(dir, name string, value any) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(dir, "."+name+".*.dgs-part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(data); err == nil {
-		err = temp.Sync()
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Chmod(temp.Name(), 0o644)
-	}
-	if err == nil {
-		err = os.Rename(temp.Name(), filepath.Join(dir, name+FileSuffix))
-	}
-	return err
+	return publish.Replace(filepath.Join(dir, name+FileSuffix), data, 0o644)
 }
 
 // RemoveFromGroups takes a host out of every group naming it, ignoring case. It
