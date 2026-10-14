@@ -457,7 +457,7 @@ func ApplyWithProgress(ctx context.Context, plan Plan, report func(Progress)) Re
 			fail(err.Error())
 			continue
 		}
-		if err := ensureDateDirectory(plan.Root, outcome.Date); err != nil {
+		if err := verifiedcopy.EnsureDirectory(plan.Root, filepath.Dir(outcome.Final)); err != nil {
 			fail(err.Error())
 			continue
 		}
@@ -467,6 +467,16 @@ func ApplyWithProgress(ctx context.Context, plan Plan, report func(Progress)) Re
 		}
 		if err := verifiedcopy.Publish(outcome.Original, outcome.Final); err != nil {
 			fail(err.Error())
+			continue
+		}
+		for _, directory := range []string{filepath.Dir(outcome.Final), filepath.Dir(outcome.Original)} {
+			if err := syncDirectory(directory); err != nil {
+				// The move happened: retain its real path even when durability is unknown.
+				result.Files[index].Status = Failed
+				result.Files[index].Error = fmt.Sprintf("moved to %s; sync directory: %v", outcome.Final, err)
+				failedGroups[outcome.group] = "another file of this shot could not be synced"
+				break
+			}
 		}
 	}
 	reportProgress(report, "Organizing files", "", len(plan.Files), len(plan.Files))
@@ -512,28 +522,8 @@ func FolderFiles(dir string) ([]File, error) {
 	return files, nil
 }
 
-// ensureDateDirectory creates each folder of a possibly nested date path
-// under root, refusing any part that is a symlink or not a directory.
-func ensureDateDirectory(root, date string) error {
-	directory := root
-	for _, part := range strings.Split(date, string(filepath.Separator)) {
-		directory = filepath.Join(directory, part)
-		info, err := os.Lstat(directory)
-		if err == nil {
-			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("date destination is not a real directory: %s", directory)
-			}
-			continue
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Mkdir(directory, 0o755); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// syncDirectory lets tests fail a rename's durability check.
+var syncDirectory = verifiedcopy.SyncDirectory
 
 func captureDate(path string) (time.Time, error) {
 	file, err := os.Open(path)

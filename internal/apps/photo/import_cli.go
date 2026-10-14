@@ -330,9 +330,10 @@ func organizeImportTarget(ctx context.Context, out io.Writer, source, root, stat
 	moved := make(map[string]string)
 	failed := 0
 	for _, file := range organized.Files {
-		if file.Status == postprocess.Moved {
+		if file.Final != file.Original {
 			moved[file.Original] = file.Final
-		} else if file.Status == postprocess.Failed && !file.NoDate {
+		}
+		if file.Status == postprocess.Failed && !file.NoDate {
 			failed++
 		}
 	}

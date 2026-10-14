@@ -384,7 +384,7 @@ func (m importModel) planNextTargetOrganization() (tea.Model, tea.Cmd) {
 func (m *importModel) updateTargetOrganization(result postprocess.Result) {
 	moved := make(map[string]string)
 	for _, file := range result.Files {
-		if file.Status == postprocess.Moved {
+		if file.Final != file.Original {
 			moved[file.Original] = file.Final
 		}
 	}

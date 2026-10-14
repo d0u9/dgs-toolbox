@@ -270,6 +270,8 @@ type FileResult struct {
 	// from files published by this run.
 	Existing bool   `json:"existing,omitempty"`
 	Warning  string `json:"warning,omitempty"`
+	// verified is this run's destination version, never trusted from state.
+	verified os.FileInfo
 }
 
 // Result carries the per-file transfer outcomes. StateError reports a failure
@@ -349,6 +351,11 @@ func setupTarget(ctx context.Context, plan Plan, events chan<- Event) *targetRun
 			return t.failAll(ctx, PhaseFailed, err)
 		}
 		plan.expectedRoot = identity
+	}
+	if plan.DestinationRoot != "" {
+		if err := verifiedcopy.SyncDirectory(filepath.Dir(plan.DestinationRoot)); err != nil {
+			return t.failAll(ctx, PhaseFailed, fmt.Errorf("sync destination root parent: %w", err))
+		}
 	}
 	prior := loadState(plan.StatePath)
 	if plan.Incremental {
@@ -548,7 +555,7 @@ func runTargets(ctx context.Context, plans []Plan, events []chan<- Event) []Resu
 func pinRoot(root string) (os.FileInfo, error) {
 	info, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(root, 0o755); err != nil {
+		if err := verifiedcopy.EnsureDirectory("", root); err != nil {
 			return nil, fmt.Errorf("create destination root: %w", err)
 		}
 		info, err = os.Stat(root)
@@ -724,6 +731,7 @@ func verifyResume(ctx context.Context, file FileResult, plan Plan, sources *sour
 	file.Phase, file.Error, file.Existing = PhaseComplete, "", true
 	base.Phase, base.Existing, base.Bytes = PhaseComplete, true, file.Size
 	base.SourceHash, base.DestinationHash = file.SourceHash, file.DestinationHash
+	file.verified = destination.Source
 	before, statErr := os.Lstat(file.Source)
 	if plan.Operation == Move && errors.Is(statErr, os.ErrNotExist) {
 		return file, base, true
@@ -731,7 +739,7 @@ func verifyResume(ctx context.Context, file FileResult, plan Plan, sources *sour
 	if statErr != nil || !before.Mode().IsRegular() {
 		return FileResult{}, base, false
 	}
-	source, err := check(PhaseCheckingSource, "", file.Source, sources)
+	source, err := check(PhaseCheckingSource, plan.SourceRoot, file.Source, sources)
 	if err != nil || source.Size != file.Size || source.Digest != file.SourceHash || os.SameFile(source.Source, destination.Source) {
 		return FileResult{}, base, false
 	}
@@ -753,14 +761,14 @@ func deletePinnedSource(plan Plan, path string, read os.FileInfo) error {
 	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
 		return fmt.Errorf("%w; source kept", err)
 	}
-	return deleteSource(path, read)
+	return deleteSource(plan.SourceRoot, path, read)
 }
 
 // deleteSource removes a Move's source only while it is still the file that was
 // read: same file, size and modification time. The digest describes those
 // bytes; a source that changed since holds something that was never imported.
-func deleteSource(path string, read os.FileInfo) error {
-	current, err := os.Lstat(path)
+func deleteSource(root, path string, read os.FileInfo) error {
+	current, err := verifiedcopy.FileInfo(root, path)
 	if err != nil {
 		return fmt.Errorf("source metadata before delete: %w", err)
 	}
@@ -955,7 +963,7 @@ func prepare(ctx context.Context, index int, plan Plan, sources *sourceChecks, e
 		}
 		// The record no longer describes what is there: import as new.
 	}
-	info, err := os.Lstat(job.Source)
+	info, err := verifiedcopy.FileInfo(plan.SourceRoot, job.Source)
 	if err != nil {
 		return fail(fmt.Errorf("source metadata: %w", err))
 	}
@@ -982,6 +990,7 @@ func prepare(ctx context.Context, index int, plan Plan, sources *sourceChecks, e
 			result.Destination, base.Destination = match, match
 			result.PlannedDestination = plan.planned[index]
 			result.SourceHash, result.DestinationHash = checked.Digest, checked.Digest
+			result.verified = plan.index.byPath[match].info
 			result.Existing, base.Existing = true, true
 			result.Phase, base.Phase = PhaseAlreadyPresent, PhaseAlreadyPresent
 			base.SourceHash, base.DestinationHash = checked.Digest, checked.Digest
@@ -1036,6 +1045,16 @@ func finishTransfer(ctx context.Context, plan Plan, step prepared, copied verifi
 		base.Phase, base.Err = PhaseFailed, err
 		return result, base
 	}
+	info, statErr := verifiedcopy.FileInfo(plan.DestinationRoot, result.Destination)
+	if statErr != nil || info.Size() != copied.Size {
+		if statErr == nil {
+			statErr = errors.New("published destination size changed")
+		}
+		result.Phase, result.Error = PhaseFailed, statErr.Error()
+		base.Phase, base.Err = PhaseFailed, statErr
+		return result, base
+	}
+	result.verified = info
 	// The two passes agreed, or Copy would not have returned: that is what the
 	// one digest means, and both fields carry it so a state file written before
 	// this change still reads the same way.
@@ -1072,6 +1091,15 @@ func emit(ctx context.Context, events chan<- Event, event Event) {
 }
 
 func writeState(path string, state *State) error {
+	before, err := os.Lstat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		if _, err := LoadState(path); err != nil {
+			return fmt.Errorf("preserving unrecognized state file: %w", err)
+		}
+	}
 	state.UpdatedAt = time.Now().UTC()
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -1094,7 +1122,15 @@ func writeState(path string, state *State) error {
 		err = closeErr
 	}
 	if err == nil {
-		err = os.Rename(temporary, path)
+		if before == nil {
+			err = verifiedcopy.Publish(temporary, path)
+		} else if current, statErr := os.Lstat(path); statErr != nil {
+			err = statErr
+		} else if !verifiedcopy.SameVersion(before, current) {
+			err = errors.New("state file changed before replacement")
+		} else {
+			err = os.Rename(temporary, path)
+		}
 	}
 	if err != nil {
 		_ = os.Remove(temporary)
