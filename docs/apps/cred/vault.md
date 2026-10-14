@@ -121,7 +121,10 @@ Refused before confirming:
   with.
 
 When no checked key belongs to this machine, the confirmation says the file
-cannot be opened or checked here, and the result is published unverified.
+cannot be opened or checked here. A new file may be published unverified;
+replacing an existing file is refused unless the new ciphertext can be
+decrypted back and its SHA-256 matches the source. Only identities matching
+the selected recipients are used to verify an addition.
 
 With a passphrase the confirmation says the file cannot be opened without it and
 that a forgotten one cannot be recovered. The result is always checked, with the
@@ -214,12 +217,13 @@ Beside each file, `<name>.age.json`:
   removed. A file without a record starts with this machine's keys checked, and
   says that what it was encrypted to before is not known.
 - Continuing is refused while the recipient folder has errors, with nothing
-  checked, or when the checked keys are the ones recorded.
+  checked, when the checked keys are the ones recorded, or when no checked key
+  belongs to this machine. A replacement must be verifiable here.
 - The confirmation names the keys added and removed. Whenever a key is removed,
   or the file had no record, it says that a removed key can still open any copy
   of the old version — its own, git history, a backup — and that a secret it
-  holds should be changed too. With no key of this machine checked it says the
-  file cannot be opened or checked here afterwards.
+  holds should be changed too. At least one selected recipient must be
+  decryptable here so the replacement can be checked before publication.
 
 Re-encrypting:
 
@@ -228,9 +232,8 @@ Re-encrypting:
    same format — armored stays armored — and synced.
 3. The part is decrypted back with this machine's identities and compared by
    SHA-256.
-4. It is renamed over the file, keeping the file's mode. This is the one place
-   the vault replaces a file, and only once the check has passed. No copy of the
-   old version is kept: it is exactly what a removed key can still open.
+4. It is renamed over the file, keeping the file's mode, only once the check
+   has passed. No copy of the old version is kept: it is exactly what a removed key can still open.
 5. The record is rewritten through a temporary file: `created` and `archive`
    kept, `updated` set, `recipients` replaced. A file without a record gains one.
 

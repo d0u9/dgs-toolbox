@@ -107,6 +107,9 @@ func Seal(request Request) (Result, error) {
 	if verifyWith != nil {
 		request.Verify = verifyWith
 	}
+	if request.Replace && len(request.Verify) == 0 {
+		return Result{}, errors.New("replacing a vault file requires an identity to verify the new ciphertext")
+	}
 	result := Result{Path: request.Destination, RecordPath: record.PathFor(request.Destination)}
 	for _, path := range []string{result.Path, result.RecordPath} {
 		if _, err := os.Lstat(path); err == nil {
@@ -478,7 +481,7 @@ type ResealRequest struct {
 	// Recipients, and checks it with that passphrase.
 	Passphrase string
 	// Verify are this machine's identities, used to decrypt the new file back.
-	// With none, it replaces the old one unverified.
+	// At least one must decrypt the new file before replacement.
 	Verify  []age.Identity
 	MaxSize int64
 	Now     time.Time
@@ -502,6 +505,9 @@ func Reseal(request ResealRequest) (Result, error) {
 	}
 	if verifyWith != nil {
 		request.Verify = verifyWith
+	}
+	if len(request.Verify) == 0 {
+		return Result{}, errors.New("replacing a vault file requires an identity to verify the new ciphertext")
 	}
 	original, err := os.ReadFile(request.Path)
 	if err != nil {

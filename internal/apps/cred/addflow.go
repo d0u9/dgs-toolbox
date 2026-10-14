@@ -303,6 +303,10 @@ func (m vaultModel) updateAddName(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			flow.err = err.Error()
 			return m, nil
 		}
+		if exists && !flow.withPassphrase && !m.mineChosen() {
+			flow.err = "Replacing a file requires a checked key this machine can decrypt, so the new file can be verified."
+			return m, nil
+		}
 		flow.replace = exists
 		flow.err = ""
 		flow.dialog = confirm.New(m.confirmConfig())
@@ -410,10 +414,14 @@ func (m vaultModel) runSeal() tea.Cmd {
 		}
 	}
 	request.Recipients = m.chosenRecipients()
+	selected := map[string]bool{}
+	for _, recipient := range request.Recipients {
+		selected[recipient.PublicKey] = true
+	}
 	snap := m.snap
 	return func() tea.Msg {
 		for _, identity := range snap.scan.Identities {
-			if identity.Status != identities.Usable {
+			if identity.Status != identities.Usable || !selected[identity.Public.Key] {
 				continue
 			}
 			if opened, err := identities.Open(identity); err == nil {
