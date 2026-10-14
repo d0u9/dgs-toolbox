@@ -283,7 +283,7 @@ func TestResealKeepsArmorAndRefuses(t *testing.T) {
 	}
 
 	before, _ := os.ReadFile(path)
-	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{stranger}, Recipients: recipients}); err == nil || !strings.Contains(err.Error(), "does not decrypt") {
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{stranger}, Recipients: recipients, Verify: []age.Identity{mine}}); err == nil || !strings.Contains(err.Error(), "does not decrypt") {
 		t.Errorf("wrong identity: %v", err)
 	}
 	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{mine}, Recipients: []Recipient{{PublicKey: stranger.Recipient().String()}}, Verify: []age.Identity{mine}}); err == nil {
@@ -504,5 +504,46 @@ func TestSealReplace(t *testing.T) {
 	}
 	if first.Path != result.Path {
 		t.Errorf("path changed: %q to %q", first.Path, result.Path)
+	}
+}
+
+func TestReplacingRequiresVerificationAndPreservesOriginal(t *testing.T) {
+	root := t.TempDir()
+	mine, _ := age.GenerateX25519Identity()
+	other, _ := age.GenerateX25519Identity()
+	source := filepath.Join(root, "source.txt")
+	path := filepath.Join(root, "vault.age")
+	write(t, source, "original content", 0600)
+	if _, err := Seal(Request{Source: source, Destination: path, Recipients: []Recipient{{PublicKey: mine.Recipient().String()}}, Verify: []age.Identity{mine}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath := record.PathFor(path)
+	recordBefore, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, source, "replacement content", 0600)
+	recipients := []Recipient{{PublicKey: other.Recipient().String()}}
+	if _, err := Seal(Request{Source: source, Destination: path, Recipients: recipients, Replace: true}); err == nil {
+		t.Fatal("unverified replacement accepted")
+	}
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{mine}, Recipients: recipients}); err == nil {
+		t.Fatal("unverified reseal accepted")
+	}
+	for _, file := range []struct {
+		path string
+		want []byte
+	}{{path, before}, {recordPath, recordBefore}} {
+		after, err := os.ReadFile(file.path)
+		if err != nil || !bytes.Equal(after, file.want) {
+			t.Fatalf("refused replacement changed an original: %v", err)
+		}
+	}
+	if _, err := os.Stat(path + PartSuffix); !os.IsNotExist(err) {
+		t.Fatal("refused replacement left a part file")
 	}
 }

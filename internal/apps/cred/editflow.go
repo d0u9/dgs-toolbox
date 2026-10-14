@@ -295,6 +295,9 @@ func (m vaultModel) confirmEdit() (tea.Model, tea.Cmd) {
 	case len(chosen) == 0:
 		flow.err = "Check at least one key."
 		return m, nil
+	case !flow.choose.mine():
+		flow.err = "Keep at least one key this machine can decrypt, so the replacement can be verified."
+		return m, nil
 	}
 	after := map[string]bool{}
 	var added []string
@@ -336,9 +339,6 @@ func (m vaultModel) confirmEdit() (tea.Model, tea.Cmd) {
 		message = fmt.Sprintf("Re-encrypt %s to %s?", path.Base(flow.file.Path), strings.Join(changes, "; "))
 	}
 	var notes []string
-	if !flow.choose.mine() {
-		notes = append(notes, "No checked key belongs to this machine: the file cannot be opened or checked here afterwards.")
-	}
 	if len(removed) > 0 || flow.recorded == nil {
 		notes = append(notes, "A removed key can still open any copy of the old version — its own, git history, a backup. If it holds a secret, change the secret too.")
 	}
