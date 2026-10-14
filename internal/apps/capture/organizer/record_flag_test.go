@@ -14,9 +14,9 @@ func TestFlagOnACaptureNobodyOrganized(t *testing.T) {
 	if err != nil || !record.Flagged() || record.Flag.FlaggedAt != "2026-09-14T21:00:00+10:00" {
 		t.Fatalf("record = %+v, err = %v", record, err)
 	}
-	read, organized := ReadRecord(dir)
-	if organized || !read.Flagged() {
-		t.Errorf("read = %+v, organized = %v: a flag is not a run", read, organized)
+	read, found, err := ReadRecord(dir)
+	if err != nil || !found || read.Organized() || !read.Flagged() {
+		t.Errorf("read = %+v, found = %v: a flag is not a run", read, found)
 	}
 	if _, err := SetFlag(dir, false, at); err != nil {
 		t.Fatal(err)
@@ -37,9 +37,9 @@ func TestFlagKeepsTheRuns(t *testing.T) {
 	if _, err := SetFlag(dir, false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	read, organized := ReadRecord(dir)
-	if !organized || read.Flagged() || len(read.Runs) != 1 {
-		t.Errorf("read = %+v, organized = %v", read, organized)
+	read, found, err := ReadRecord(dir)
+	if err != nil || !found || !read.Organized() || read.Flagged() || len(read.Runs) != 1 {
+		t.Errorf("read = %+v, found = %v", read, found)
 	}
 }
 

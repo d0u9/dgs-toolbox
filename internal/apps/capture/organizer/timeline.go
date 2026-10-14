@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"dgs-toolbox/internal/cred/publish"
 	"dgs-toolbox/internal/timeline"
 )
 
@@ -282,7 +283,7 @@ func writeNote(path, target, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create the folder of %s: %w", target, err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := publish.Replace(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", target, err)
 	}
 	return nil

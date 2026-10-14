@@ -1163,10 +1163,8 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// commitRun carries out the plan the dialog is showing. No Action is
-// implemented, so what is written is the organizer's own record, marking the
-// Capture handled and moving it below the divider. A blocked plan cannot be
-// confirmed: a Capture is handled only once its plan could actually run.
+// commitRun executes the confirmed plan and records its results. A failed pass
+// stays pending, with its error and history intact.
 func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
 	if !m.runRunnable() {
 		return m, nil
@@ -1181,6 +1179,11 @@ func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
 	}
 	// The Actions run first and the record says what happened, so a failure is
 	// written down rather than reported only to whoever was watching.
+	if _, _, err := organizer.ReadRecord(entry.path); err != nil {
+		m.runError = err.Error()
+		m.refresh()
+		return m, nil
+	}
 	m.runResults = organizer.Execute(m.runContext, m.runPlans)
 	run := organizer.NewRun(recipe, selection, m.runResults, time.Now())
 	record, err := organizer.AppendRun(entry.path, run)
@@ -1221,7 +1224,7 @@ func (m *routeModel) markOrganized(path string, record organizer.Record) {
 	for index := range m.entries {
 		if m.entries[index].path == path {
 			m.entries[index].record = record
-			m.entries[index].organized = true
+			m.entries[index].organized = record.Organized()
 			return
 		}
 	}

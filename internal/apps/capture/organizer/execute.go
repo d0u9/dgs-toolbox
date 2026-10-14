@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/cred/publish"
 )
 
 // ErrNotImplemented is what an Action that has only been declared returns. It
@@ -166,7 +168,7 @@ func appendEntry(ctx Context, images []string) (skipped string, err error) {
 	if workflow := ctx.Capture.Workflow(); workflow != "" {
 		updated = addToListProperty(updated, WorkflowProperty, workflow)
 	}
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+	if err := publish.Replace(path, []byte(updated), 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
 	}
 	return "", nil
