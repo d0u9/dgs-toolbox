@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"dgs-toolbox/internal/cred/publish"
 )
 
 // RecordFilename is the organizer's own file inside a Capture directory. It
 // sits beside index.json and is named for who writes it: index.json is the
 // producer's record of what was captured, organize.json is this tool's record
-// of how it was organized. A Capture that carries one has been handled.
+// of how it was organized. Completion is determined by its latest run.
 const RecordFilename = "organize.json"
 
 // Record is the Capture's organizing history, written back into the Capture
@@ -81,9 +83,7 @@ func (r Record) Latest() (Run, bool) {
 	return r.Runs[len(r.Runs)-1], true
 }
 
-// RecordedAction is one Action as it stood when the Capture was organized.
-// Executed stays false until Actions are implemented; the record already
-// distinguishes the two so a later run need not guess what was written.
+// RecordedAction is the recorded outcome of one Action in a run.
 type RecordedAction struct {
 	Action   ActionID `json:"action"`
 	Target   string   `json:"target"`
@@ -145,9 +145,9 @@ func NewRun(recipe Recipe, selection Selection, results []Result, at time.Time) 
 // again adds to its history rather than replacing it, so a pass made against an
 // older set of Actions stays visible next to the one that followed it.
 func AppendRun(dir string, run Run) (Record, error) {
-	record, ok := ReadRecord(dir)
-	if !ok {
-		record = Record{Schema: "v1"}
+	record, _, err := ReadRecord(dir)
+	if err != nil {
+		return Record{}, err
 	}
 	record.Schema = "v1"
 	record.Runs = append(record.Runs, run)
@@ -158,7 +158,10 @@ func AppendRun(dir string, run Run) (Record, error) {
 // record as it now stands. A record that held only the mark is removed with
 // it, so taking a mark back leaves a Capture nobody organized as it was.
 func SetFlag(dir string, flagged bool, at time.Time) (Record, error) {
-	record, _ := ReadRecord(dir)
+	record, _, err := ReadRecord(dir)
+	if err != nil {
+		return Record{}, err
+	}
 	record.Schema = "v1"
 	if flagged {
 		record.Flag = &Flag{FlaggedAt: at.Format(time.RFC3339)}
@@ -181,23 +184,29 @@ func writeRecord(dir string, record Record) error {
 		return fmt.Errorf("encode record: %w", err)
 	}
 	path := filepath.Join(dir, RecordFilename)
-	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+	if err := publish.Replace(path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write record: %w", err)
 	}
 	return nil
 }
 
-// ReadRecord returns the record a Capture carries. A Capture with no record has
-// not been organized, which is not an error. A record with no run is treated the
-// same way: what marks a Capture handled is a run, not the file.
-func ReadRecord(dir string) (Record, bool) {
-	data, err := os.ReadFile(filepath.Join(dir, RecordFilename))
+// ReadRecord reports whether a record exists separately from its completion
+// state. Invalid or unreadable records are errors and must not be overwritten.
+func ReadRecord(dir string) (Record, bool, error) {
+	path := filepath.Join(dir, RecordFilename)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Record{Schema: "v1"}, false, nil
+	}
 	if err != nil {
-		return Record{}, false
+		return Record{}, false, fmt.Errorf("read record: %w", err)
 	}
 	var record Record
 	if err := json.Unmarshal(data, &record); err != nil {
-		return Record{}, false
+		return Record{}, true, fmt.Errorf("read record: %w", err)
 	}
-	return record, len(record.Runs) > 0
+	if record.Schema != "v1" {
+		return Record{}, true, fmt.Errorf("unsupported record schema %q", record.Schema)
+	}
+	return record, true, nil
 }

@@ -107,7 +107,10 @@ func TestRouteFlagsACapture(t *testing.T) {
 	m := loadedRoute(t, root)
 
 	m = routeKey(t, m, "f")
-	record, _ := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	record, _, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !record.Flagged() || record.Flag.FlaggedAt != "2026-09-14T21:00:00Z" {
 		t.Fatalf("record = %+v", record)
 	}

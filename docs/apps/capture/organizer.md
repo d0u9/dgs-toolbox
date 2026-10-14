@@ -440,14 +440,26 @@ the values that resolve from the Capture, which are not this record's to keep.
 Organizing a Capture again **appends** a run: a pass made against an older set
 of Actions stays visible beside the one that followed it, which is the whole
 point of keeping the record next to the Capture. Nothing is overwritten. What
-marks a Capture handled is the presence of a run, not the presence of the file,
-and callers with room for one line show the most recent run.
+marks a Capture handled is the most recent run completing every Action, not
+the presence of a run or the file. Callers with room for one line show the
+most recent run; a failed run stays pending both immediately and after reload.
 
 The record also carries a `flag` when Route marked the Capture wrong —
 `"flag": {"flaggedAt": "2026-09-14T21:00:00+10:00"}` — which Archive reads to
 reject it rather than keep it. A flag is not a run, so a Capture flagged before
 anyone organized it has a record and is still not organized; taking the flag
-back removes a record that held nothing else.
+back removes a record that held nothing else. A first run preserves an existing flag.
+
+An unreadable or malformed record, or one with an unsupported schema, reports
+an error rather than being treated as absent. Scanning stops with that error;
+flag changes and organizing refuse to overwrite or remove the record. A run
+also rechecks the record before executing its Actions.
+
+Daily notes, Timeline notes and organize records use same-directory temporary
+files that are synced before atomic replacement, preserving existing permission
+bits. A write failure leaves the previous file intact and removes its temporary
+file. This is the filesystem API boundary, not a multi-file transaction or a
+lock against concurrent external editors.
 
 ## Recipe files
 

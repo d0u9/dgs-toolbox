@@ -433,7 +433,7 @@ func TestScanShowsTheOrganizeRecord(t *testing.T) {
 		OrganizedAt: "2026-09-09T21:40:12+10:00",
 		Recipe:      "obsidian_location_daily",
 		RecipeName:  "Location + Daily",
-		Actions:     []organizer.RecordedAction{{Action: organizer.ActionDailyAppend, Target: "Daily/2026-09-09.md"}},
+		Actions:     []organizer.RecordedAction{{Action: organizer.ActionDailyAppend, Target: "Daily/2026-09-09.md", Executed: true}},
 	}
 	if _, err := organizer.AppendRun(filepath.Join(root, "alpha"), run); err != nil {
 		t.Fatal(err)

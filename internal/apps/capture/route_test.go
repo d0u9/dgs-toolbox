@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -786,8 +787,8 @@ func TestRouteOrganizingAgainAppendsARun(t *testing.T) {
 	m = chooseRecipe(t, m, "Daily")
 	m = runAndConfirm(t, m)
 
-	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
-	if !ok {
+	record, ok, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if err != nil || !ok {
 		t.Fatal("no record")
 	}
 	if len(record.Runs) != 2 {
@@ -1181,8 +1182,8 @@ func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
 	m.refresh()
 
 	m = runAndConfirm(t, m)
-	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
-	if !ok || !record.Organized() {
+	record, ok, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if err != nil || !ok || !record.Organized() {
 		t.Fatalf("the remaining action did not run: %+v", record)
 	}
 }
@@ -1363,7 +1364,10 @@ func TestRouteRunHonoursAndRecordsAParameter(t *testing.T) {
 	if !strings.Contains(string(note), "\n# 今日活动\n") {
 		t.Fatalf("the entry ignored the override:\n%s", note)
 	}
-	record, _ := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	record, _, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	latest, _ := record.Latest()
 	if got := latest.Actions[0].Parameters[organizer.ParameterSection]; got != "今日活动" {
 		t.Fatalf("the record does not say where it wrote: %+v", latest.Actions[0])
@@ -1623,8 +1627,8 @@ func TestRouteRecordsWhyAnActionWroteNothing(t *testing.T) {
 	m = organize(m, "the first note")
 	m = organize(m, "a second note")
 
-	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
-	if !ok {
+	record, ok, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if err != nil || !ok {
 		t.Fatal("no record was written")
 	}
 	latest, _ := record.Latest()
@@ -1823,5 +1827,56 @@ func TestRouteEditorKeepsTheKeysTheSessionAlsoUses(t *testing.T) {
 	}
 	if got := m.editor.Value(); got != "xvR" {
 		t.Fatalf("the editor received %q, want every key typed into it", got)
+	}
+}
+
+func TestFailedRunRemainsPendingBeforeAndAfterReload(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "synthetic note")
+	// A valid plan encounters an I/O failure when it tries to create its note.
+	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("occupied"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m.settings.ObsidianVault = blocked
+	m.refresh()
+	m = runAndConfirm(t, m)
+	entry, ok := m.selectedCapture()
+	if !ok || entry.organized || entry.record.Organized() || len(entry.record.Runs) != 1 {
+		t.Fatalf("failed run marked complete: %+v", entry)
+	}
+	entries, err := scanCaptures(root, "index.json")
+	if err != nil || len(entries) != 1 || entries[0].organized || entries[0].record.Organized() {
+		t.Fatalf("reload marked failure complete: %+v %v", entries, err)
+	}
+}
+
+func TestUnreadableRecordStopsActionsBeforeWritingNotes(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "synthetic note")
+	m.refresh()
+	path := filepath.Join(root, "alpha", organizer.RecordFilename)
+	original := []byte(`{"schema":"v1","runs":[`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m = runAndConfirm(t, m)
+	if m.runError == "" || len(m.runResults) != 0 {
+		t.Fatal("actions ran before the invalid record was refused")
+	}
+	entries, err := os.ReadDir(m.settings.ObsidianVault)
+	if err != nil || len(entries) != 1 || entries[0].Name() != m.settings.TimelinesFile {
+		t.Fatal("a refused run wrote notes")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, original) {
+		t.Fatal("invalid history was changed")
+	}
+	if _, err := scanCaptures(root, "index.json"); err == nil {
+		t.Fatal("scan ignored invalid history")
 	}
 }

@@ -1369,10 +1369,13 @@ func scanCaptures(root, indexFile string) ([]captureEntry, error) {
 			continue
 		}
 		capturePath := filepath.Join(root, entry.Name())
-		record, organized := organizer.ReadRecord(capturePath)
+		record, _, err := organizer.ReadRecord(capturePath)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", entry.Name(), err)
+		}
 		captures = append(captures, captureEntry{
 			path: capturePath, name: entry.Name(), files: captureFiles(capturePath, indexFile, index.Attachments), index: index,
-			record: record, organized: organized,
+			record: record, organized: record.Organized(),
 		})
 	}
 	sort.Slice(captures, func(i, j int) bool { return strings.ToLower(captures[i].name) < strings.ToLower(captures[j].name) })
