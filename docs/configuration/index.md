@@ -15,9 +15,6 @@ link here; this is what a reader consults to find out *what* to write.
   list, read by the capture Actions and the dgs-toolbox Obsidian plugin alike.
 - [Photo](photo.md) — Photo Import paths and recovery state, its initially enabled
   Incremental session control, and Photo Encode defaults.
-- [Box](box.md) — the Box `dgs box` archives scans into, the inbox it takes
-  them from, its discardable local cache, the trash, amounts and time zones.
-  The types it knows are catalogued in [`apps/box/types.md`](../apps/box/types.md).
 - [Doc](doc.md) — the document trees `dgs doc` opens, its local cache, and where its page listens.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, its base maps, routing and contours.
 - [Conf](conf.md) — the generator root `dgs conf` reads, holding the services
@@ -55,7 +52,6 @@ editing?" should not have an answer that depends on which files exist.
   capture/mappings/    # one file per translation table
   capture/templates/
   photo/config.json
-  box/config.json
   doc/config.json
   geo/config.json
   geo/gpx/tiles.json
@@ -137,17 +133,6 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [photo](photo.md) | `encode.max_pixels` | `40000000` |
 | [photo](photo.md) | `import.source` | empty — the repository's mock path |
 | [photo](photo.md) | `import.dest` | `[]` — initial destinations; empty uses the repository's mock path |
-| [box](box.md) | `root` | empty — the command asks for a folder |
-| [box](box.md) | `inbox` | empty — Import opens with no inbox |
-| [box](box.md) | `marker` | `dgs-box.yaml` |
-| [box](box.md) | `state_file` | `dgs-box-state.json` |
-| [box](box.md) | `workers` | `4` |
-| [box](box.md) | `currency` | empty — every amount names its currency |
-| [box](box.md) | `timezone` | empty — the machine's zone |
-| [box](box.md) | `cache.dir` | empty — `dgs/box` under the user cache directory |
-| [box](box.md) | `web` | `browse` on `127.0.0.1:8766`; host fixed |
-| [box](box.md) | `preview.keep_days` | `30` |
-| [box](box.md) | `trash.keep_days` | `90` |
 | [doc](doc.md) | `trees` | empty — one tree, the working directory |
 | [doc](doc.md) | `keep_original` | `true` — archive imported images beside converted PDFs |
 | [doc](doc.md) | `date_order` | `DMY` |

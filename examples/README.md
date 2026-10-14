@@ -2,7 +2,7 @@
 
 Working configurations, one folder per thing you might be setting up. Each is a
 configuration directory holding only the parts and keys that folder is about —
-`capture/config.json`, `box/config.json` — so a folder can be read on its own
+`capture/config.json`, `doc/config.json` — so a folder can be read on its own
 and its files copied into whatever you already have.
 
 | Folder | What it sets up |
@@ -13,7 +13,6 @@ and its files copied into whatever you already have.
 | [`capture-gpx/`](capture-gpx) | Capture positions as timed waypoints in daily GPX files. |
 | [`capture-reminders/`](capture-reminders) | Reminders at a place: the list and radius, a workflow keeping its position in the payload, and a Recipe that reminds you on arriving. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
-| [`box/`](box) | `dgs box`'s Box root and inbox, and the currency and time zone new entries default to. |
 | [`doc/`](doc) | `dgs doc`'s document tree and the port its page listens on. |
 | [`doc-trees/`](doc-trees) | `dgs doc` over two trees, papers and books. |
 | [`conf/`](conf) | `dgs conf export`'s `conf/config.json`, plus a complete generator root — `services/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml` — matching [`rhumb docs/inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md)'s worked example. |

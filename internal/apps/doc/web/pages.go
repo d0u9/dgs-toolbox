@@ -7,17 +7,17 @@ import (
 	"strconv"
 	"sync"
 
-	"dgs-toolbox/internal/box/scanmeta"
-	"dgs-toolbox/internal/box/thumb"
 	"dgs-toolbox/internal/doc/pagecache"
 	"dgs-toolbox/internal/doc/pdfpage"
+	"dgs-toolbox/internal/doc/scanmeta"
+	"dgs-toolbox/internal/doc/thumb"
 	"dgs-toolbox/internal/doc/tree"
 )
 
 // A scanned PDF is shown as pictures of its pages rather than in the
 // browser's PDF viewer: a 300 dpi scan redrawn by the viewer on every scroll
 // stutters, where a 1600 px JPEG scrolls like any image. The picture is the
-// page's own embedded scan, as box draws it (thumb), so nothing is rasterised
+// page's own embedded scan, as thumb draws it, so nothing is rasterised
 // and no C library is compiled in. A page that is not a scan — a PDF made on
 // a computer — has no scan, and is drawn by pdfpage instead, which
 // compiles PDFKit in on macOS; only where that is not compiled in
@@ -63,7 +63,7 @@ var longSides = map[string]int{sizeThumb: thumb.GridSize, sizePage: thumb.Previe
 
 // noScan says the page has no embedded scan to show.
 func noScan(err error) bool {
-	return errors.Is(err, scanmeta.ErrNoPageImage) || errors.Is(err, thumb.ErrNoImage)
+	return errors.Is(err, scanmeta.ErrNoPageImage)
 }
 
 // look is a page as kept on disk, or else page, or, for a page with no

@@ -25,7 +25,6 @@ const PartFile = "config.json"
 type Config struct {
 	Shell   Shell
 	Photo   Photo
-	Box     Box
 	Doc     Doc
 	Capture Capture
 	Geo     Geo
@@ -302,18 +301,11 @@ type TopBarVisibility struct {
 
 func boolPointer(value bool) *bool { return &value }
 
-func intPointer(value int) *int { return &value }
-
 func Default() Config {
 	return Config{Shell: Shell{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}, Encode: DefaultPhotoEncode()}, Box: Box{
-		Marker: DefaultBoxMarker, StateFile: DefaultBoxStateFile,
-		Workers: DefaultBoxWorkers, Web: defaultWeb(boxServers),
-		Preview: BoxPreview{KeepDays: intPointer(DefaultBoxPreviewKeepDays)},
-		Trash:   BoxTrash{KeepDays: intPointer(DefaultBoxTrashKeepDays)},
-	}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}, Encode: DefaultPhotoEncode()}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
 		Scan: CaptureScan{IndexFile: "index.json"},
 	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}},
 		Plugins: Plugins{Obsidian: PluginsObsidian{
@@ -691,7 +683,6 @@ var parts = []part{
 	{"shell", func(c *Config) any { return &c.Shell }, nil},
 	{"capture", func(c *Config) any { return &c.Capture }, checkCapture},
 	{"photo", func(c *Config) any { return &c.Photo }, checkPhoto},
-	{"box", func(c *Config) any { return &c.Box }, checkBox},
 	{"doc", func(c *Config) any { return &c.Doc }, checkDoc},
 	{"geo", func(c *Config) any { return &c.Geo }, checkGeo},
 	{"conf", func(c *Config) any { return &c.Conf }, checkConf},

@@ -290,7 +290,7 @@ Examples:
   dgs                         Open the command picker.
   dgs photo                   Open the Photo picker.
   dgs photo import            Open a workspace directly.
-  dgs box verify /path/to/box  Run a CLI action, print results, and return.
+  dgs conf --check            Run a CLI report, print results, and return.
   dgs photo encode --help     Read help without starting a workspace.
   dgs --export-config /path/to/config-directory
 

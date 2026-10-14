@@ -119,15 +119,15 @@ func TestLoadDirOverridesEnvironmentConfig(t *testing.T) {
 // A broken file refuses only the command it belongs to: the commands are
 // independent, and a typo in one should not take the others down.
 func TestABrokenPartRefusesOnlyItsCommand(t *testing.T) {
-	loaded, err := LoadDir(writeConfig(t, `{"box":{"nope":1},"photo":{"import":{"source":"/s"}}}`))
+	loaded, err := LoadDir(writeConfig(t, `{"doc":{"nope":1},"photo":{"import":{"source":"/s"}}}`))
 	if err != nil {
 		t.Fatalf("LoadDir failed as a whole: %v", err)
 	}
-	if err := loaded.PartErr("box"); err == nil || !strings.Contains(err.Error(), filepath.Join("box", PartFile)) {
-		t.Fatalf("box error = %v, want it to name box/config.json", err)
+	if err := loaded.PartErr("doc"); err == nil || !strings.Contains(err.Error(), filepath.Join("doc", PartFile)) {
+		t.Fatalf("doc error = %v, want it to name doc/config.json", err)
 	}
 	if err := loaded.PartErr("photo"); err != nil {
-		t.Fatalf("photo refused for box's mistake: %v", err)
+		t.Fatalf("photo refused for doc's mistake: %v", err)
 	}
 	if source, _ := loaded.PhotoImportPaths(); source != "/s" {
 		t.Fatalf("photo source = %q", source)
@@ -182,22 +182,22 @@ func TestExportDefaultWritesEveryPartWithoutOverwrite(t *testing.T) {
 	if loaded.PhotoImportStateFile() != ".dgs-state" {
 		t.Fatalf("exported state file = %q", loaded.PhotoImportStateFile())
 	}
-	if got := loaded.BoxWebAddr(); got != "127.0.0.1:8766" {
-		t.Fatalf("exported box web = %q", got)
+	if _, err := os.Stat(filepath.Join(dir, "box")); !os.IsNotExist(err) {
+		t.Fatalf("export created a Box configuration: %v", err)
 	}
 	if _, _, err := LoadCredentials(loaded.CredentialsPath()); err != nil {
 		t.Fatalf("exported cred file: %v", err)
 	}
-	box := filepath.Join(dir, "box", PartFile)
-	if err := os.WriteFile(box, []byte(`{"workers": 2}`), 0o600); err != nil {
+	doc := filepath.Join(dir, "doc", PartFile)
+	if err := os.WriteFile(doc, []byte(`{"trees": {}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	written, skipped, err = ExportDefault(dir)
 	if err != nil || len(written) != 0 || len(skipped) != len(parts) {
 		t.Fatalf("second export: written=%v skipped=%v err=%v", written, skipped, err)
 	}
-	if data, _ := os.ReadFile(box); string(data) != `{"workers": 2}` {
-		t.Fatalf("second export overwrote box: %s", data)
+	if data, _ := os.ReadFile(doc); string(data) != `{"trees": {}}` {
+		t.Fatalf("second export overwrote doc: %s", data)
 	}
 }
 
@@ -401,5 +401,21 @@ func TestPhotoImportDestinationArray(t *testing.T) {
 		if len(roots) != 0 {
 			t.Fatalf("default destinations = %q", roots)
 		}
+	}
+}
+
+func TestRemovedBoxConfigIsIgnored(t *testing.T) {
+	loaded, err := LoadDir(writeConfig(t, `{"box":{"nope":1},"conf":{"root":"/synthetic/generator"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.PartErr("box"); err != nil {
+		t.Fatalf("removed Box part was loaded: %v", err)
+	}
+	if err := loaded.PartErr("conf"); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Conf.Root != "/synthetic/generator" {
+		t.Fatalf("conf root = %q", loaded.Conf.Root)
 	}
 }

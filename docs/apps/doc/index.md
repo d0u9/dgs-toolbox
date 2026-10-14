@@ -4,8 +4,7 @@
 
 `dgs doc` keeps important personal documents: passports, driver licences,
 identity cards, insurance policies, certificates, payslips, utility bills, rent
-receipts, bank statements, tax papers. It is not [`dgs box`](../box/index.md),
-which holds low-importance scanned paper; the two stay separate commands.
+receipts, bank statements, tax papers.
 
 ### Several trees
 
@@ -24,7 +23,7 @@ filters and the revision picked, Import's file, Merge's folder and the
 choices made in it, and how far each list was scrolled. They are kept in the
 browser's history entry for the page, beside what its address already holds.
 
-It follows `dgs box`'s shape: a TUI plus a local web page served by the same
+It uses a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. Open decisions are recorded in
 [Doc 2.0](v2.md#deferred).
@@ -34,7 +33,7 @@ local cache of the tree, kept as [`cache.md`](cache.md) says.
 
 ## Pages
 
-Separate pages, linked from the top bar, as box's intake and browse are:
+Separate pages, linked from the top bar:
 
 | Page | What it is for |
 | --- | --- |
@@ -85,7 +84,7 @@ machine, and avoids a second source of metadata truth.
 
 ### Browse
 
-Browse opens on the Items as cards, as box's Browse does, or as a table,
+Browse opens on the Items as cards or as a table,
 chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines). In the list, each column is as wide
 as its header's right edge is dragged, remembered per column, and a click on
 a header sorts by that column, again to turn the order round; Sort offers
@@ -335,7 +334,7 @@ a Template Items use cannot be deleted.
 ### Preview
 
 A scanned PDF is shown as pictures of its pages, drawn from each page's own
-embedded scan as box draws them, 1600 px on the long side, loaded as they
+embedded scan, 1600 px on the long side, loaded as they
 scroll into view. The browser's PDF viewer redraws a full-resolution scan on
 every scroll and stutters. A page that is not a scan — one made on a
 computer — is drawn instead, by PDFKit compiled in on macOS
@@ -1412,14 +1411,13 @@ It exits non-zero when it reports anything.
 
 ## Metadata: sidecars are the truth
 
-As in [`dgs box`](../box/index.md#metadata-the-sidecar-is-the-truth), each PDF
-has a YAML sidecar beside it, and the sidecars are the only metadata truth.
+Each PDF has a YAML sidecar beside it, and the sidecars are the only metadata truth.
 Everything else — the index the page queries, thumbnails — is a cache: it lives
 on the local machine, outside the repository, and can be deleted and rebuilt
 from the sidecars at any time. The owner edits on the page, never in YAML.
 
 A cache is not a database: [`AGENTS.md`](../../../AGENTS.md) allows none, so
-the index is held in memory and saved as a file, as `box`'s is.
+the index is held in memory and saved as a file.
 
 ## Repositories and merging
 
@@ -1541,8 +1539,7 @@ Missing or corrupt entries are rebuilt.
       <source-sha256>.png   # optional original image, one per page; extension matches input
 ```
 
-- The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much
-  like box's `*.dgs-doc.yaml` sidecars. It is visible, as box's is.
+- The marker is `dgs-doctree.yaml`. It is visible in the tree.
 - In the default layout an Item's folder is named by its ID, so changing
   `owner` or `country` moves nothing. A tree may choose another layout
   instead; see [Storage Layouts](layout.md).
@@ -1720,9 +1717,6 @@ existing tags as the owner types; Browse filters by tags in the current tree,
 one tag a step.
 
 ## Later
-
-- **Archive serial numbers and barcode separator pages**, if box wants them:
-  they concern paper, not filed documents.
 
 - **Clone** — a sub-tree cloned from the full tree would remember the state it
   was cloned from, so its merge could compare three sides, as git does.
