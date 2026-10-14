@@ -103,7 +103,16 @@ func TestMultipleMoveFreshlyRevalidatesCopies(t *testing.T) {
 	plans := multiplePlans(t)
 	result, err := RunMultiple(context.Background(), plans, Move, MultipleHooks{Target: func(i int, _ Result) {
 		if i == len(plans)-1 {
-			writeFile(t, plans[0].Jobs[0].Destination, "damaged")
+			path := plans[0].Jobs[0].Destination
+			before, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, path, "damaged")
+			// Metadata checks cannot replace Move's final content read.
+			if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}})
 	if err != nil || result.Files[0].Phase != PhaseSourceKept {

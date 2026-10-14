@@ -13,15 +13,18 @@ import (
 // A plain rename replaces silently, and a check before it leaves a window in
 // which another file can appear and be destroyed. So publication asks the
 // filesystem itself to refuse: an exclusive rename where the platform has one,
-// otherwise a hard link, which fails when the name exists. Only a filesystem
-// that supports neither — some network mounts — falls back to check-then-rename,
-// which is as much as the user-space API can promise there.
+// otherwise a hard link, which fails when the name exists. A filesystem that
+// supports neither is refused: check-then-rename can overwrite another photo.
 func Publish(temporary, final string) error {
-	err := renameExclusive(temporary, final)
+	return publish(temporary, final, renameExclusive, os.Link)
+}
+
+func publish(temporary, final string, rename, link func(string, string) error) error {
+	err := rename(temporary, final)
 	if err == nil || errors.Is(err, os.ErrExist) || !unsupported(err) {
 		return err
 	}
-	if err := os.Link(temporary, final); err == nil {
+	if err := link(temporary, final); err == nil {
 		// The final name now holds the verified file. A temporary name left
 		// behind is removed as stale by the next copy of this name.
 		_ = os.Remove(temporary)
@@ -29,12 +32,7 @@ func Publish(temporary, final string) error {
 	} else if errors.Is(err, os.ErrExist) || !unsupported(err) {
 		return err
 	}
-	if _, err := os.Lstat(final); err == nil {
-		return fmt.Errorf("%w: %s", os.ErrExist, final)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return os.Rename(temporary, final)
+	return fmt.Errorf("safe publication is unsupported: %w", errNoExclusiveRename)
 }
 
 // unsupported reports an error that means "this filesystem cannot do that",
@@ -42,8 +40,7 @@ func Publish(temporary, final string) error {
 //
 // EPERM is among them because FAT and exFAT volumes, and some FUSE and SMB
 // mounts, answer link(2) with it. A real permission failure costs nothing by
-// passing here: the final rename needs the same permission and fails as well,
-// so the check-then-rename window is only ever reached where it can succeed.
+// trying the hard-link fallback; a failure there still refuses publication.
 func unsupported(err error) bool {
 	return errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) ||
 		errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOSYS) ||

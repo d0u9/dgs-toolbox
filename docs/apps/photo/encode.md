@@ -111,7 +111,7 @@ Its SHA-256 must match the encoded artifact, and independent JPEG decoding must
 confirm the expected dimensions. The temporary name must still be that file;
 then it is published under its final name without replacement, using Photo
 Import's publication (`verifiedcopy.Publish`): an exclusive rename, else a hard
-link, else — only on a filesystem with neither — check-then-rename. The
+link. A filesystem supporting neither is refused safely. The
 directory entry is then synced, as Import does; a failed sync is reported
 beside the published file. A killed process may leave an unpublished temporary
 file.

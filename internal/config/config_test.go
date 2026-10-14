@@ -46,8 +46,10 @@ func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
 }
 
 func TestPhotoImportStateFileRejectsPaths(t *testing.T) {
-	if _, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":"nested/state"}}}`)); err == nil {
-		t.Fatal("state file path was accepted; only a filename is safe")
+	for _, name := range []string{"nested/state", "old.JPG", "state.json", ".", ".."} {
+		if _, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":"`+name+`"}}}`)); err == nil {
+			t.Fatalf("unsafe state filename accepted: %q", name)
+		}
 	}
 }
 

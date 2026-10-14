@@ -654,7 +654,7 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		moved := make(map[string]string)
 		for _, outcome := range msg.result.Files {
-			if outcome.Status == postprocess.Moved {
+			if outcome.Final != outcome.Original {
 				moved[outcome.Original] = outcome.Final
 			}
 		}
@@ -669,17 +669,17 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.stateError != nil {
 			m.actionNotice = "Post-processing completed, but state update failed: " + msg.stateError.Error()
 		}
-		if len(m.extraDestinations) > 0 {
-			for _, file := range msg.result.Files {
-				if file.Status == postprocess.Failed && !file.NoDate {
-					m.controls.SetChecked(deleteStateID, false)
-				}
-			}
-			m.updateTargetOrganization(msg.result)
-			if msg.stateError != nil {
-				m.stateFailed = true
+		for _, file := range msg.result.Files {
+			if file.Status == postprocess.Failed && !file.NoDate {
 				m.controls.SetChecked(deleteStateID, false)
 			}
+		}
+		if msg.stateError != nil {
+			m.stateFailed = true
+			m.controls.SetChecked(deleteStateID, false)
+		}
+		if len(m.extraDestinations) > 0 {
+			m.updateTargetOrganization(msg.result)
 			m.postprocessTarget++
 			if m.postprocessTarget < len(m.targetResults) {
 				return m.planNextTargetOrganization()
@@ -1587,7 +1587,7 @@ func (m importModel) applyPostProcessing(plan postprocess.Plan) (tea.Model, tea.
 		result := postprocess.ApplyWithProgress(ctx, plan, report)
 		moved := make(map[string]string)
 		for _, outcome := range result.Files {
-			if outcome.Status == postprocess.Moved {
+			if outcome.Final != outcome.Original {
 				moved[outcome.Original] = outcome.Final
 			}
 		}
@@ -1773,13 +1773,12 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 // undetermined, unstarted, source-kept or not-imported file in this batch,
 // and no source-kept Move of an earlier batch recorded beside it.
 func (m importModel) batchFinished() bool {
-	if len(m.extraDestinations) > 0 {
-		for _, file := range m.postprocess.result.Files {
-			if file.Status == postprocess.Failed && !file.NoDate {
-				return false
-			}
+	for _, file := range m.postprocess.result.Files {
+		if file.Status == postprocess.Failed && !file.NoDate {
+			return false
 		}
 	}
+
 	return !m.stateFailed && m.processing.failed == 0 && m.processing.sourceKept == 0 && m.processing.conflicts == 0 && m.processing.earlierKept == 0
 }
 

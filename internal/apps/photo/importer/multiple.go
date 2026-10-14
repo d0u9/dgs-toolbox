@@ -257,9 +257,12 @@ func aggregate(index int, job Job, plans []Plan, targets []Result) FileResult {
 		if copy.SourceHash == "" || copy.SourceHash != first.SourceHash || copy.DestinationHash != first.SourceHash || copy.Size != first.Size {
 			return fail(fmt.Sprintf("%s holds other content than %s: Source changed between targets", root, plans[0].DestinationRoot))
 		}
-		info, err := os.Lstat(copy.Destination)
+		info, err := verifiedcopy.FileInfo(root, copy.Destination)
 		if err != nil {
 			return fail(fmt.Sprintf("copy in %s: %v", root, err))
+		}
+		if !verifiedcopy.SameVersion(info, copy.verified) {
+			return fail(fmt.Sprintf("copy in %s changed after verification", root))
 		}
 		for other := range target {
 			if os.SameFile(infos[other], info) {
@@ -336,7 +339,7 @@ func removeAfterMultipleChecks(ctx context.Context, plans []Plan, targets []Resu
 			return err.Error()
 		}
 	}
-	if err := deleteSource(expected.Source, source.Source); err != nil {
+	if err := deleteSource(plans[0].SourceRoot, expected.Source, source.Source); err != nil {
 		return err.Error()
 	}
 	return ""

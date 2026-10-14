@@ -707,8 +707,8 @@ func checkPhoto(c *Config) error {
 		return err
 	}
 	stateFile := c.PhotoImportStateFile()
-	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
-		return fmt.Errorf("import.state_file must be a filename, got %q", stateFile)
+	if filepath.Base(stateFile) != stateFile || !strings.HasPrefix(stateFile, ".") || stateFile == "." || stateFile == ".." {
+		return fmt.Errorf("import.state_file must be a hidden filename, got %q", stateFile)
 	}
 	return nil
 }

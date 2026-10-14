@@ -14,7 +14,7 @@
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `import.state_file` | The name of the file Photo Import keeps its state in, inside the destination. It must be a bare filename, not a path: a configuration giving a path is refused. | `.dgs-state` |
+| `import.state_file` | The name of the file Photo Import keeps its state in, inside the destination. It must be a hidden filename (starting with `.`), not a path or a photo name. Unrecognized existing contents are preserved and reported as a state error. | `.dgs-state` |
 | `import.source` | Where Import reads from. Empty shows the repository's mock path instead. | empty |
 | `import.dest` | Initial destination directories, in display order. Each receives a complete copy. An omitted or empty array shows the repository's mock destination instead. | `[]` |
 

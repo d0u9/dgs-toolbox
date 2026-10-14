@@ -246,8 +246,24 @@ func ensureDirectory(root, directory string, expected os.FileInfo) error {
 		return err
 	}
 	if root == "" {
-		return os.MkdirAll(directory, 0o755)
+		directory = filepath.Clean(directory)
+		if info, err := os.Stat(directory); err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("not a directory: %s", directory)
+			}
+			return syncDirectory(filepath.Dir(directory))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := ensureDirectory("", filepath.Dir(directory), nil); err != nil {
+			return err
+		}
+		if err := os.Mkdir(directory, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		return syncDirectory(filepath.Dir(directory))
 	}
+
 	relative, err := filepath.Rel(root, directory)
 	if err != nil {
 		return err
@@ -256,10 +272,15 @@ func ensureDirectory(root, directory string, expected os.FileInfo) error {
 		return fmt.Errorf("%s is outside %s", directory, root)
 	}
 	if expected == nil {
-		if err := os.MkdirAll(root, 0o755); err != nil {
+		if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+			if err := ensureDirectory("", root, nil); err != nil {
+				return err
+			}
+		} else if err != nil {
 			return err
 		}
 	}
+
 	if relative == "." {
 		return nil
 	}
@@ -282,6 +303,10 @@ func ensureDirectory(root, directory string, expected os.FileInfo) error {
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("not a real directory: %s", current)
+		}
+		// Retry the sync even for an existing directory left by a failed attempt.
+		if err := syncDirectory(filepath.Dir(current)); err != nil {
+			return fmt.Errorf("sync destination parent: %w", err)
 		}
 	}
 	return nil
@@ -307,6 +332,9 @@ func syncMetadata(path string) error {
 	}
 	return nil
 }
+
+// syncDirectory lets filesystem tests inject directory-sync failures.
+var syncDirectory = SyncDirectory
 
 // SyncDirectory flushes a directory entry, where the platform has such a thing.
 // A filesystem that has no answer to the question is not a failure — that is

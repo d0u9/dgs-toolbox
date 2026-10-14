@@ -121,7 +121,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [timelines](timelines.md) | `timelines.<name>.contentRequired` | `false` |
 | [capture](capture.md#reminders) | `apple.reminders.list` | empty — Reminders' own default list |
 | [capture](capture.md#reminders) | `apple.reminders.radius` | `150` |
-| [photo](photo.md) | `import.state_file` | `.dgs-state` — recovery state; incremental detection also works without it |
+| [photo](photo.md) | `import.state_file` | `.dgs-state` — hidden recovery-state filename; unrecognized existing files are preserved; incremental detection also works without it |
 | [photo](photo.md) | `encode.source` | empty |
 | [photo](photo.md) | `encode.destination` | empty |
 | [photo](photo.md) | `encode.quality` | `82` |
