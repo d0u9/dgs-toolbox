@@ -92,7 +92,9 @@ export function formDialog({ title, message, fields = [], read, confirm = "OK", 
   });
 }
 export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
-  const input = document.createElement("input"); input.className = "field prompt-input"; input.value = value;
+  const input = document.createElement("input");
+  input.autocomplete = "off"; input.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
+  input.className = "field prompt-input"; input.value = value;
   input.setAttribute("aria-label", title);
   return formDialog({ title, message, fields: [input], confirm, cancel, read: () => input.value.trim() || null });
 }

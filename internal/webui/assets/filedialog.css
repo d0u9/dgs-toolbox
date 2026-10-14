@@ -47,6 +47,32 @@
   text-overflow: ellipsis;
 }
 
+/* The trail of folders: each a flat button, the gaps between them the place
+   to click for typing. It scrolls sideways rather than wrapping. */
+.file-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  cursor: text;
+  text-overflow: clip;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.file-crumbs::-webkit-scrollbar { display: none; }
+.file-crumb {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.file-crumb:hover { background: var(--hover); }
+.file-crumb-separator { flex: none; opacity: 0.5; }
+.file-crumbs[hidden], .file-where[hidden] { display: none; }
+
 /* The browser is one fixed size: a folder of three files and a folder of
    three hundred draw the same dialog, and the rows that do not fit scroll.
    On a short window it gives way to the viewport rather than overflowing it. */

@@ -555,6 +555,8 @@ The dialog is what a reader already knows from Finder and Explorer:
   dialog, as the sort order and the hidden-file toggle are. A reader who wants
   a taller listing says so once.
 - A bar over the listing: `↑` to the folder above, an editable full path, and `↻`.
+  The **Edit path** button opens the path editor from the folder breadcrumbs;
+  Tab reaches the button, and Enter or Space activates it.
   Enter opens the typed folder; relative paths start in the current folder and
   `~` names home. Tab fills the common prefix of matching folders; suggestions
   allow choosing among matches. Escape restores the current path.
