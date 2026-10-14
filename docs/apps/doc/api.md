@@ -19,6 +19,10 @@ them only read, so the reading part can later be served on its own.
 
 ## Current contracts
 
+- The outer handler uses Go's cross-origin protection. Cross-site browser
+  mutations are refused for both `/api/` and `/ui/files/`; same-origin requests
+  and non-browser requests without browser origin headers remain supported.
+
 - Single-Item mutations answer `{item, trash?, warning?}`. Item deletion
   includes the Item that was moved. Export and merge jobs retain their bulk
   result shapes; local cache actions retain their queue/OK answers.
