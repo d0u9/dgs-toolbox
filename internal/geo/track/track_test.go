@@ -80,6 +80,22 @@ func TestSummarise(t *testing.T) {
 	}
 }
 
+func TestAscentAndDescentDoNotBridgeTracksOrSegments(t *testing.T) {
+	for _, next := range []Sample{{Track: 1}, {Segment: 1}} {
+		line := Line{
+			{Elevation: 100, HasElevation: true},
+			{Elevation: 110, HasElevation: true},
+			{Track: next.Track, Segment: next.Segment},
+			{Track: next.Track, Segment: next.Segment, Elevation: 900, HasElevation: true},
+			{Track: next.Track, Segment: next.Segment, Elevation: 890, HasElevation: true},
+		}
+		stats := Summarise(line, Distances(line))
+		if stats.Ascent != 10 || stats.Descent != 10 {
+			t.Fatalf("boundary %+v: ascent=%v descent=%v", next, stats.Ascent, stats.Descent)
+		}
+	}
+}
+
 func TestFromGPXNumbersSegments(t *testing.T) {
 	point := gpxfile.Point{LatLon: geo.LatLon{Lat: 30, Lon: 120}}
 	file := &gpxfile.File{Tracks: []gpxfile.Track{

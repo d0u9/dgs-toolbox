@@ -89,10 +89,11 @@ server exposes the API under `/api/`; everything else is the page.
 | `POST /api/route/save` | Writes a planned route into a new GPX it will not overwrite — one `<trk>` of its legs, and a `<rte>` of its waypoints when `writeRte` — and keeps the editable plan in the GPX extension. |
 | `DELETE /api/fill` | Removes a fill by its place in the list; its points go and the recorded ones come back. |
 | `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
+| `DELETE /api/draft` | Discards the draft named by `{path}`, including its copied photos and undo history. A path to a file on disk is refused. |
 | `DELETE /api/sidecar` | Discards companion sidecar or embedded dgs edit state. The recorded tracks and standalone waypoints remain. |
 | `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
 | `GET /api/unsaved` | The files holding edits that are not on disk, so a reloaded page shows the same marks again. |
-| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote. Answers what was saved. |
+| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote. Answers `saved` paths and `warnings` for photo cleanup that failed after publication; those edits are already saved and are not replayed. |
 | `POST /api/undo`, `POST /api/redo` | Step one file's unsaved edits back or forward; `{path}` answers `moved`, false when there is nothing to step. A track's `undo` and `redo` say how many steps there are. |
 | `DELETE /api/pending` | Drops unsaved edits, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
@@ -212,6 +213,8 @@ map. It is the interface later milestones build on.
 - **Closing an edited file.** *Close* asks first when the file holds unsaved
   edits, or when it is a new GPX never saved — closing is the one way edits
   go without being seen again, because the file is not reopened with them.
+  Closing a draft releases its server-side data, copied photo bytes and undo
+  history; a failed discard leaves the workspace entry available to retry.
   Nothing on disk changes either way.
 - **Leaving the page.** Reloading or closing the tab asks first, while the
   workspace holds anything. A reload throws away what only the page holds —
@@ -366,7 +369,8 @@ map. It is the interface later milestones build on.
   carries a description and an ordered list of photos, each with an optional
   caption. Any other file's waypoints offer nothing: photos live in the GPX,
   a recording is never written, and a new GPX has no folder beside it until
-  it is saved. See *Waypoint photos* below
+  it is saved. A draft can still display photos brought with a copied waypoint;
+  those bytes remain in memory until saving or discarding it. See *Waypoint photos* below
   for how they are stored.
   - *Photos…*, on the waypoint's row and its right-click menu on the map,
     opens a modal dialog: the description, the photos as thumbnails in
@@ -889,7 +893,10 @@ never replaces an existing file. The new GPX holds a snapshot of its tracks:
 only the points cleaning kept, at their edited positions, including fills and
 tracks added from other files. Saved cuts and editable route plans are
 embedded in the new file, which has `creator="dgs-toolbox"` and needs no
-sidecar. The original GPX is not written.
+sidecar. The original GPX and its sidecar are not written, including when
+tracks were added or deleted. Once the export succeeds, the replaced
+workspace entry's pending edits and history are forgotten. A failed export
+keeps them for retry.
 
 **Adding a standalone waypoint.** Right-click any map location and choose
 *Add waypoint…*, or in Edit choose ⚑ and click the map. The clicked location
@@ -985,10 +992,16 @@ A sidecar from a newer version is not read. It is replaced in one step, never
 left half written. Editing the source GPX afterwards can shift the indices of
 points removed by hand.
 
+An added waypoint's optional `links` keeps its standard GPX links until it
+is saved. Deleting an added part shifts names, photos and moved positions
+with its keys, just as it shifts the part order.
+
 Speed at a point is the distance travelled over the 30 seconds centred on it,
 divided by the time taken (`track.Speeds`), so GPS jitter between neighbouring
 points does not read as changes of pace. Ascent and descent ignore changes
-under 3 m.
+under 3 m and restart their elevation reference at each track or segment
+boundary. Non-finite and out-of-range coordinates are rejected when GPX is
+read, rather than entering map geometry or statistics.
 
 Stops are found by stay-point detection (`stops.Detect`): from an anchor point,
 the points that follow within D of it form a stay, and a stay lasting at least
@@ -1006,8 +1019,11 @@ hotel and on again at its door stayed there.
 
 ## Waypoint photos
 
-Photos belong only to waypoints of a GPX `dgs` wrote, saved on disk. A recording's waypoints take none: there is no sidecar form, because
-the photos are written into the GPX itself.
+Photos are edited on waypoints of a GPX `dgs` wrote, saved on disk. A recording's
+waypoints take no photo edits. A copied waypoint retains its description,
+links, photo order and captions. When the destination is a draft, copied WebP
+bytes live in its memory until it is saved or discarded; new photo uploads
+still require a saved GPX.
 
 **In the GPX.** Standard GPX 1.1 elements carry everything, so other readers
 see the photos too:
@@ -1042,6 +1058,14 @@ and decoded once more; only then is the final name published with
 the GPX is saved; it is referenced only once the edit is saved. A photo no
 waypoint of the saved GPX links to is moved into `<gpx name>.photos/.trash/`
 when the GPX is next saved. Nothing in the folder is deleted.
+Photo cleanup follows publication: if it fails, Save reports a warning but
+forgets the already-applied edits, so retrying cannot repeat them.
+
+**Copying and exporting.** Copy, Move and Save as use the waypoint's current
+description and photo edits. Photos are verified and copied to the target
+before a source waypoint is removed, and links name the target's photo folder.
+Other links stay as they are. An occupied photo name with different bytes is
+refused. Draft photos are published with the same verification when saved.
 
 **Renaming.** Renaming a GPX renames its `.photos/` folder with it and
 rewrites the links, both inside the file `dgs` wrote.

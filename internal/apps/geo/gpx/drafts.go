@@ -25,6 +25,7 @@ type draftStore struct {
 	mu     sync.Mutex
 	next   int
 	drafts map[string]sidecar.File
+	photos map[string]map[string][]byte
 }
 
 // drafts are this process's drafts; they go when dgs exits.
@@ -63,6 +64,7 @@ func (s *draftStore) set(path string, file sidecar.File) error {
 func (s *draftStore) remove(path string) {
 	s.mu.Lock()
 	delete(s.drafts, path)
+	delete(s.photos, path)
 	s.mu.Unlock()
 	history.forget(path)
 }
@@ -159,7 +161,7 @@ func writeSidecarNow(path string, file sidecar.File) error {
 	}
 	// A GPX dgs wrote is ours to write: what was done to its parts goes into
 	// the file itself rather than staying beside it.
-	err = gpxfile.Update(path, func(staged string) error {
+	return gpxfile.Update(path, func(staged string) error {
 		remaining, err := writeParts(staged, photoDir(path), parsed, file)
 		if err != nil {
 			return err
@@ -174,10 +176,6 @@ func writeSidecarNow(path string, file sidecar.File) error {
 		}
 		return gpxfile.WriteState(staged, data)
 	})
-	if err != nil {
-		return err
-	}
-	return trashUnlinked(path)
 }
 
 func draftName(path string) string {
@@ -236,4 +234,20 @@ func (a api) newDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"path": drafts.create(strings.TrimSuffix(name, ".gpx"))})
+}
+
+func (a api) discardDraft(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
+		return
+	}
+	if !isDraft(body.Path) {
+		writeError(w, http.StatusBadRequest, errors.New("only an unsaved draft can be discarded"))
+		return
+	}
+	drafts.remove(body.Path)
+	writeJSON(w, map[string]bool{"ok": true})
 }

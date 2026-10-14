@@ -91,6 +91,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("DELETE /api/pending", api.revertFiles)
 	mux.HandleFunc("DELETE /api/sidecar", api.discardSidecar)
 	mux.HandleFunc("POST /api/draft", api.newDraft)
+	mux.HandleFunc("DELETE /api/draft", api.discardDraft)
 	mux.HandleFunc("POST /api/route/leg", api.routeLeg)
 	mux.HandleFunc("POST /api/route/save", api.saveRoute)
 	webui.Mount(mux)

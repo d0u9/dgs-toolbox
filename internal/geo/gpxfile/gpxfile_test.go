@@ -45,6 +45,21 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseRejectsInvalidPositionsInEveryPart(t *testing.T) {
+	for _, position := range []string{`lat="NaN" lon="0"`, `lat="0" lon="NaN"`, `lat="+Inf" lon="0"`, `lat="0" lon="-Inf"`, `lat="91" lon="0"`, `lat="0" lon="181"`} {
+		for _, body := range []string{"<trk><trkseg><trkpt " + position + "/></trkseg></trk>", "<rte><rtept " + position + "/></rte>", "<wpt " + position + "/>"} {
+			if _, err := Parse(strings.NewReader("<gpx>" + body + "</gpx>")); err == nil {
+				t.Fatalf("accepted invalid position: %s", body)
+			}
+		}
+	}
+	for _, position := range []string{`lat="90" lon="180"`, `lat="-90" lon="-180"`, `lat="0" lon="0"`} {
+		if _, err := Parse(strings.NewReader("<gpx><wpt " + position + "/></gpx>")); err != nil {
+			t.Fatalf("rejected valid boundary: %s: %v", position, err)
+		}
+	}
+}
+
 func TestParseRoutesAndWaypoints(t *testing.T) {
 	file, err := Parse(strings.NewReader(sample))
 	if err != nil {

@@ -280,6 +280,13 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("%s: %w", sidecar.PathFor(target), gpxfile.ErrExists))
 		return
 	}
+	if _, err := os.Lstat(target); err == nil {
+		writeError(w, http.StatusConflict, gpxfile.ErrExists)
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		writeError(w, statusFor(err), err)
+		return
+	}
 	// The new file holds the track as it is being edited: the points cleaning
 	// kept, at the positions it gave them, the stretches filled in along the
 	// road, and the tracks added from other files — each <trk> named as the
@@ -313,30 +320,10 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, saveErr)
 		return
 	}
-	// A saved draft is done with; the original goes back to its own tracks.
-	// The added ones may be anywhere among them, so each goes with its
-	// points, the last first so an earlier range still names its points.
+	// The export replaces the workspace entry, never the source on disk.
 	if isDraft(body.Path) {
 		drafts.remove(body.Path)
-	} else if len(file.Added) > 0 {
-		for i := len(result.keys.Tracks) - 1; i >= 0; i-- {
-			at, err := locate(result, result.keys.Tracks[i])
-			if err != nil || at.held < 0 {
-				continue
-			}
-			if first, last, ok := trackRange(result, i); ok {
-				file.Delete(first, last)
-			}
-		}
-		file.Added = nil
-		file.Order = withoutAdded(file.Order, result.layout.Tracks)
-		// The added tracks are in the file just written, so the source no
-		// longer holds them. This is part of the save the user asked for, so
-		// it is written now rather than held back.
-		if err := writeSidecarNow(body.Path, file); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	} else {
 		pending.forget(body.Path)
 	}
 	writeJSON(w, map[string]any{"ok": true, "path": target})
@@ -350,8 +337,10 @@ func composeInto(target string, result analysis) error {
 	waypoints := append([]gpxfile.Waypoint(nil), result.file.Waypoints...)
 	routes := append([]gpxfile.Route(nil), result.file.Routes...)
 	for i := range waypoints {
-		if name, ok := file.Names[result.keys.Waypoints[i]]; ok {
-			waypoints[i].Name = name
+		var err error
+		waypoints[i], err = transferWaypoint(result, result.keys.Waypoints[i], waypoints[i], target)
+		if err != nil {
+			return err
 		}
 	}
 	for i := range routes {

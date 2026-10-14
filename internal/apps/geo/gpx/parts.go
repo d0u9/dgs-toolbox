@@ -190,6 +190,25 @@ func indexOf(key string) (int, error) {
 	return index, err
 }
 
+// dropPartValue keeps metadata on its part when deleting an added part shifts later keys.
+func dropPartValue[T any](values map[string]T, gone string) map[string]T {
+	if len(values) == 0 {
+		return nil
+	}
+	kind, index, _ := partKey(gone)
+	kept := make(map[string]T, len(values))
+	for key, value := range values {
+		if key == gone {
+			continue
+		}
+		if other, at, err := partKey(key); err == nil && other == kind && at > index {
+			key = fmt.Sprintf("%c%d", kind, at-1)
+		}
+		kept[key] = value
+	}
+	return kept
+}
+
 // dropKey takes a part carried beside a file out of the orders kept for it.
 // The parts carried after it are keyed one lower from now on, so their keys in
 // the order are too.
@@ -213,23 +232,6 @@ func dropKey(order map[string][]string, key string, at place, layout partCounts)
 		kept = append(kept, one)
 	}
 	order[letter] = kept
-	return order
-}
-
-// withoutAdded takes the tracks added here out of the track order, once they
-// are written into a file of their own.
-func withoutAdded(order map[string][]string, onDisk int) map[string][]string {
-	keys, ok := order["t"]
-	if !ok {
-		return order
-	}
-	var kept []string
-	for _, key := range keys {
-		if index, err := indexOf(key); err == nil && index < onDisk {
-			kept = append(kept, key)
-		}
-	}
-	order["t"] = kept
 	return order
 }
 
@@ -276,7 +278,6 @@ func (a api) deletePart(w http.ResponseWriter, r *http.Request) {
 		default:
 			file.Waypoints = append(file.Waypoints[:at.held:at.held], file.Waypoints[at.held+1:]...)
 		}
-		delete(file.Moved, body.Key)
 		file.Order = dropKey(file.Order, body.Key, at, result.layout)
 	// The GPX itself holds it. Only a GPX dgs wrote is written to.
 	case result.file.IsOurs():
@@ -286,12 +287,19 @@ func (a api) deletePart(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		file.Deleted = append(file.Deleted, body.Key)
-		delete(file.Moved, body.Key)
 	default:
 		writeError(w, http.StatusUnprocessableEntity, errors.New("this GPX was not written by dgs, so nothing is taken out of it; only a track added here can be taken out again"))
 		return
 	}
-	delete(file.Names, body.Key)
+	if at.held >= 0 {
+		file.Names = dropPartValue(file.Names, body.Key)
+		file.Moved = dropPartValue(file.Moved, body.Key)
+		file.Photos = dropPartValue(file.Photos, body.Key)
+	} else {
+		delete(file.Names, body.Key)
+		delete(file.Moved, body.Key)
+		delete(file.Photos, body.Key)
+	}
 	if len(file.Names) == 0 {
 		file.Names = nil
 	}
@@ -529,6 +537,11 @@ func (a api) copyPart(w http.ResponseWriter, r *http.Request) {
 		held.Routes = append(held.Routes, compose.RouteFrom(rte, body.Path, now))
 	default:
 		wpt := result.file.Waypoints[at.shown]
+		wpt, err = transferWaypoint(result, body.Key, wpt, body.Target)
+		if err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
 		wpt.Name = name
 		held.Waypoints = append(held.Waypoints, compose.WaypointFrom(wpt, body.Path, now))
 	}

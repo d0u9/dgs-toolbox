@@ -228,11 +228,12 @@ func addedTracks(added []Added) []gpxfile.Track {
 // already written keeps its waypoints in the GPX itself; a draft has nowhere
 // else to hold them until it is saved.
 type Waypoint struct {
-	Lon         float64 `json:"lon"`
-	Lat         float64 `json:"lat"`
-	Name        string  `json:"name"`
-	Description string  `json:"desc,omitempty"`
-	At          int64   `json:"at,omitempty"` // Unix milliseconds it was added
+	Lon         float64        `json:"lon"`
+	Lat         float64        `json:"lat"`
+	Name        string         `json:"name"`
+	Description string         `json:"desc,omitempty"`
+	Links       []gpxfile.Link `json:"links,omitempty"`
+	At          int64          `json:"at,omitempty"` // Unix milliseconds it was added
 	// Elevation and Time are what the waypoint was copied with; a point
 	// placed by hand has neither.
 	Elevation *float64 `json:"ele,omitempty"`
@@ -248,6 +249,7 @@ func (w Waypoint) Point() gpxfile.Waypoint {
 		Point:       gpxfile.Point{LatLon: geo.LatLon{Lat: w.Lat, Lon: w.Lon}},
 		Name:        w.Name,
 		Description: w.Description,
+		Links:       append([]gpxfile.Link(nil), w.Links...),
 	}
 	if w.Elevation != nil {
 		point.Elevation, point.HasElevation = *w.Elevation, true
@@ -260,7 +262,7 @@ func (w Waypoint) Point() gpxfile.Waypoint {
 
 // WaypointFrom turns a GPX waypoint into one carried in a sidecar.
 func WaypointFrom(wpt gpxfile.Waypoint, from string, at int64) Waypoint {
-	waypoint := Waypoint{Lon: wpt.Lon, Lat: wpt.Lat, Name: wpt.Name, Description: wpt.Description, At: at, From: from}
+	waypoint := Waypoint{Lon: wpt.Lon, Lat: wpt.Lat, Name: wpt.Name, Description: wpt.Description, Links: append([]gpxfile.Link(nil), wpt.Links...), At: at, From: from}
 	if wpt.HasElevation {
 		waypoint.Elevation = ptr(wpt.Elevation)
 	}
