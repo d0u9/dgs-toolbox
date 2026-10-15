@@ -1,0 +1,18 @@
+# Synthetic device facts. Nodes bind these records explicitly with host: <id>.
+hosts:
+  sfo1:
+    endpoints:
+      internet: {address: sfo1.example.net}
+  hkg1:
+    endpoints:
+      internet: {address: hkg1.example.net}
+  nas:
+    names:
+      nas.home.test:
+        - {interface: wired, address: home-v4}
+    interfaces:
+      wired:
+        addresses:
+          home-v4: {network: home, ip: 10.0.0.10, names: [nas-wired.home.test]}
+    endpoints:
+      home: {from: {interface: wired, address: home-v4}}

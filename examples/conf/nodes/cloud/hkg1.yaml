@@ -17,8 +17,7 @@
 
 id: hkg1
 
-networks:
-  internet: hkg1.example.net
+host: hkg1
 
 instances:
   directory: hkg1.instances

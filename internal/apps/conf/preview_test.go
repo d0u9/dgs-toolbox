@@ -2,6 +2,7 @@ package conf
 
 import (
 	"github.com/d0u9/rhumb/engine"
+	"github.com/d0u9/rhumb/inventory"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,14 +24,14 @@ auth: per-principal
 	writeFile(t, filepath.Join(root, "services", "quicproxy", "defaults.yaml"), "listen: :443\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: u-node-group-10
     service: quicproxy
     ports:
       main: 443
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 
 	secretsDir = t.TempDir()
 	return root, secretsDir
@@ -64,14 +65,14 @@ upstream:
 	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "defaults.yaml"), "{}\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
     ports:
       main: {port: 38250, self: [psk.main]}
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "nodes", "laptop.yaml"), `
 id: laptop
 owner: alex
@@ -177,8 +178,7 @@ upstream:
 		"hop: {{ (upstream).values.port_hopping }}\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
@@ -187,6 +187,7 @@ instances:
     values:
       port_hopping: "20000-25000"
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 
 	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
 	if p.err != nil {
@@ -213,8 +214,7 @@ output: config.json
 		"hop: {{ (upstream).values.port_hopping }}\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
@@ -223,6 +223,7 @@ instances:
     values:
       port_hopping: "20000-25000"
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 
 	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
 	if p.err != nil {
@@ -258,24 +259,24 @@ forwards: true
 			"password: {{ join \":\" (upstream).shared }}:{{ (upstream).secret }}\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
     ports:
       main: {port: 38250, published: exit.example.com, self: [psk.main]}
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
 id: relay
-networks:
-  internet: 203.0.113.20
+host: relay
 instances:
   - id: fwd-relay
     service: realm
     ports:
       ss: {port: 40000, published: relay.example.net}
 `)
+	writeTestHost(t, root, "relay", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.20"}}})
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
@@ -315,14 +316,14 @@ forwards: true
 			"secret = {{ toJSON (upstream).secret }}\n")
 	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
 id: relay
-networks:
-  internet: 203.0.113.20
+host: relay
 instances:
   - id: fwd-relay
     service: realm
     ports:
       ss: {port: 40000}
 `)
+	writeTestHost(t, root, "relay", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.20"}}})
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
@@ -362,8 +363,7 @@ dispatch: port
 		"{{ range (downstreams) }}{{ .Entry }} {{ .EntryNumber }} -> {{ .Address }}:{{ .Number }}\n{{ end }}")
 	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
 id: relay
-networks:
-  internet: 203.0.113.20
+host: relay
 instances:
   - id: fwd-relay
     service: realm
@@ -371,10 +371,10 @@ instances:
       ss: 40000
       alt: 40001
 `)
+	writeTestHost(t, root, "relay", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.20"}}})
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
@@ -382,6 +382,7 @@ instances:
       main: {port: 38250, self: [psk.main]}
       other: {port: 38251, self: [psk.main]}
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
@@ -432,14 +433,14 @@ auth: per-principal
 		"{{ range principals \"main\" }}{{ .Name }}={{ .Secret }} {{ end }}")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
     ports:
       main: 38250
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "nodes", "laptop.yaml"), `
 id: laptop
 owner: alex
@@ -480,14 +481,14 @@ rotation: disruptive
 		"{{ range principals \"main\" }}{{ .Name }}={{ .Secret }} {{ end }}")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
     ports:
       main: 38250
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "nodes", "laptop.yaml"), `
 id: laptop
 owner: alex
@@ -541,8 +542,7 @@ auth: none
 
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: proxy
     service: caddy
@@ -559,6 +559,7 @@ instances:
     ports:
       web: {port: 8080, published: clip.example.com}
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   vault:
@@ -626,8 +627,7 @@ auth: per-principal
 		"masquerade_url: https://example.org/\ntls_cert: /etc/hysteria/tls/fullchain.pem\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: u-node-group-10
     service: quicproxy
@@ -636,6 +636,7 @@ instances:
     values:
       masquerade_url: https://www.example.com/
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 
 	secretsDir = t.TempDir()
 	return root, secretsDir
@@ -736,9 +737,7 @@ auth: none
 
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
-  home: 10.0.1.10
+host: srv
 instances:
   - id: web
     service: web
@@ -749,26 +748,27 @@ instances:
     ports:
       in: 1081
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}, "home": {Address: "10.0.1.10"}}})
 	writeFile(t, filepath.Join(root, "nodes", "lan.yaml"), `
 id: lan
-networks:
-  home: 10.0.1.20
+host: lan
 instances:
   - id: fwd-lan
     service: fwd
     ports:
       in: 1081
 `)
+	writeTestHost(t, root, "lan", inventory.Host{Endpoints: map[string]inventory.Endpoint{"home": {Address: "10.0.1.20"}}})
 	writeFile(t, filepath.Join(root, "nodes", "far.yaml"), `
 id: far
-networks:
-  internet: 198.51.100.7
+host: far
 instances:
   - id: fwd-far
     service: fwd
     ports:
       in: 1081
 `)
+	writeTestHost(t, root, "far", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "198.51.100.7"}}})
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   local:
@@ -832,14 +832,14 @@ files:
 	writeFile(t, filepath.Join(root, "services", "samba", "defaults.yaml"), "uids:\n  alex: 3001\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: samba-srv
     service: samba
     ports:
       smb: 445
 `)
+	writeTestHost(t, root, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(root, "users.yaml"), `
 users:
   alex:

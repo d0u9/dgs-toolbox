@@ -7,6 +7,12 @@ Migrate is a fifth tab for editing a proposed move and generating its report.
 Instance and port remain rows within the inventory tabs. [`inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md) is the model;
 this page is a way to look at it without reading YAML by hand.
 
+[Device network inventory](network-inventory.md) separates host interfaces and IPs
+from connection endpoints. Bound node details show the host/source, every
+interface MAC and named address, reservations, device names and endpoint targets.
+The connectivity graph shows a bound host with its node once; unbound devices,
+including domain-only and MAC-only hosts, remain visible with their authored facts.
+
 ## Why a separate command from `export`
 
 `export` answers "give me these files." Inspect answers "what is true here,

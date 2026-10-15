@@ -24,9 +24,9 @@ var migrationNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 type migrationPlan struct {
 	Version    int    `yaml:"version"`
 	SourceNode string `yaml:"source_node"`
-	// Scenario is relocate or replace. A plan saved before it existed has
-	// none, and opening it asks.
-	Scenario string             `yaml:"scenario,omitempty"`
+	SourceHost string `yaml:"source_host,omitempty"`
+	// Scenario is required: relocate or replace.
+	Scenario string             `yaml:"scenario"`
 	Rows     []migrationPlanRow `yaml:"rows"`
 }
 
@@ -39,7 +39,9 @@ type migrationPlanRow struct {
 
 func migrationRowKey(row migrationRow) string {
 	switch row.kind {
-	case "network", "address":
+	case "host-ip", "host-mac", "host-endpoint", "host-target":
+		return row.host + "/" + row.iface + "/" + row.address + "/" + row.network
+	case "network":
 		return row.network
 	case "published":
 		return row.instance + ":" + row.port
@@ -49,7 +51,7 @@ func migrationRowKey(row migrationRow) string {
 }
 
 func migrationPlanFromTable(m *migrationTable) migrationPlan {
-	p := migrationPlan{Version: migrationPlanVersion, SourceNode: m.selectedNode, Scenario: m.scenario}
+	p := migrationPlan{Version: migrationPlanVersion, SourceNode: m.selectedNode, SourceHost: nodeByID(m.l.Inv, m.selectedNode).Host, Scenario: m.scenario}
 	for _, row := range m.rows {
 		if row.kind == "secret" {
 			continue
@@ -66,11 +68,14 @@ func applyMigrationPlan(m *migrationTable, p migrationPlan) error {
 	m.selectedNode = ""
 	m.rows = nil
 	m.selectNode(p.SourceNode)
+	if p.SourceHost != nodeByID(m.l.Inv, p.SourceNode).Host {
+		return fmt.Errorf("migration source host has changed; create a new plan")
+	}
 	if m.selectedNode != p.SourceNode || len(m.editableRows()) != len(p.Rows) {
 		return fmt.Errorf("migration source inventory has changed; create a new plan")
 	}
 	for i, saved := range p.Rows {
-		current := m.editableRows()[i]
+		current := m.rows[i]
 		if saved.Kind != current.kind || saved.Key != migrationRowKey(current) || saved.From != current.before {
 			return fmt.Errorf("migration source inventory has changed at %s; create a new plan", saved.Key)
 		}
@@ -82,7 +87,7 @@ func applyMigrationPlan(m *migrationTable, p migrationPlan) error {
 		m.rows[i].after = saved.To
 	}
 	switch p.Scenario {
-	case "", rcli.MigrationRelocate, rcli.MigrationReplace:
+	case rcli.MigrationRelocate, rcli.MigrationReplace:
 		m.scenario = p.Scenario
 	default:
 		return fmt.Errorf("migration plan has unknown scenario %q", p.Scenario)

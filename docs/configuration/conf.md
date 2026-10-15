@@ -33,6 +33,47 @@ result must be absolute.
 What `dgs conf export` does with these is in
 [`apps/conf/export.md`](https://github.com/d0u9/rhumb/blob/master/docs/export.md).
 
+Device interfaces, addresses and connection endpoints are described in
+[Device network inventory](../apps/conf/network-inventory.md) and the
+[rhumb reference](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#device-network-inventory).
+They live in the generator root, not this `config.json`. Node `host` is an
+optional explicit binding; a node without it has no declared network facts.
+Inline node `networks`/`reaches` are not accepted.
+
+| Inventory key | Meaning | Default |
+| --- | --- | --- |
+| Node `host` | Host ID in `hosts.yaml`; excludes inline `networks`/`reaches` | absent — no host network facts |
+| Host `interfaces` | Stable interface IDs and their facts | empty |
+| Interface `mac` | Hardware address, normalized to colon form | empty |
+| Interface `addresses` | Named IP declarations | empty |
+| Address `network`, `ip` | Declared network scope and unscoped literal IP | required |
+| Address `dhcp_reservation` | Explicit MAC–IPv4 reservation | `false` |
+| Address `names` | Interface DNS names pointing at this IP; first name is the device CNAME target | empty |
+| Host `names` | Device DNS name → local `{interface, address}` or `{endpoint: network}` refs; at most one per network | empty |
+| `names.yaml` → `names` | Alias → DNS target, included in each network where the target exists | optional file, empty map |
+| Host `endpoints` | Explicit connection targets by network | empty |
+| Endpoint `from` / `address` | Exact interface/address reference or literal IP/domain; choose one | none selected |
+| Host `reaches` | Additional outbound network scopes | empty |
+
+`names "<network>"` exposes `Name`, `Type`, `Value`, `Source` records, including
+CNAMEs. `flatnames "<network>"` resolves them to IP records. Names are ASCII,
+case-insensitive, with an optional final dot. Duplicate names, missing targets,
+cycles and chains beyond 8 CNAME hops fail validation. Published names use A/AAAA for an IP endpoint and CNAME for a domain endpoint.
+External endpoint domains are permitted terminals; `flatnames` cannot resolve
+them without IP declarations. See [DNS layers](../apps/conf/network-inventory.md#dns-layers).
+
+Public devices can reference their existing endpoint in host `names`:
+`host-a.dev.example.test: [{endpoint: internet}]`. Published services then point
+to that device name, which points to the domain or IP in `endpoints.internet`.
+Each name reference chooses one form; endpoint refs and interface refs cannot
+both select the same network for one name.
+
+A host supports multiple interfaces/MACs and named addresses. Every reservation
+row identifies `host/interface/address`. There is one inventory format; there is
+no conversion tool, and loading never rewrites configuration. Existing machine
+moves edit the current Host source fields.
+
+
 `services`, `install_root`, `label_prefix` and `tool` are read by every way to a
 bundle: `dgs conf bundle <export-dir>`, which is `rhumb deploy build`;
 `dgs conf export --bundle`; and the inspect page's Bundle format. On the first
@@ -58,3 +99,17 @@ or `RhumbBundle` plist keys. On each machine, in this order:
 
 New unlink and bundle-gc recognize only the configured tool. Do the same when
 changing `tool` later.
+
+### DNS JSON export
+
+`dgs conf dns <network>` prints `{network, records}` to stdout. Records are
+sorted by name and use `name`, `type`, `value`, `source`. Services keep their
+domains in `ports.published`; a node's host endpoint determines the target,
+including existing proxy-ingress selection. Multiple published service names
+can point at one domain or IP. Identical records requested by several ports
+are merged. A published name equal to the canonical access domain produces no
+new record, avoiding a self-CNAME. Invalid inventory emits no JSON.
+
+This is a desired-record export for your external DNS tool. It does not call
+Cloudflare or other providers, query external DNS, infer zone ownership, or
+specify TTL/proxy settings. Ordinary aliases still need an authored target.

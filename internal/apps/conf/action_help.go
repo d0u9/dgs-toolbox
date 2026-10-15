@@ -75,6 +75,16 @@ Example:
 The required argument is literally sync. Reads configured conf.root and
 conf.secrets and generates missing credentials implied by the inventory.
 Existing credentials are not regenerated or deleted. --yes skips confirmation.`,
+	"dns": `Print backend-neutral DNS records as JSON.
+
+Example:
+  dgs conf dns internet
+
+Reads the configured inventory and prints {network, records}.
+Each record has name, type, value and source. CNAMEs are preserved,
+including external domain endpoints used by published services.
+Invalid inventory produces no JSON. It does not query DNS or contact a provider.
+TTL, proxy settings, authentication and synchronization belong to your DNS tool.`,
 	"reservations": `Print the address reservations a network's router should hold, in address order.
 
 Example:
@@ -82,5 +92,8 @@ Example:
 
 The required argument is a network name in the configured inventory.
 Prints that network's address reservations in address order and returns.
+Device interfaces can each reserve an address. Every reservation uses a
+host/interface/address identifier.
+Invalid inventory is refused before any reservation rows are printed.
 It does not configure or contact a router.`,
 }

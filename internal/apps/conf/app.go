@@ -99,6 +99,12 @@ func New() tui.App {
 			},
 			RunWithConfig: secretAction,
 		}, {
+			ID:          "dns",
+			Help:        actionHelp["dns"],
+			Usage:       "<network>",
+			Description: "Print backend-neutral DNS records for a network as JSON.",
+			MinArgs:     1, MaxArgs: 1, RunWithConfig: dnsAction,
+		}, {
 			ID:            "reservations",
 			Help:          actionHelp["reservations"],
 			Usage:         "<network>",

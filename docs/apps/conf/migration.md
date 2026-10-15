@@ -5,6 +5,23 @@ the configuration represented by one node to a new location or machine, includin
 changes to its name and network addresses. It does not say that a generated
 file has been installed or that DNS has been changed.
 
+[Device network inventory](network-inventory.md) supports source-aware edits.
+A bound host exposes interface IP and MAC rows plus literal endpoint and endpoint
+selection rows (`interface/address`). Network scope renames include interfaces,
+endpoints and host `reaches`. IP edits follow address references; switching an
+endpoint leaves both interface IPs unchanged. `(none)` represents an absent MAC.
+
+There is one network inventory and one saved-plan schema. The page handles
+machine moves, not configuration conversion. It never extracts interfaces or
+addresses from node files. Real configuration edits are performed separately.
+
+The reviewed report retains an input digest; a change after preview refuses apply.
+Host files participate in input digests, pre-write staged loading/validation and
+post-write equality checks. Ordinary machine-move backups and rollback remain.
+When a scoped host edit touches shared YAML aliases or merge values, those
+references may expand into explicit values so other hosts retain their facts.
+Comment text is preserved; YAML formatting and comment positions may change.
+
 The [inventory](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md) is the source of node, instance, route, network
 and published-name facts. [Export](https://github.com/d0u9/rhumb/blob/master/docs/export.md) renders files from those facts;
 it does not deploy them. A migration should use those existing readers and
@@ -35,7 +52,7 @@ The scenario shapes only the report's procedure; the inventory edits are the
 same. Export handoffs to people or other nodes are not services to stop on
 the moved machine.
 
-A node's address is written in `nodes/<group>/*.yaml`; route edges and
+A node references its network facts in `hosts.yaml`; route edges and
 container port mappings are derived. A port's `published` name is a service
 name, not necessarily the node's hostname or a DNS record managed here.
 
@@ -47,7 +64,8 @@ the saved plans in `<config dir>/conf/migrations/`, plus **Open migration file**
 through the shared File Explorer. Its path input and root navigation can reach
 any accessible directory. A new migration first asks for the scenario
 (relocate or replace), then selects a source node, then opens a
-two-column table grouped into Node, Networks, Instances, Published, Routes, and
+two-column table grouped into Node, Networks, Interface Addresses, Connection
+Endpoints, Instances, Published, Routes, and
 Secrets. Secret rows show implied relative paths before and after the proposed
 changes. They are read-only because the paths are derived from instance IDs,
 grants, and service declarations; a path change belongs in the report's manual
@@ -71,8 +89,8 @@ confirmation; `y` applies the plan (see Execution and rollback) and appends the
 result, including the backup directory, to the report. Any other key cancels.
 Nothing else in the tab writes inventory or secrets, and nothing writes DNS.
 The plan file is versioned YAML containing the source node, the scenario and
-each row's original and proposed values. A plan saved without a scenario asks
-for one when it is opened. Opening checks every
+each row's original and proposed values. A scenario is required; a plan without
+one is rejected. Opening checks every
 original value against the current inventory; a stale plan is refused. Saving
 an open plan also refuses to replace a file changed outside this session.
 Unsaved edits are marked in the status bar; leaving the table asks for a

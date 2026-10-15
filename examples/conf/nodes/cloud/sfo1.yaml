@@ -1,9 +1,7 @@
 # A server.
 #
-# `networks` says how others find this machine: network name to this node's
-# address on it. It holds a DNS name rather than an address, so changing the
-# address does not touch this file. A machine behind NAT writes `reaches`
-# instead, saying where it can dial out; this one is reachable, so it does not.
+# Device network facts are in hosts.yaml. The host reference binds this node
+# to its explicit connection endpoints.
 #
 # Instances are written in the node file rather than in a directory of their
 # own: the question asked most often is what runs on this machine, and the
@@ -11,8 +9,7 @@
 
 id: sfo1
 
-networks:
-  internet: sfo1.example.net
+host: sfo1
 
 instances:
 
