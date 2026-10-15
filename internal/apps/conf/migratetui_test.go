@@ -211,7 +211,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 		t.Fatal("published section is missing")
 	}
 	choices := map[string]string{
-		"node": "srv08", "network": "wan", "address": "203.0.113.8", "instance": "u-node-group-1008", "published": "new.example.test", "route": "sfo08",
+		"node": "srv08", "network": "wan", "host-endpoint": "203.0.113.8", "instance": "u-node-group-1008", "published": "new.example.test", "route": "sfo08",
 	}
 	for i := range m.rows {
 		if value, ok := choices[m.rows[i].kind]; ok {
@@ -222,7 +222,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 	if m.mode != "report" {
 		t.Fatalf("report failed: %s", m.notice)
 	}
-	for _, want := range []string{"| Network name | `internet` | `wan` |", "| Address on wan | `203.0.113.10` | `203.0.113.8` |", "| Instance ID | `u-node-group-10` | `u-node-group-1008` |", "| Published name u-node-group-10:main | `old.example.test` | `new.example.test` |", "| Route name | `sfo` | `sfo08` |"} {
+	for _, want := range []string{"| Network name | `internet` | `wan` |", "| Host endpoint internet | `203.0.113.10` | `203.0.113.8` |", "| Instance ID | `u-node-group-10` | `u-node-group-1008` |", "| Published name u-node-group-10:main | `old.example.test` | `new.example.test` |", "| Route name | `sfo` | `sfo08` |"} {
 		if !strings.Contains(string(m.report), want) {
 			t.Errorf("report missing %q:\n%s", want, m.report)
 		}
@@ -305,7 +305,7 @@ func TestMigrationPlanCreateOpenEditAndRejectStaleInventory(t *testing.T) {
 	if !strings.Contains(m.notice, "changed on disk") {
 		t.Fatalf("stale save was accepted: %s", m.notice)
 	}
-	nodePath := filepath.Join(root, "nodes", "srv.yaml")
+	nodePath := filepath.Join(root, "hosts.yaml")
 	node, err := os.ReadFile(nodePath)
 	if err != nil {
 		t.Fatal(err)
@@ -330,6 +330,11 @@ func TestMigrationPlanRejectsUnsafeNameAndVersion(t *testing.T) {
 	p.Version = 99
 	if err := applyMigrationPlan(m, p); err == nil {
 		t.Fatal("unknown version accepted")
+	}
+	p.Version = migrationPlanVersion
+	p.Scenario = ""
+	if err := applyMigrationPlan(m, p); err == nil {
+		t.Fatal("missing scenario accepted")
 	}
 }
 

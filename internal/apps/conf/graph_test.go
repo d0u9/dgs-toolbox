@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"github.com/d0u9/rhumb/inventory"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -176,8 +177,7 @@ func TestBuildGraph_AContainerisedProcessIsBadged(t *testing.T) {
 	root := buildInspectRoot(t)
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver
@@ -229,8 +229,7 @@ func TestBuildGraph_ContainerNetworksAndHosts(t *testing.T) {
 	root := buildInspectRoot(t)
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 runtime: docker
 containers:
   - {name: apps, subnet: 172.30.0.0/24}
@@ -245,13 +244,9 @@ instances:
       main: {port: 38250, self: [psk.main]}
       alt: {port: 49217, self: [psk.alt]}
 `)
-	writeFile(t, filepath.Join(root, "hosts.yaml"), `
-hosts:
-  nas:
-    network: internet
-    address: 203.0.113.50
-    names: [nas.example.test]
-`)
+	writeTestHost(t, root, "nas", inventory.Host{Interfaces: map[string]inventory.Interface{
+		"lan": {Addresses: map[string]inventory.InterfaceAddress{"main": {Network: "internet", IP: "203.0.113.50", Names: []string{"nas.example.test"}}}},
+	}})
 	m := newInspectModel(root, "")
 	g := buildGraph(m.l, "test")
 
@@ -299,7 +294,7 @@ hosts:
 			host = &g.Nodes[i]
 		}
 	}
-	if host == nil || !host.ContextOnly || host.Detail != "internet 203.0.113.50" || !slices.Equal(host.Tags, []string{"net:internet"}) {
+	if host == nil || !host.ContextOnly || !strings.Contains(host.Detail, "internet 203.0.113.50") || !slices.Equal(host.Tags, []string{"net:internet"}) {
 		t.Errorf("host = %+v, want nas on internet", host)
 	}
 }

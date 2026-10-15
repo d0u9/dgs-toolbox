@@ -14,6 +14,7 @@ import (
 	"github.com/d0u9/rhumb/derive"
 	"github.com/d0u9/rhumb/inventory"
 	"github.com/d0u9/rhumb/secretstore"
+	"gopkg.in/yaml.v3"
 )
 
 func configFor(root, secretsDir string) config.Config {
@@ -98,4 +99,27 @@ universal: internet
 	}
 
 	return root, secretsDir
+}
+
+// writeTestHost declares new-format host facts without translating node syntax.
+func writeTestHost(t *testing.T, root, id string, host inventory.Host) {
+	t.Helper()
+	path := filepath.Join(root, inventory.HostsFilename)
+	doc := struct {
+		Hosts map[string]inventory.Host `yaml:"hosts"`
+	}{Hosts: map[string]inventory.Host{}}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			t.Fatal(err)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	doc.Hosts[id] = host
+	data, err = yaml.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(data))
 }

@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"github.com/d0u9/rhumb/inventory"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ import (
 func buildInspectRoot(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	writeTestHost(t, dir, "srv", inventory.Host{Endpoints: map[string]inventory.Endpoint{"internet": {Address: "203.0.113.10"}}})
 	writeFile(t, filepath.Join(dir, "services", "ssserver", "confgen.yaml"), `
 secret:
   kind: base64
@@ -39,8 +41,7 @@ output: config.json
 `)
 	writeFile(t, filepath.Join(dir, "nodes", "srv.yaml"), `
 id: srv
-networks:
-  internet: 203.0.113.10
+host: srv
 instances:
   - id: ss-srv
     service: ssserver

@@ -36,9 +36,11 @@ import (
 type migrationRow struct {
 	kind, label, source, before, after string
 	instance, port, network            string
+	host, iface, address               string
 }
 
 type migrationTable struct {
+	reportDigest  string
 	l             engine.Loaded
 	root, secrets string
 	planDir       string
@@ -67,11 +69,7 @@ type migrationTable struct {
 func newMigrationTable(l engine.Loaded, root, secrets string) *migrationTable {
 	m := &migrationTable{l: l, root: root, secrets: secrets, planDir: filepath.Join(root, "migrations"), outputDir: filepath.Join(root, "migrations"), list: scrolllist.New(), mode: "plans", copy: clipboard.Copy}
 	m.list.HideNumbers(true)
-	for _, node := range l.Inv.Nodes {
-		if node.Broken == "" {
-			m.nodes = append(m.nodes, node)
-		}
-	}
+	m.nodes = usableNodes(l)
 	m.refreshPlans()
 	return m
 }
@@ -149,10 +147,6 @@ func (m *migrationTable) openPlanPath(path string) {
 	}
 	m.planName, m.planPath, m.planDigest, m.notice = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), path, &digest, "Opened: "+path
 	m.dirty, m.confirmLeave = false, false
-	if m.scenario == "" {
-		m.mode, m.notice = "scenario", "This plan names no scenario; choose one"
-		m.refreshScenarios()
-	}
 }
 
 func (m *migrationTable) savePlan(name string) {
@@ -177,6 +171,18 @@ func (m *migrationTable) savePlan(name string) {
 	m.dirty, m.confirmLeave = false, false
 }
 
+// usableNodes are the nodes a migration can start from: loaded without error
+// and, when bound to a host, bound to one that exists.
+func usableNodes(l engine.Loaded) []inventory.Node {
+	var out []inventory.Node
+	for _, node := range l.Inv.Nodes {
+		if _, ok := l.Inv.Hosts[node.Host]; node.Broken == "" && (node.Host == "" || ok) {
+			out = append(out, node)
+		}
+	}
+	return out
+}
+
 func (m *migrationTable) selectNode(id string) {
 	if id == m.selectedNode && len(m.rows) != 0 {
 		m.mode = "table"
@@ -197,16 +203,16 @@ func (m *migrationTable) selectNode(id string) {
 	m.selectedNode, m.mode, m.report, m.notice = id, "table", nil, ""
 	m.dirty, m.confirmLeave = true, false
 	m.rows = []migrationRow{{kind: "node", label: "NODE ID", source: node.Path + ": id", before: id, after: id}}
-	networks := make([]string, 0, len(node.Networks))
-	for name := range node.Networks {
-		networks = append(networks, name)
+	var networks []string
+	if node.Host != "" {
+		networks = hostNetworks(m.l.Inv.Hosts[node.Host])
 	}
-	sort.Strings(networks)
 	for _, name := range networks {
-		m.rows = append(m.rows,
-			migrationRow{kind: "network", label: "NETWORK " + name, source: node.Path + ": networks." + name, before: name, after: name, network: name},
-			migrationRow{kind: "address", label: "ADDRESS " + name, source: node.Path + ": networks." + name, before: node.Networks[name], after: node.Networks[name], network: name},
-		)
+		source := inventory.HostSource(node.Host) + ": network scope " + name
+		m.rows = append(m.rows, migrationRow{kind: "network", label: "NETWORK " + name, source: source, before: name, after: name, network: name})
+	}
+	if node.Host != "" {
+		m.rows = append(m.rows, hostMigrationRows(node.Host, m.l.Inv.Hosts[node.Host])...)
 	}
 	instances := map[string]bool{}
 	var publishedRows []migrationRow
@@ -367,8 +373,12 @@ func migrationSection(kind string) string {
 	switch kind {
 	case "node":
 		return "NODE"
-	case "network", "address":
+	case "network":
 		return "NETWORKS"
+	case "host-mac", "host-ip":
+		return "INTERFACE ADDRESSES"
+	case "host-endpoint", "host-target":
+		return "CONNECTION ENDPOINTS"
 	case "instance":
 		return "INSTANCES"
 	case "published":
@@ -629,14 +639,8 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 		} else if m.mode == "scenario" {
 			if item, ok := m.list.Selected(); ok {
 				m.scenario = item.ID
-				if len(m.rows) != 0 {
-					// An opened plan that named no scenario: back to its table.
-					m.mode, m.dirty = "table", true
-					m.selectFirstRow()
-				} else {
-					m.mode = "nodes"
-					m.refreshNodes()
-				}
+				m.mode = "nodes"
+				m.refreshNodes()
 			}
 		} else if m.mode == "nodes" {
 			if item, ok := m.list.Selected(); ok {
@@ -707,6 +711,11 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 }
 
 func (m *migrationTable) generateReport() {
+	digest, err := rcli.MigrationInputDigest(m.root)
+	if err != nil {
+		m.notice = err.Error()
+		return
+	}
 	flags := m.flags()
 	cfg := config.Config{}
 	cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
@@ -715,6 +724,16 @@ func (m *migrationTable) generateReport() {
 		m.notice = err.Error()
 		return
 	}
+	after, err := rcli.MigrationInputDigest(m.root)
+	if err != nil {
+		m.notice = err.Error()
+		return
+	}
+	if digest != after {
+		m.notice = "Inventory changed while building the report; regenerate it"
+		return
+	}
+	m.reportDigest = digest
 	m.report, m.reportScroll, m.mode, m.notice = report, 0, "report", ""
 }
 
@@ -722,7 +741,12 @@ func (m *migrationTable) generateReport() {
 // The loaded inventory is reread afterwards: the plan's "before" values no
 // longer describe it, so the table cannot be applied twice.
 func (m *migrationTable) applyPlan() {
+	if m.reportDigest == "" {
+		m.notice = "Generate and review the report before applying"
+		return
+	}
 	flags := m.flags()
+	flags["expected-inputs"] = m.reportDigest
 	flags["apply"], flags["yes"] = "true", "true"
 	cfg := config.Config{}
 	cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
@@ -744,32 +768,38 @@ func (m *migrationTable) applyPlan() {
 		m.notice = "Applied; exact originals are listed at the end of the report"
 		if l, loadErr := engine.Load(m.root); loadErr == nil {
 			m.l = l
+			m.nodes = usableNodes(l)
 		}
+		// The table's "before" values describe the replaced inventory.
+		m.selectedNode, m.rows, m.reportDigest = "", nil, ""
 		m.dirty = false
 	}
 	m.report = append(m.report, []byte("\n## Apply result\n\n```text\n"+result+"\n```\n")...)
 	m.reportScroll = len(m.report)
 }
 
+var hostRowHints = map[string]string{
+	"host-target": "Target format: interface/address. This switches the endpoint; it does not edit either IP.",
+	"host-ip":     "This edits the interface IP. All references, DNS and reservations follow it.",
+}
+
 func (m *migrationTable) flags() map[string]string {
 	flags := map[string]string{}
 	var networks, instances, routes, published []string
+	var hostChanges []rcli.HostChange
 	nodeTo := m.selectedNode
 	byNetwork := map[string]rcli.NetworkChange{}
 	for _, row := range m.rows {
 		switch row.kind {
+		case "host-ip", "host-mac", "host-endpoint", "host-target":
+			if row.after != row.before {
+				hostChanges = append(hostChanges, hostChangeFromRow(row))
+			}
 		case "node":
 			nodeTo = row.after
 		case "network":
 			change := byNetwork[row.network]
 			change.From, change.To = row.network, row.after
-			byNetwork[row.network] = change
-		case "address":
-			change := byNetwork[row.network]
-			change.From = row.network
-			if row.after != row.before {
-				change.Address = row.after
-			}
 			byNetwork[row.network] = change
 		case "instance":
 			if row.after != row.before {
@@ -786,18 +816,8 @@ func (m *migrationTable) flags() map[string]string {
 		}
 	}
 	for _, change := range byNetwork {
-		if change.To == "" {
-			change.To = change.From
-		}
-		if change.To != change.From || change.Address != "" {
-			spec := "from=" + change.From
-			if change.To != change.From {
-				spec += ",to=" + change.To
-			}
-			if change.Address != "" {
-				spec += ",address=" + change.Address
-			}
-			networks = append(networks, spec)
+		if change.To != change.From {
+			networks = append(networks, "from="+change.From+",to="+change.To)
 		}
 	}
 	sort.Strings(networks)
@@ -805,6 +825,10 @@ func (m *migrationTable) flags() map[string]string {
 	encInstances, _ := json.Marshal(instances)
 	encRoutes, _ := json.Marshal(routes)
 	encPublished, _ := json.Marshal(published)
+	if len(hostChanges) != 0 {
+		data, _ := json.Marshal(hostChanges)
+		flags["host-edit"] = string(data)
+	}
 	flags["node"] = "from=" + m.selectedNode + ",to=" + nodeTo
 	flags["scenario"] = m.scenario
 	flags["network"], flags["instance"], flags["route"], flags["published"] = string(encNetworks), string(encInstances), string(encRoutes), string(encPublished)
@@ -855,6 +879,9 @@ func (m *migrationTable) view(width, height int) string {
 		}
 		row := m.rows[index]
 		body = "Before:\n    " + row.before + "\nAfter:\n    " + row.after + "\nSource:\n    " + row.source + "\n\nScenario: " + m.scenario + "\n\nEnter edits. s saves the plan; r builds the report."
+		if hint := hostRowHints[row.kind]; hint != "" {
+			body += "\n\n" + hint
+		}
 		if row.kind == "secret" {
 			body = "Before:\n    " + row.before + "\nAfter:\n    " + row.after + "\n\n" + row.source + "\n\nSecret paths are derived and read-only."
 		}

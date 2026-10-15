@@ -7,6 +7,7 @@ package conf
 import (
 	"fmt"
 	"github.com/d0u9/rhumb/engine"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -1183,6 +1184,14 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 		field("export", n.Export),
 	)
 	line(&b, field("networks", pairsInline(n.Networks)))
+	if n.Host != "" {
+		line(&b, field("host", n.Host), field("source", inventory.HostSource(n.Host)))
+		if h, ok := l.Inv.Hosts[n.Host]; ok {
+			section(&b, "host network inventory", hostInventoryLines(h))
+		} else {
+			line(&b, "host reference is missing")
+		}
+	}
 	if n.Owner != "" {
 		credential := l.Inv.Users[n.Owner].Credentials[n.CredentialOr()]
 		line(&b, field("credential", n.CredentialOr()), field("note", credential.Note))
@@ -1206,6 +1215,48 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 	section(&b, plural(len(rows), "instance"), columns(rows))
 	return b.String(), nil
+}
+
+// hostInventoryLines shows authored addresses separately from connection entrances.
+func hostInventoryLines(h inventory.Host) []string {
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(h.Interfaces)) {
+		i := h.Interfaces[name]
+		out = append(out, fields("interface "+name, field("MAC", i.MAC)))
+		for _, aid := range slices.Sorted(maps.Keys(i.Addresses)) {
+			a := i.Addresses[aid]
+			reservation := ""
+			if a.DHCPReservation {
+				reservation = "DHCP reservation"
+			}
+			out = append(out, "  "+fields(aid, a.Network+" "+a.IP, reservation, field("names", strings.Join(a.Names, ", "))))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(h.Names)) {
+		for _, ref := range h.Names[name] {
+			target := ref.Interface + "/" + ref.Address
+			if ref.Endpoint != "" {
+				target = "endpoint " + ref.Endpoint
+			}
+			out = append(out, fields("device name "+name, target))
+		}
+	}
+	for _, network := range slices.Sorted(maps.Keys(h.Endpoints)) {
+		e := h.Endpoints[network]
+		source := e.Address
+		if e.From != nil {
+			source = e.From.Interface + "/" + e.From.Address
+		}
+		address, err := h.EndpointAddress(network)
+		if err != nil {
+			address = "invalid: " + err.Error()
+		}
+		out = append(out, fields("endpoint "+network, source, field("resolved", address)))
+	}
+	if len(h.Reaches) > 0 {
+		out = append(out, "reaches "+strings.Join(h.Reaches, ", "))
+	}
+	return out
 }
 
 func renderInstanceDetail(l InspectData, id string) (string, error) {

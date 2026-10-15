@@ -6,8 +6,7 @@
 
 id: nas
 
-networks:
-  home: 10.0.0.10
+host: nas
 
 instances:
 

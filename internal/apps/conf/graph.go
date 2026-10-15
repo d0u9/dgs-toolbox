@@ -6,7 +6,9 @@ package conf
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -61,7 +63,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 			kindHop:     "one hop of a route to the next, across machines",
 			kindLocal:   "one hop of a route to the next, on the same machine",
 			kindBridge:  "a container network on one machine: the processes on it dial each other by name",
-			kindHost:    "a machine hosts.yaml names and reserves an address for, running no instance",
+			kindHost:    "a host inventory device without a deployment node",
 			kindJoins:   "a process on a further container network, beside the one it is drawn in",
 		},
 		FilterTitle: "Networks",
@@ -101,7 +103,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		// The machine projection closes this box and aggregates the lines
 		// between its ports into connections between machines.
 		g.Groups = append(g.Groups, webgraph.Group{
-			ID: c.ID, Label: label, Detail: strings.Join(parts, " · "), Parent: groupBox(c.Group), Kind: kindNode, Collapse: true,
+			ID: c.ID, Label: label, Detail: strings.Join(parts, " · "), Parent: groupBox(c.Group), Kind: kindNode, Collapse: true, Tags: nodeNetworkTags(l, c.ID),
 		})
 		// The first joined network is the stored parent for port views;
 		// Services draws all joined networks as overlapping regions.
@@ -402,26 +404,39 @@ func addHosts(l InspectData, g *webgraph.Graph) {
 		return
 	}
 	ids := make([]string, 0, len(l.Inv.Hosts))
+	bound := map[string]bool{}
+	for _, n := range l.Inv.Nodes {
+		if n.Host != "" {
+			bound[n.Host] = true
+		}
+	}
 	for id := range l.Inv.Hosts {
+		if bound[id] {
+			continue
+		}
 		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
 	}
 	sort.Strings(ids)
 	const box = "hosts:"
 	tags := map[string]bool{}
 	for _, id := range ids {
 		h := l.Inv.Hosts[id]
-		tag := filterNetwork + h.Network
-		tags[tag] = true
-		tooltip := []string{fmt.Sprintf("%s %s on %s", id, h.Address, h.Network)}
-		if len(h.Names) > 0 {
-			tooltip = append(tooltip, strings.Join(h.Names, ", "))
+		hostTags := hostNetworkTags(h)
+		for _, tag := range hostTags {
+			tags[tag] = true
 		}
-		if h.MAC != "" {
-			tooltip = append(tooltip, h.MAC)
+		lines := hostInventoryLines(h)
+		detail := strings.Join(lines, " · ")
+		if detail == "" {
+			detail = "no interfaces or endpoints declared"
 		}
+		tooltip := append([]string{id}, lines...)
 		g.Nodes = append(g.Nodes, webgraph.Node{
 			ID: box + id, Label: id, Group: box, Kind: kindHost, ContextOnly: true,
-			Detail: h.Network + " " + h.Address, Tooltip: strings.Join(tooltip, "\n"), Tags: []string{tag},
+			Detail: detail, Tooltip: strings.Join(tooltip, "\n"), Tags: hostTags,
 		})
 	}
 	var boxTags []string
@@ -570,9 +585,50 @@ func nodeNetworks(l InspectData, nodeID string) []string {
 		if len(n.Reaches) > 0 {
 			out = append(out, "reaches "+strings.Join(n.Reaches, ", "))
 		}
+		if n.Host != "" {
+			out = append(out, "host "+n.Host)
+			if h, ok := l.Inv.Hosts[n.Host]; ok {
+				out = append(out, hostInventoryLines(h)...)
+			}
+		}
 		return out
 	}
 	return nil
+}
+
+// hostNetworks lists every network scope a host's interfaces, endpoints and
+// reaches name, in name order.
+func hostNetworks(h inventory.Host) []string {
+	names := map[string]bool{}
+	for _, i := range h.Interfaces {
+		for _, a := range i.Addresses {
+			names[a.Network] = true
+		}
+	}
+	for network := range h.Endpoints {
+		names[network] = true
+	}
+	for _, network := range h.Reaches {
+		names[network] = true
+	}
+	delete(names, "")
+	return slices.Sorted(maps.Keys(names))
+}
+
+func hostNetworkTags(h inventory.Host) []string {
+	var tags []string
+	for _, network := range hostNetworks(h) {
+		tags = append(tags, filterNetwork+network)
+	}
+	return tags
+}
+
+func nodeNetworkTags(l InspectData, id string) []string {
+	n := nodeByID(l.Inv, id)
+	if n.Host == "" {
+		return nil
+	}
+	return hostNetworkTags(l.Inv.Hosts[n.Host])
 }
 
 // portTooltip is what hovering one port shows: the machine it listens on and

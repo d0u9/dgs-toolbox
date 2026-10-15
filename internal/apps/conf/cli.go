@@ -41,3 +41,7 @@ func initAction(in io.Reader, out io.Writer, args []string, flags map[string]str
 func reservationsAction(in io.Reader, out io.Writer, args []string, flags map[string]string, g config.Config) error {
 	return rcli.Reservations(in, out, args, flags, settings(g))
 }
+
+func dnsAction(in io.Reader, out io.Writer, args []string, flags map[string]string, g config.Config) error {
+	return rcli.DNS(in, out, args, flags, settings(g))
+}

@@ -19,6 +19,12 @@ link here; this is what a reader consults to find out *what* to write.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, its base maps, routing and contours.
 - [Conf](conf.md) — the generator root `dgs conf` reads, holding the services
   and the inventory, its secrets tree, and where the destination form opens.
+  [Device network inventory](conf.md) lists interface, address, reservation,
+  device DNS names (interface or endpoint references), optional `names.yaml` aliases and endpoint keys with their defaults; the
+  [design](../apps/conf/network-inventory.md) and
+  [implementation plan](../apps/conf/network-inventory-plan.md) record the boundaries.
+  [`dgs conf dns <network>`](conf.md#dns-json-export) exports generic DNS JSON
+  for external DNS tools.
 - [Plugins](plugins.md) — the Obsidian vaults `dgs plugins` installs the
   plugins dgs carries into, and the folders in them its scripts and
   templates go.
