@@ -75,7 +75,7 @@ function treeHarness(track){
     setPartHidden(path,key,hidden){entry.hiddenParts[hidden?'add':'delete'](key);calls.push(['hidden',key,hidden]);},
     setFocus(path,options){state.focus=path;calls.push(['focus',plain(options)]);},
     setMode:mode=>calls.push(["mode",mode]),applyCutPanel(){calls.push(['cut-panel']);},applyCleanPanel(){},showCharts(){},fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
-    map:{getZoom:()=>12,easeTo(){calls.push(['pan']);}},renameGPX(path){calls.push(['rename',path]);},renameName(path){calls.push(['name',path]);},restoreName(path){calls.push(['restore',path]);},
+    map:{getZoom:()=>12,easeTo(){calls.push(['pan']);}},renameGPX(path){calls.push(['rename',path]);},renameName(path,given){calls.push(given==null?['name',path]:['name',path,given]);},
   });
   loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
   loadModule('drag',context);
@@ -147,7 +147,7 @@ test('file context menu renames the GPX name, and the file only for a draft or a
   const h=treeHarness(treeTrack({renamed:true}));
   await h.context.trackRow('current.gpx',h.entry).fire('contextmenu');
   h.calls.find(([kind])=>kind==='menu')[1].flat().find(item=>item.label==='Restore the name').onSelect();
-  assert.deepEqual(h.calls.at(-1),['restore','current.gpx']);
+  assert.deepEqual(h.calls.at(-1),['name','current.gpx','']);
 });
 
 function segmentHarness(pieces,{choice='separate',name='Named track',fail=false}={}){
@@ -1003,7 +1003,7 @@ test('Alt, Cmd and Ctrl dragging copy tracks and waypoints without moving the so
  const app=source('app');
  for(const kind of ['track','waypoint'])for(const modifier of ['altKey','metaKey','ctrlKey']){
   const calls=[],part={key:'p0',kind,name:'Synthetic part'},row={dataset:{path:'target.gpx'}};
-  const context=vm.createContext({dragRow:{path:'source.gpx',key:'p0',kind},dragGap:{at:()=>({row,above:true})},
+  const context=vm.createContext({dragRow:{path:'source.gpx',key:'p0',kind,group:[{path:'source.gpx',key:'p0',kind}]},dragGap:{at:()=>({row,above:true})},
    $:()=>({getBoundingClientRect:()=>({left:0,right:100})}),state:{focus:null,partPicks:new Set(),tracks:new Map([['source.gpx',{track:{name:'Source',parts:[part]}}],['target.gpx',{track:{name:'Target',ours:true,parts:[]}}]])},
    api:{copyPart:async(...args)=>calls.push(args)},reloadEntry:async path=>calls.push(['reload',path]),renderTracks(){},showMessage(){},basename:path=>path});
   vm.runInContext(app.slice(app.indexOf('const copyModifier'),app.indexOf('// afterFile')),context);
@@ -1356,7 +1356,7 @@ test('New GPX preserves the source track segment choices through focus changes',
 
 test('workspace drags reorder siblings in writable GPX files while refusing recordings and mixed kinds',async()=>{
  const parts=[{key:'t0',kind:'track'},{key:'t1',kind:'track'},{key:'w0',kind:'waypoint'}],row={dataset:{path:'source.gpx',kind:'track',key:'t1'}},calls=[];
- const context=vm.createContext({dragRow:{path:'source.gpx',kind:'track',key:'t0'},dragGap:{at:()=>({row,above:false})},
+ const context=vm.createContext({dragRow:{path:'source.gpx',kind:'track',key:'t0',group:[{path:'source.gpx',kind:'track',key:'t0'}]},dragGap:{at:()=>({row,above:false})},
   $:()=>({getBoundingClientRect:()=>({left:0,right:100})}),state:{focus:null,tracks:new Map([['source.gpx',{track:{ours:true,parts}}]])},
   api:{orderParts:async(...args)=>calls.push(plain(args))},reloadEntry:async()=>{},renderTracks(){},showMessage(){}});
  const app=source('app');vm.runInContext(app.slice(app.indexOf('const copyModifier'),app.indexOf('// markDrop')),context);

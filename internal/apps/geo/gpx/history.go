@@ -142,10 +142,7 @@ func (s *historyStore) step(path string, back bool) (bool, error) {
 	return true, restoreState(path, state)
 }
 
-// undoEdit and redoEdit answer the page's Cmd+Z and Shift+Cmd+Z for one file.
-func (a api) undoEdit(w http.ResponseWriter, r *http.Request) { a.stepEdit(w, r, true) }
-func (a api) redoEdit(w http.ResponseWriter, r *http.Request) { a.stepEdit(w, r, false) }
-
+// stepEdit answers the page's Cmd+Z (back) and Shift+Cmd+Z for one file.
 func (a api) stepEdit(w http.ResponseWriter, r *http.Request, back bool) {
 	var body struct {
 		Path string `json:"path"`

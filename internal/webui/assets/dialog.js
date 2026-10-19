@@ -91,9 +91,16 @@ export function formDialog({ title, message, fields = [], read, confirm = "OK", 
     initial.focus(); initial.select?.();
   });
 }
-export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
+// textInput is a text field that is not a login: browsers and password
+// managers do not offer to fill or save it.
+export function textInput() {
   const input = document.createElement("input");
-  input.autocomplete = "off"; input.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
+  input.autocomplete = "off";
+  input.setAttribute("data-1p-ignore", "");
+  return input;
+}
+export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
+  const input = textInput();
   input.className = "field prompt-input"; input.value = value;
   input.setAttribute("aria-label", title);
   return formDialog({ title, message, fields: [input], confirm, cancel, read: () => input.value.trim() || null });
