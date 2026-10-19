@@ -53,9 +53,10 @@ export function defaultName(piece, number, timeZone, track) {
 export class CutPanel {
   // onCuts(cuts, names) saves cuts and names; onHover(piece | null) and
   // onShow(piece) point at a segment; onWrite(request) writes or adds segments
-  // and resolves to the server's answer.
-  constructor({ root, onCuts, onHover, onShow, onWrite, onSelection = () => {} }) {
-    Object.assign(this, { root, onCuts, onHover, onShow, onWrite, onSelection });
+  // and resolves to the server's answer; onRemove(first, last) removes those
+  // points by hand, as the range tool does, and resolves to whether it did.
+  constructor({ root, onCuts, onHover, onShow, onWrite, onRemove, onSelection = () => {} }) {
+    Object.assign(this, { root, onCuts, onHover, onShow, onWrite, onRemove, onSelection });
     this.track = null;
     this.selected = new Set(); // first point index of the chosen segments
     this.addPath = "";
@@ -180,6 +181,18 @@ export class CutPanel {
     this.onCuts(cuts, this.names().filter((name) => name.start !== index));
   }
 
+  // removeSegment takes a segment's points out by hand, keeping the points it
+  // shares with its neighbours, then removes the cut before it so no stub is
+  // left; the segment before ends across a break. Undo takes it back.
+  async removeSegment(piece) {
+    const prev = this.track.cuts.includes(piece.first), next = this.track.cuts.includes(piece.last);
+    const first = prev ? piece.first + 1 : piece.first, last = next ? piece.last - 1 : piece.last;
+    // The cut goes only once the points are gone, never on its own.
+    if (first <= last && !(await this.onRemove(first, last))) return false;
+    if (prev) this.removeCut(piece.first);
+    return true;
+  }
+
   moveCut(from, to) {
     const part = this.track.parts?.find(part => part.kind === "track" && from > part.first && from < part.last);
     if (part && (to <= part.first || to >= part.last)) return;
@@ -277,6 +290,18 @@ export class CutPanel {
     distance.className = "row-distance";
     distance.textContent = format.distance(piece.distance);
     top.append(distance);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "icon-button ui-row-icon cut-remove";
+    remove.textContent = "×";
+    remove.disabled = this.track.pieces.length < 2;
+    remove.title = remove.disabled ? "The only segment is not removed" : "Remove this segment's points; undo puts them back";
+    remove.setAttribute("aria-label", "Remove this segment");
+    remove.addEventListener("click", async () => {
+      remove.disabled = true; // one removal per click, until the list is drawn again
+      if (!(await this.removeSegment(piece))) remove.disabled = false;
+    });
+    top.append(remove);
     item.append(top);
     tooltip(item, [fullName,
       piece.name && from && to ? `${from} – ${to}` : "",

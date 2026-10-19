@@ -838,7 +838,12 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   name are in the shared hover tip. Unnamed same-day segments show just their
   time span; cross-day names retain both dates. Long names use an ellipsis. A
   bar selects all or none and shows the selected count. Cut removal is in the
-  right-click menu. The inspector tab uses a plain count; repeated headings
+  right-click menu. A row's `×` removes that segment: its points are removed
+  by hand, as the range tool removes them, with a break across; a point it
+  shares with a neighbour stays with the neighbour, and the cut before it goes,
+  so the segment before ends across the break. The only segment is not
+  removed. Undo puts it back, one step for the points and one for the cut;
+  on a recording the removal is kept in the sidecar like any other. The inspector tab uses a plain count; repeated headings
   and explanatory paragraphs are replaced with hover tips. Errors stay visible.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
