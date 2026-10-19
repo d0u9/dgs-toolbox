@@ -360,13 +360,22 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	if !strings.EqualFold(filepath.Ext(path), ".gpx") {
 		return analysis{}, errNotGPX
 	}
+	// A sidecar that cannot be read does not stop the track being shown; the
+	// page says why and shows it uncleaned.
+	cleaning, found, sidecarErr := loadSidecar(path)
+	return analyseWith(path, params, cleaning, found, sidecarErr)
+}
+
+// analyseWith is analyse over a given state of what was done to the file,
+// rather than the one held for it or kept beside it.
+func analyseWith(path string, params stops.Params, cleaning sidecar.File, found bool, sidecarErr error) (analysis, error) {
+	if !strings.EqualFold(filepath.Ext(path), ".gpx") {
+		return analysis{}, errNotGPX
+	}
 	onDisk, err := openGPX(path)
 	if err != nil {
 		return analysis{}, err
 	}
-	// A sidecar that cannot be read does not stop the track being shown; the
-	// page says why and shows it uncleaned.
-	cleaning, found, sidecarErr := loadSidecar(path)
 	file, keys, layout := laid(onDisk, cleaning)
 	// The tracks added here follow the file's own, and then every track is
 	// put in the order the page gave: the points are laid in that order, so

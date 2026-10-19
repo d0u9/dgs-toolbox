@@ -13,6 +13,7 @@ import (
 	"dgs-toolbox/internal/geo/clean"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/sidecar"
+	"dgs-toolbox/internal/geo/stops"
 )
 
 // A draft is a new GPX not yet on disk: an empty file that tracks are added
@@ -159,12 +160,31 @@ func writeSidecarNow(path string, file sidecar.File) error {
 	if err != nil || !parsed.IsOurs() {
 		return sidecar.Save(path, file)
 	}
-	// A GPX dgs wrote is ours to write: what was done to its parts goes into
-	// the file itself rather than staying beside it.
+	// A GPX dgs wrote is ours to write: what was done to it goes into the file
+	// itself rather than staying beside it. Its tracks are written as the page
+	// shows them — the points cleaning kept, at their edited positions, fills
+	// included — so other programs read the same; the cleaning is then spent.
+	cleaned := file.Clean.Active() || len(file.Tracks) > 0 || len(file.Fills) > 0
+	var shown analysis
+	if cleaned {
+		if shown, err = analyseWith(path, stops.Defaults(), file, true, nil); err != nil {
+			return err
+		}
+		if shown.sidecarErr != nil {
+			return shown.sidecarErr
+		}
+	}
 	return gpxfile.Update(path, func(staged string) error {
 		remaining, err := writeParts(staged, photoDir(path), parsed, file)
 		if err != nil {
 			return err
+		}
+		if cleaned {
+			if err := replaceTracks(staged, editedTracks(shown)); err != nil {
+				return err
+			}
+			remaining.Clean, remaining.Tracks, remaining.Fills = clean.Defaults(), nil, nil
+			remaining.Segments = movedCuts(shown)
 		}
 		if !remaining.Active() {
 			return gpxfile.WriteState(staged, nil)
@@ -250,4 +270,21 @@ func (a api) discardDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	drafts.remove(body.Path)
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// replaceTracks puts tracks in place of every <trk> of a GPX dgs wrote.
+func replaceTracks(path string, tracks []gpxfile.Track) error {
+	parsed, err := gpxfile.Open(path)
+	if err != nil {
+		return err
+	}
+	for i := len(parsed.Tracks) - 1; i >= 0; i-- {
+		if err := gpxfile.RemovePart(path, gpxfile.PartTrack, i); err != nil {
+			return err
+		}
+	}
+	if len(tracks) == 0 {
+		return nil
+	}
+	return gpxfile.Append(path, tracks)
 }
