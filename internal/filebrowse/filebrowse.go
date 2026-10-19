@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"dgs-toolbox/internal/verifiedcopy"
@@ -262,13 +263,36 @@ func Rename(path, name string) (string, error) {
 	if _, err := os.Lstat(target); err == nil {
 		return "", ErrExists
 	}
-	if err := verifiedcopy.Publish(full, target); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return "", ErrExists
-		}
+	err = verifiedcopy.Publish(full, target)
+	if errors.Is(err, verifiedcopy.ErrNoExclusiveRename) {
+		err = checkThenRename(full, target)
+	}
+	if errors.Is(err, os.ErrExist) {
+		return "", ErrExists
+	}
+	if err != nil {
 		return "", err
 	}
 	return target, nil
+}
+
+// renameMu serialises checkThenRename, so renames in this process never
+// replace each other.
+var renameMu sync.Mutex
+
+// checkThenRename renames where the filesystem can refuse an existing name
+// neither on rename nor by hard link, as SMB shares often cannot. Another
+// program creating the same name between the check and the rename could
+// still be replaced.
+func checkThenRename(from, to string) error {
+	renameMu.Lock()
+	defer renameMu.Unlock()
+	if _, err := os.Lstat(to); err == nil {
+		return os.ErrExist
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(from, to)
 }
 
 // Taken says whether a folder already holds this name, so a save dialog can
