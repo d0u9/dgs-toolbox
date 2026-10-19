@@ -49,6 +49,24 @@ dgs photo import /path/to/card --dest /path/to/library --incremental=false
 dgs photo import "/path/to/SD Card" --dest "/path/to/Photo Library"
 ```
 
+A [profile](../../configuration/photo.md#import-profiles) names a source,
+destinations and settings in the configuration:
+
+```sh
+# Run the "card" profile; preview it first with --dry-run.
+dgs photo import --profile card --dry-run
+dgs photo import --profile card
+
+# Flags given as well replace the profile's values.
+dgs photo import --profile card --dest /path/to/other --workers 2
+```
+
+`--profile` alone lists the configured profiles. A source argument is not
+given with `--profile`. A profile never moves: add
+`--move` on the command line to delete sources. An extension the profile
+lists but the card lacks is reported and skipped; a typed `--ext` the card
+lacks is still refused as a likely misspelling.
+
 After taking more photos on the same card, rerun the same command. Incremental
 checks find verified existing copies even in date folders and copy new or
 changed content under the selected duplicate policy. Rerunning also resumes an
@@ -280,6 +298,17 @@ Photo Import uses a directory-only Setup screen. Scanning those directories open
                                                                    › Parameters
 ```
 
+With profiles configured, a **Profiles** fieldset stands above Directories,
+listing each profile — its name, source and destinations — and then *Manual*.
+Setup opens on the first profile. `↑`/`↓` choose one, and Directories shows its
+paths as the cursor moves; `Enter` or `n` scans at once. On Parameters the
+profile's extensions, duplicates, parallelism and incremental setting are
+preset and can still be changed; its `organize` presets the Post-processing
+choice. A profile whose source or a destination does not exist is dimmed with
+the missing path named and does not scan. `Tab` moves into Directories;
+changing a path there turns the choice into *Manual*. Without profiles,
+Setup is as below. Nothing chosen in the workspace is written back.
+
 The current composition is specific to Photo Import:
 
 - Source and Destination occupy separate rows on the first screen. Their shared fieldset is compact, adds one row of internal vertical padding, and the complete Setup composition is vertically centered above the bottom actions.
@@ -356,6 +385,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
 - Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. A name whose metadata cannot be read — a path component that is a file, a folder without permission, a name made too long by its `-N` suffix — fails that file instead of counting as taken, and the search for a free name is bounded. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
 - Parallelism: positive worker count controlling concurrent file transfers; default `1` for predictable removable-media I/O and bounded resource use.
+- Check-rename (SMB): off by default; on, every destination may be published by checking then renaming where it cannot refuse an existing name, holding `_dgs-lock` while Processing and organization run (see the verified-transfer algorithm). A profile's `allow_check_rename` presets it. While on, the status reads `CHECK-RENAME`.
 - `Next → Processing`: starts the selected transfers. Replace remains unavailable until its backup and rollback contract is implemented; the screen reports this without starting file operations.
 
 ## Processing screen
@@ -366,7 +396,7 @@ Each whole-file worker uses the same row formatter and progress-bar style as the
 
 The aggregate progress bar uses the same cell pattern as the CLI and reserves a fixed right-hand status segment such as `33% │ 4/12 files`. Calculate the bar width from the remaining cells after that segment so the counts remain visible. Like the CLI, aggregate progress counts files whose outcomes are final in every destination; the separate verified count excludes failed or skipped files.
 
-Processing supports 1–8 workers (`importer.MaxWorkers`) and defaults to 1. Each worker handles a different whole file and reports real engine events. It writes same-directory `.dgs-part` files and persists `.dgs-state` when the batch starts and when it ends; while it runs, pending changes are written within two seconds, even while a file is paused. `p` pauses or resumes I/O between bounded chunks. During active Processing, every key that could leave work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. Opening the confirmation pauses I/O; choosing No resumes it unless it was already paused. Choosing Yes cancels the batch and waits for workers to stop before navigation or exit. Returning to Parameters re-reads both roots: a Move has removed sources, and every run adds destination files. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
+Processing supports 1–8 workers (`importer.MaxWorkers`) and defaults to 1. Each worker handles a different whole file and reports real engine events. It writes same-directory `.dgs-part` files and persists the state file (`_dgs-state` by default) when the batch starts and when it ends; while it runs, pending changes are written within two seconds, even while a file is paused. `p` pauses or resumes I/O between bounded chunks. During active Processing, every key that could leave work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. Opening the confirmation pauses I/O; choosing No resumes it unless it was already paused. Choosing Yes cancels the batch and waits for workers to stop before navigation or exit. Returning to Parameters re-reads both roots: a Move has removed sources, and every run adds destination files. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
 
 Photo Import status uses the shared three-part bar as follows: the left chip identifies `SCAN · READING`, `PROCESSING · RUNNING`, `PROCESSING · PAUSED`, `PROCESSING · COMPLETE`, or confirmation state; the center keeps the workflow track; and the right side contains only context-valid controls. A paused import replaces `p Pause` with `p Resume`; a completed import no longer advertises pause.
 
@@ -430,7 +460,7 @@ Result uses a landscape summary rather than another progress surface:
 │ ✓ Published after verify │ │                                              │
 ╰──────────────────────────╯ │                                              │
 ╭─ State file ─────────────╮ │                                              │
-│ › [x] Delete .dgs-state  │ │                                              │
+│ › [x] Delete _dgs-state  │ │                                              │
 ╰──────────────────────────╯ ╰──────────────────────────────────────────────╯
 
   ↻ Again  r      Quit  q
@@ -439,7 +469,7 @@ Result uses a landscape summary rather than another progress surface:
 
 The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination, reports the total bytes successfully verified and published, and summarizes whether Post-processing was skipped or how many files were organized, skipped, and failed. Already-present, transfer-skipped and transfer-failed files do not contribute to the published byte count. Results separate verified existing copies from conflict skips and new publications, and show the actual matching destination path. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence, post-processing outcome, and the final state-file decision. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list; organized rows include their `YYYYMMDD` directory. Do not mix cleanup controls into the verification summary.
 
-Delete state is selected by default, matching the confirmed lifecycle decision. Its filename is configured by the global configuration key `photo.import.state_file` and defaults to `.dgs-state`. The value must be a hidden filename starting with `.` rather than a path or an ordinary photo name. Existing contents that cannot be read as supported dgs state are preserved and reported, never replaced. Initial state creation is exclusive; replacing recognized state rechecks its file version before the atomic rename. The file lives directly inside that root as `<Destination>/<state_file>`; it is not stored in Source or in a global application-data directory. Result renders the configured filename in its cleanup control and confirmation copy. The explanatory copy makes retaining it an audit or diagnostic choice. When deletion is selected, leaving Result through Again or a confirmed exit—including Esc, `q`, Ctrl+C, and the Quit action—must remove the state file before navigation or process termination. If removal fails, remain on Result and report the error rather than silently exiting. When deletion is not selected, every exit path retains the file. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
+Delete state is selected by default, matching the confirmed lifecycle decision. Its filename is configured by the global configuration key `photo.import.state_file` and defaults to `_dgs-state`. The value must be a filename starting with `.` or `_` rather than a path or an ordinary photo name; `_dgs-state` and the earlier default `.dgs-state` are recognized as state whatever is configured. Existing contents that cannot be read as supported dgs state are preserved and reported, never replaced. Initial state creation is exclusive; replacing recognized state rechecks its file version before the atomic rename. The file lives directly inside that root as `<Destination>/<state_file>`; it is not stored in Source or in a global application-data directory. Result renders the configured filename in its cleanup control and confirmation copy. The explanatory copy makes retaining it an audit or diagnostic choice. When deletion is selected, leaving Result through Again or a confirmed exit—including Esc, `q`, Ctrl+C, and the Quit action—must remove the state file before navigation or process termination. If removal fails, remain on Result and report the error rather than silently exiting. When deletion is not selected, every exit path retains the file. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
 
 Result is terminal: it does not navigate back to Processing. `r` or the Again action starts a fresh Photo Import at Directories while retaining the last Source and Destination paths for convenient review or adjustment. Esc, `q`, Ctrl+C, or the Quit action opens the shared Quit confirmation; none exits immediately. Esc never returns to the previous workflow page.
 
@@ -455,7 +485,7 @@ For each file:
 4. Read the temporary file sequentially and compute the Destination SHA-256 digest. The readback handle must be the same file that was written; a temporary name that has come to denote another file fails the copy. This second destination read is required by the integrity contract and is not considered redundant scanning. An error closing this read-only handle after a complete read is not a failure: the digest is already of every byte, and nothing is pending on the handle. macOS SMB mounts report `EBADF` there.
 5. Compare size and digest. On mismatch, keep the final filename absent and report a hard verification failure. A later retry restarts this individual file from byte zero.
 6. On a match, apply the Source modification time and permission `0644` to the still-unpublished temporary file and sync its metadata. The unpublished copy is owner-only; a library on a NAS is read by more than its owner. Destination filesystems may reduce timestamp precision. Access time is not treated as durable photo metadata because reading Source changes it on many systems.
-7. Confirm the temporary name still denotes the written file, then rename it atomically to the final filename without ever replacing an existing file: `renamex_np(RENAME_EXCL)` on macOS, `renameat2(RENAME_NOREPLACE)` on Linux, a hard link where neither is available, and fail safely if neither operation is supported. Never fall back to check-then-rename. Sync the containing directory where supported before reporting success. Every created directory also requires its parent entry to be synced; a retry repeats that sync for existing path components, so an earlier failed sync cannot be bypassed. The presence of the correct final extension means verification and metadata application succeeded at publication time.
+7. Confirm the temporary name still denotes the written file, then rename it atomically to the final filename without ever replacing an existing file: `renamex_np(RENAME_EXCL)` on macOS, `renameat2(RENAME_NOREPLACE)` on Linux, a hard link where neither is available, and fail safely if neither operation is supported (an SMB mount on macOS supports neither). Fall back to check-then-rename only for a destination the user opted in with `--allow-check-rename`, a profile's `allow_check_rename`, or the workspace's *Check-rename (SMB)* parameter: Import first creates `_dgs-lock` in that destination exclusively, so two imports never publish into it at once, and removes it when Import and organization end or the workspace returns to Setup. The lock names its host and process: one left by a process of this host that is no longer running is taken over; any other, including one from another machine sharing the NAS, is reported for the user to remove. An existing final name is still refused, but a file another program writes to the same name between the check and the rename can be replaced, which the CLI states as a warning; in the workspace it is the *Check-rename (SMB)* parameter, and the status reads `CHECK-RENAME` while it is on. Other destinations never fall back. Sync the containing directory where supported before reporting success. Every created directory also requires its parent entry to be synced; a retry repeats that sync for existing path components, so an earlier failed sync cannot be bypassed. The presence of the correct final extension means verification and metadata application succeeded at publication time.
 8. For Move, delete that individual Source file immediately after its verified destination has been published successfully, and only while it is still the file that was read: same file identity, size and modification time. A failure processing another file does not roll back already verified and moved files. A Source that cannot be deleted — a write-protected card — or that changed after it was read is kept, and the file is reported `source kept`: the photo is imported, counted as published and offered to Post-processing; only the move is unfinished.
 
 Normal successful operation therefore has the minimum strict-verification I/O profile: one sequential Source read, one Destination write, and one sequential Destination verification read. With several destinations the one Source read feeds every Destination write; each Destination still has its own write and verification read. Hashing is performed during those required streams. Directory inventory must not reread complete file contents.

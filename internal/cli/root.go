@@ -126,7 +126,15 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 			Long:  action.Help,
 			Args:  actionArgs(action),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				flags := make(map[string]string, len(action.Flags))
+				flags := make(map[string]string, len(action.Flags)+1)
+				var givenNames []string
+				for _, flag := range action.Flags {
+					if cmd.Flags().Changed(flag.Name) {
+						givenNames = append(givenNames, flag.Name)
+					}
+				}
+				encodedGiven, _ := json.Marshal(givenNames)
+				flags[tui.GivenFlags] = string(encodedGiven)
 				for _, flag := range action.Flags {
 					if flag.Repeatable {
 						values, err := cmd.Flags().GetStringArray(flag.Name)
@@ -159,6 +167,7 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 				sub.Flags().BoolP(flag.Name, flag.Shorthand, flag.Default == "true", flag.Usage)
 			} else {
 				sub.Flags().StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
+				sub.Flags().Lookup(flag.Name).NoOptDefVal = flag.Bare
 			}
 		}
 		// An action may share a workspace's name: positional arguments run

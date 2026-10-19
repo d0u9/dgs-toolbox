@@ -13,6 +13,9 @@ const importHelp = `Examples:
   # Preview selected files and destination inventories without changing files.
   dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --dry-run
 
+  # Run a profile from photo/config.json: its source, destinations and settings.
+  dgs photo import --profile card
+
   # Organize JPG/RAW by capture date in every destination.
   dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --organize
 

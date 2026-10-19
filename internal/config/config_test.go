@@ -33,7 +33,7 @@ func TestPartialConfigOnlyOverridesNamedMetrics(t *testing.T) {
 }
 
 func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
-	if got := (Config{}).PhotoImportStateFile(); got != ".dgs-state" {
+	if got := (Config{}).PhotoImportStateFile(); got != "_dgs-state" {
 		t.Fatalf("default state file = %q", got)
 	}
 	loaded, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":".photo-import-state"}}}`))
@@ -43,10 +43,13 @@ func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
 	if got := loaded.PhotoImportStateFile(); got != ".photo-import-state" {
 		t.Fatalf("configured state file = %q", got)
 	}
+	if _, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":"_photo-state"}}}`)); err != nil {
+		t.Fatalf("a name starting with _ refused: %v", err)
+	}
 }
 
 func TestPhotoImportStateFileRejectsPaths(t *testing.T) {
-	for _, name := range []string{"nested/state", "old.JPG", "state.json", ".", ".."} {
+	for _, name := range []string{"nested/state", "old.JPG", "state.json", ".", "..", "_", "_x/y", "00-DGS-state"} {
 		if _, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":"`+name+`"}}}`)); err == nil {
 			t.Fatalf("unsafe state filename accepted: %q", name)
 		}
@@ -181,7 +184,7 @@ func TestExportDefaultWritesEveryPartWithoutOverwrite(t *testing.T) {
 	if !visibility.Disk || !visibility.Network || !visibility.CPU || !visibility.Time {
 		t.Fatalf("visibility = %#v", visibility)
 	}
-	if loaded.PhotoImportStateFile() != ".dgs-state" {
+	if loaded.PhotoImportStateFile() != "_dgs-state" {
 		t.Fatalf("exported state file = %q", loaded.PhotoImportStateFile())
 	}
 	if _, err := os.Stat(filepath.Join(dir, "box")); !os.IsNotExist(err) {
@@ -419,5 +422,27 @@ func TestRemovedBoxConfigIsIgnored(t *testing.T) {
 	}
 	if loaded.Conf.Root != "/synthetic/generator" {
 		t.Fatalf("conf root = %q", loaded.Conf.Root)
+	}
+}
+
+func TestPhotoImportProfilesAreChecked(t *testing.T) {
+	valid := PhotoImportProfile{Source: "/card", Dest: []string{"/library"}}
+	for name, profile := range map[string]PhotoImportProfile{
+		"bad name":   valid,
+		"no-source":  {Dest: []string{"/library"}},
+		"no-dest":    {Source: "/card"},
+		"duplicates": {Source: "/card", Dest: []string{"/library"}, Duplicates: "replace"},
+		"workers":    {Source: "/card", Dest: []string{"/library"}, Workers: 9},
+	} {
+		c := Default()
+		c.Photo.Import.Profiles = map[string]PhotoImportProfile{name: profile}
+		if err := checkPhoto(&c); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	c := Default()
+	c.Photo.Import.Profiles = map[string]PhotoImportProfile{"card_1": valid}
+	if err := checkPhoto(&c); err != nil {
+		t.Fatal(err)
 	}
 }

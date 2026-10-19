@@ -104,7 +104,8 @@ func ValidateRoots(source, destination string) error {
 // IsImportArtifact identifies engine-owned bookkeeping and unpublished files.
 // It does not exclude arbitrary dotfiles or folders.
 func IsImportArtifact(name, stateName string) bool {
-	return name == stateName || name == ".dgs-state" ||
+	// The default name, and ".dgs-state" from before it, are always state.
+	return name == stateName || name == "_dgs-state" || name == ".dgs-state" || name == verifiedcopy.LockName ||
 		(strings.HasPrefix(name, ".") && strings.HasSuffix(name, verifiedcopy.PartSuffix)) ||
 		((strings.HasPrefix(name, "."+stateName+".") || strings.HasPrefix(name, "..dgs-state.")) && strings.HasSuffix(name, ".tmp"))
 }
@@ -157,7 +158,7 @@ func newContentIndex(ctx context.Context, plan Plan, prior State, events chan<- 
 	}
 	stateName := filepath.Base(plan.StatePath)
 	if plan.StatePath == "" {
-		stateName = ".dgs-state"
+		stateName = "_dgs-state"
 	}
 	// Walk the resolved root so choosing a root symlink works, but never follow
 	// a link below it. Snapshot membership never grows with this run's writes.

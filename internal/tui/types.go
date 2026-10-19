@@ -124,6 +124,10 @@ type Action struct {
 }
 
 // ActionFlag is an option of an Action. Bool flags take no value.
+// GivenFlags is the key, in the flags an Action receives, holding a JSON array
+// of the flag names given on the command line; the others hold defaults.
+const GivenFlags = "-given"
+
 type ActionFlag struct {
 	Name      string
 	Shorthand string
@@ -133,6 +137,10 @@ type ActionFlag struct {
 	// JSON array string so each occurrence remains distinct and ordered.
 	Repeatable bool
 	Default    string
+	// Bare is the value a string flag takes when given without one, so
+	// "--profile" alone can list the choices; the next word is then an
+	// argument, not the flag's value.
+	Bare string
 }
 
 // App describes a command domain and its leaf commands.

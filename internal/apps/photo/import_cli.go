@@ -6,17 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"dgs-toolbox/internal/apps/photo/importer"
 	"dgs-toolbox/internal/apps/photo/postprocess"
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
@@ -34,6 +38,23 @@ func importDirectories(_ io.Reader, out io.Writer, args []string, flags map[stri
 }
 
 func importDirectoriesContext(ctx context.Context, out io.Writer, args []string, flags map[string]string, global config.Config) error {
+	if flags["profile"] == listProfiles {
+		// "--profile card" reads card as an argument; alone it lists them.
+		if len(args) != 1 {
+			return printProfiles(out, global)
+		}
+		flags = maps.Clone(flags)
+		flags["profile"], args = args[0], nil
+	}
+	// A profile names the extensions a camera may write; a card without one
+	// of them is not a misspelling, unlike a typed --ext.
+	var givenNames []string
+	_ = json.Unmarshal([]byte(flags[tui.GivenFlags]), &givenNames)
+	extFromProfile := flags["profile"] != "" && !slices.Contains(givenNames, "ext")
+	args, flags, err := withImportProfile(args, flags, global)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return errors.New("one source directory is required")
 	}
@@ -105,7 +126,9 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 	}
 	// A misspelt extension must not read as a successful, empty import.
 	for _, extension := range order {
-		if !matched[extension] {
+		if !matched[extension] && extFromProfile {
+			fmt.Fprintf(out, "No %s files in %s\n", extension, source)
+		} else if !matched[extension] {
 			return fmt.Errorf("no file in %s has extension %s", source, extension)
 		}
 	}
@@ -157,6 +180,13 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 	operation := importer.Copy
 	if flags["move"] == "true" {
 		operation = importer.Move
+	}
+	if flags["allow-check-rename"] == "true" {
+		release, err := allowCheckRename(out, targets)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	fmt.Fprintf(out, "Importing %d files into %d destinations (%s)\n", len(files), len(targets), operation)
 	display := newImportProgress(out, len(targets), len(files), workers)
@@ -251,7 +281,15 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 		return err
 	}
 	if unfinished > 0 {
-		return errors.New("import incomplete; successful copies and destination state files were retained")
+		// The last line must not read as success: say it failed, and how much.
+		verdict := fmt.Sprintf("IMPORT INCOMPLETE: %d of %d files are not in every destination", len(files)-present, len(files))
+		if present == len(files) {
+			// Every copy is there; organizing, a Move or the state file failed.
+			verdict = "IMPORT INCOMPLETE: every file was copied, but a later step failed"
+		} else if present == 0 {
+			verdict = fmt.Sprintf("IMPORT FAILED: none of %d files was imported", len(files))
+		}
+		return fmt.Errorf("%s; see the failed lines above. Copies that did finish are kept, so rerunning imports only the rest", verdict)
 	}
 	if flags["delete-state"] == "true" {
 		// Inspect every target before removing any resume bookkeeping.
@@ -348,4 +386,92 @@ func organizeImportTarget(ctx context.Context, out io.Writer, source, root, stat
 		failed++
 	}
 	return failed
+}
+
+// allowCheckRename opts the destinations into check-then-rename publication,
+// for filesystems such as SMB that have neither exclusive rename nor hard
+// links, and holds each one's lock until release.
+func allowCheckRename(out io.Writer, targets []string) (func(), error) {
+	var releases []func()
+	release := func() {
+		for _, one := range releases {
+			one()
+		}
+	}
+	for _, target := range targets {
+		one, err := verifiedcopy.AllowCheckRename(target)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		releases = append(releases, one)
+	}
+	fmt.Fprintln(out, "Warning: where a destination cannot refuse an existing name, a file another program writes to the same name at the same moment can be replaced.")
+	return release, nil
+}
+
+// listProfiles is --profile given without a name.
+const listProfiles = "\x00list"
+
+// printProfiles lists the configured profiles, one per line.
+func printProfiles(out io.Writer, global config.Config) error {
+	names := global.PhotoImportProfileNames()
+	if len(names) == 0 {
+		return errors.New("no import profile is configured; add import.profiles to photo/config.json")
+	}
+	fmt.Fprintln(out, "Import profiles (dgs photo import --profile <name>):")
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, name := range names {
+		profile := global.Photo.Import.Profiles[name]
+		fmt.Fprintf(table, "  %s\t%s → %s\n", name, profile.Source, strings.Join(profile.Dest, ", "))
+	}
+	return table.Flush()
+}
+
+// withImportProfile fills the flags of a --profile run from the configured
+// profile. A flag given on the command line keeps its value; --dest given
+// replaces the profile's list. A profile never moves.
+func withImportProfile(args []string, flags map[string]string, global config.Config) ([]string, map[string]string, error) {
+	name := flags["profile"]
+	if name == "" {
+		return args, flags, nil
+	}
+	profile, ok := global.Photo.Import.Profiles[name]
+	if !ok {
+		names := global.PhotoImportProfileNames()
+		if len(names) == 0 {
+			return nil, nil, fmt.Errorf("no import profile %q: none is configured in photo/config.json", name)
+		}
+		return nil, nil, fmt.Errorf("no import profile %q; configured: %s", name, strings.Join(names, ", "))
+	}
+	if len(args) > 0 {
+		return nil, nil, errors.New("a source argument is not given with --profile; the profile names it")
+	}
+	var givenNames []string
+	_ = json.Unmarshal([]byte(flags[tui.GivenFlags]), &givenNames)
+	given := func(flag string) bool { return slices.Contains(givenNames, flag) }
+	merged := maps.Clone(flags)
+	set := func(flag, value string) {
+		if !given(flag) {
+			merged[flag] = value
+		}
+	}
+	list := func(values []string) string {
+		encoded, _ := json.Marshal(append([]string{}, values...))
+		return string(encoded)
+	}
+	set("dest", list(profile.Dest))
+	set("ext", list(profile.Ext))
+	if profile.Duplicates != "" {
+		set("duplicates", profile.Duplicates)
+	}
+	if profile.Workers > 0 {
+		set("workers", strconv.Itoa(profile.Workers))
+	}
+	if profile.Incremental != nil {
+		set("incremental", strconv.FormatBool(*profile.Incremental))
+	}
+	set("organize", strconv.FormatBool(profile.Organize))
+	set("allow-check-rename", strconv.FormatBool(profile.AllowCheckRename))
+	return []string{profile.Source}, merged, nil
 }

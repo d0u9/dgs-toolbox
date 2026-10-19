@@ -10,10 +10,10 @@ from both locations. Same-name files with different bytes follow the selected
 conflict policy; a conflict Skip is not proof of a backup.
 
 State is whole-file recovery bookkeeping, not a permanent import catalogue.
-Its configured name must start with `.`; keep `.dgs-state` unless a different
-hidden state filename is needed. Unrecognized existing contents are preserved
+Its configured name must start with `.` or `_`; keep `_dgs-state` unless a
+different state filename is needed. Unrecognized existing contents are preserved
 and reported as a state error; content checks still run.
-Deleting `.dgs-state` does not lose incremental matching. Existing matches stay
+Deleting `_dgs-state` does not lose incremental matching. Existing matches stay
 where they are; optional date organization moves newly published photos and
 verified old copies that still mirror their Source folders.
 Incremental is a session checkbox, so there is no additional JSON key here.
@@ -35,5 +35,8 @@ copy passes fresh checks. Partial failures retain successful copies and state,
 keep affected Move sources, and return a nonzero status.
 
 A destination must support exclusive rename or hard links for safe publication;
-otherwise import fails and keeps Source. Directory-sync failures also prevent
+otherwise import fails and keeps Source. An SMB mount supports neither:
+`--allow-check-rename` (or `allow_check_rename` in a profile) imports there by
+checking then renaming, holding `_dgs-lock` in the destination meanwhile; a
+file another program writes to the same name at that moment can be replaced. Directory-sync failures also prevent
 new copies from authorizing source deletion.

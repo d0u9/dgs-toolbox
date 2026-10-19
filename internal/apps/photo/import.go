@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"dgs-toolbox/internal/apps/photo/importer"
 	"dgs-toolbox/internal/apps/photo/postprocess"
 	"dgs-toolbox/internal/apps/photo/skipdirs"
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/contextmenu"
@@ -49,10 +51,11 @@ const (
 	duplicatesID  = "duplicates"
 	parallelID    = "parallelism"
 	deleteStateID = "delete-state"
+	checkRenameID = "check-rename"
 )
 
 var (
-	parameterIDs = []string{operationID, incrementalID, extensionsID, duplicatesID, parallelID}
+	parameterIDs = []string{operationID, incrementalID, extensionsID, duplicatesID, parallelID, checkRenameID}
 )
 
 const (
@@ -276,10 +279,17 @@ type importModel struct {
 	transferUpdates      <-chan tea.Msg
 	pendingExit          bool
 	pendingReturn        bool
+	profileNames         []string // the configured profiles, in name order
+	profiles             map[string]config.PhotoImportProfile
+	profileIndex         int    // the profile under the cursor; len(profileNames) is Manual
+	profileFocus         bool   // Setup's cursor is in Profiles
+	activeProfile        string // the profile the scan ran with, "" for Manual
+	releaseCheckRename   func() // set while the profile's destinations are opted in and locked
+	profileMissing       map[string]string // per profile, a directory not there when last checked
 }
 
 func newImportModel() tui.CommandModel {
-	return newImportModelWithStateFile(".dgs-state")
+	return newImportModelWithStateFile("_dgs-state")
 }
 
 func newImportModelWithStateFile(stateFilename string) tui.CommandModel {
@@ -314,6 +324,8 @@ func newImportModelWithSettings(stateFilename, source string, destinations ...st
 			form.Field{ID: extensionsID, Kind: form.MultiCheckbox, Label: "Extensions", SelectAll: true},
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
 			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: importer.MaxWorkers, Step: 1},
+			// For SMB and other mounts that cannot refuse an existing name.
+			form.Field{ID: checkRenameID, Kind: form.Checkbox, Label: "Check-rename (SMB)"},
 			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete " + stateFilename, Checked: true},
 		),
 		parameterFields: datafield.New(
@@ -375,7 +387,7 @@ func waitTransferUpdate(updates <-chan tea.Msg) tea.Cmd {
 
 func scanDirectories(paths [pathFieldCount]string, stateFilenames ...string) scanSummary {
 	var summary scanSummary
-	stateName := ".dgs-state"
+	stateName := "_dgs-state"
 	if len(stateFilenames) > 0 {
 		stateName = stateFilenames[0]
 	}
@@ -599,6 +611,7 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scan = m.targetScans[m.selectedTarget]
 		}
 		m.configureExtensions()
+		m.applyProfileParameters()
 		m.syncResultLists()
 		m.progress = 1
 		m.stage = parameterStage
@@ -841,9 +854,20 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
 	pathHeight := lipgloss.Height(m.controls.View(m.directoryPathIDs()))
-	contentHeight := 11 + pathHeight
+	profileHeight := 0
+	if len(m.profileNames) > 0 {
+		profileHeight = lipgloss.Height(fieldset.View("Profiles", m.profilesView(contentWidth-4), contentWidth))
+	}
+	contentHeight := 11 + pathHeight + profileHeight
 	topPadding := max(0, (max(1, m.height-4)-contentHeight)/2)
 	left := max(0, (m.width-contentWidth)/2)
+	// A profile row: the fieldset's border and blank line come first.
+	if row := y - topPadding - 5 - 2; profileHeight > 0 && row >= 0 && row <= len(m.profileNames) {
+		m.profileFocus = true
+		m.chooseProfile(row)
+		return m, nil
+	}
+	topPadding += profileHeight
 	if id, ok := m.controls.Click(m.directoryPathIDs(), x-left-2, y-topPadding-7); ok {
 		if id == sourceID {
 			return m.openPicker(sourceField)
@@ -1096,6 +1120,7 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.stage == parameterStage && key == "esc" {
+		m.endCheckRename()
 		m.stage = setupStage
 		m.controls.SetFocusID(destinationID)
 		return m, nil
@@ -1139,6 +1164,11 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.selectTarget((m.selectedTarget + delta + len(m.destinationRoots())) % len(m.destinationRoots()))
 		return m, nil
+	}
+	if m.stage == setupStage {
+		if next, cmd, ok := m.updateProfileKey(key); ok {
+			return next, cmd
+		}
 	}
 	controlsActive := m.stage == setupStage || m.parameterFields.Current() == "parameters"
 	if controlsActive && m.controls.HandleInteraction(key) {
@@ -1450,6 +1480,18 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 		m.actionNotice = err.Error()
 		return m, nil
 	}
+	if m.controls.Checked(checkRenameID) && m.releaseCheckRename == nil {
+		roots := make([]string, 0, len(m.destinationRoots()))
+		for _, root := range m.destinationRoots() {
+			roots = append(roots, expandHome(root))
+		}
+		release, err := allowCheckRename(io.Discard, roots)
+		if err != nil {
+			m.actionNotice = err.Error()
+			return m, nil
+		}
+		m.releaseCheckRename = release
+	}
 	if len(m.extraDestinations) > 0 {
 		return m.startMultipleProcessing()
 	}
@@ -1511,6 +1553,9 @@ func (m importModel) startPostProcessing() (tea.Model, tea.Cmd) {
 	m.stage = postprocessStage
 	m.postprocessPrompt = true
 	m.postprocessDialog = confirm.New(confirm.Config{Title: "ORGANIZE BY CAPTURE DATE?", Message: "Move imported JPG and RAW files into YYYYMMDD folders?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Organize", CancelLabel: "Skip"})
+	if profile, ok := m.profile(); ok && profile.Organize {
+		m.postprocessDialog = m.postprocessDialog.ConfirmChosen()
+	}
 	return m, nil
 }
 
@@ -1566,7 +1611,17 @@ func unorganized(sourceRoot, destinationRoot string, result importer.FileResult)
 
 // Close stops reading for a pending organize step when the shell leaves this
 // command. A transfer still running is cancelled the same way.
+// endCheckRename releases the destinations' locks once nothing more is
+// published into them: at Result, back at Parameters, or on close.
+func (m *importModel) endCheckRename() {
+	if m.releaseCheckRename != nil {
+		m.releaseCheckRename()
+		m.releaseCheckRename = nil
+	}
+}
+
 func (m importModel) Close() {
+	m.endCheckRename()
 	if m.postprocessCancel != nil {
 		m.postprocessCancel()
 	}
@@ -1597,6 +1652,7 @@ func (m importModel) applyPostProcessing(plan postprocess.Plan) (tea.Model, tea.
 }
 
 func (m *importModel) openResult() {
+	m.endCheckRename()
 	if len(m.extraDestinations) > 0 {
 		m.openMultipleResult()
 		return
@@ -1783,6 +1839,7 @@ func (m importModel) batchFinished() bool {
 }
 
 func (m importModel) startScan() (tea.Model, tea.Cmd) {
+	m.activeProfile = m.matchingProfile()
 	m.stage = scanStage
 	m.refreshing = false
 	m.scanGeneration++
@@ -1795,6 +1852,7 @@ func (m importModel) startScan() (tea.Model, tea.Cmd) {
 // roots: a Move has removed sources and every run adds destination files, so
 // the earlier inventory no longer describes either folder.
 func (m importModel) returnToParameters() (tea.Model, tea.Cmd) {
+	m.endCheckRename()
 	m.stage = parameterStage
 	m.refreshing = false
 	return m.refreshScan()
@@ -2446,21 +2504,23 @@ func (m importModel) pickerView() string {
 
 func (m importModel) setupView() string {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
+	heading := "Choose directories"
+	if len(m.profileNames) > 0 {
+		heading = "Choose a profile or directories"
+	}
 	header := lipgloss.JoinVertical(
 		lipgloss.Left,
 		importStepStyle.Render("SETUP  ·  PHOTO IMPORT"),
-		importHeadingStyle.Render("Choose directories"),
+		importHeadingStyle.Render(heading),
 		importNoteStyle.Render("Select the source and destinations below. Each destination receives a complete copy."),
 	)
 	buttons, _, _ := m.directoryButtons(contentWidth - 4)
 	directoryControls := "\n" + m.controls.View(m.directoryPathIDs()) + "\n\n" + buttons + "\n"
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		"",
-		"",
-		fieldset.View("Directories", directoryControls, contentWidth),
-	)
+	parts := []string{header, "", ""}
+	if len(m.profileNames) > 0 {
+		parts = append(parts, fieldset.View("Profiles", m.profilesView(contentWidth-4), contentWidth))
+	}
+	content := lipgloss.JoinVertical(lipgloss.Left, append(parts, fieldset.View("Directories", directoryControls, contentWidth))...)
 	availableHeight := max(1, m.height-4)
 	if lipgloss.Height(content) > availableHeight {
 		content = importNoteStyle.Render(fmt.Sprintf("Use at least %d workspace rows for the directory controls.", lipgloss.Height(content)+4))
@@ -2744,12 +2804,21 @@ func (m importModel) Status() tui.Status {
 	}
 	if m.stage == parameterStage {
 		left, right := "PARAMETERS", "n Next  r Refresh  [/] Dest  space Preview  alt+hjkl Focus  esc Back"
+		if m.activeProfile != "" {
+			left += " · " + m.activeProfile
+		}
+		if m.controls.Checked(checkRenameID) {
+			left += " · CHECK-RENAME"
+		}
 		if m.refreshing {
 			left = "PARAMETERS · REFRESHING"
 		} else if m.actionNotice != "" {
 			right = m.actionNotice
 		}
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
+	}
+	if m.stage == setupStage && m.profileFocus {
+		return m.withWorkflow(tui.Status{Left: "READY · PROFILE", Right: "↑↓ Profile  ↵ Scan  tab Directories  ? Help"})
 	}
 	return m.withWorkflow(tui.Status{
 		Left:  "READY",

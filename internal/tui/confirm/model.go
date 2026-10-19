@@ -53,6 +53,13 @@ func New(config Config) Model {
 	return Model{config: config, cancelChosen: true}
 }
 
+// ConfirmChosen starts the dialog on the affirmative action, for a choice the
+// user already made elsewhere; Esc still cancels.
+func (m Model) ConfirmChosen() Model {
+	m.cancelChosen = false
+	return m
+}
+
 // Update accepts conventional confirmation keys. Esc always selects the safe
 // cancellation outcome, even if the affirmative button currently has focus.
 func (m Model) Update(key string) (Model, Decision) {

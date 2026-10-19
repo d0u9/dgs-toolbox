@@ -247,7 +247,7 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{incrementalID, extensionsID, duplicatesID, parallelID, operationID}
+	want := []string{incrementalID, extensionsID, duplicatesID, parallelID, checkRenameID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)
@@ -374,7 +374,7 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 		t.Fatalf("result stage=%v delete-state=%v", model.stage, model.controls.Checked(deleteStateID))
 	}
 	view := model.View()
-	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "TRANSFER COMPLETE", "Source", "Destination", "Published 6.0 KB", "Again", "Quit"} {
+	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete _dgs-state", "TRANSFER COMPLETE", "Source", "Destination", "Published 6.0 KB", "Again", "Quit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("result view missing %q:\n%s", want, view)
 		}
