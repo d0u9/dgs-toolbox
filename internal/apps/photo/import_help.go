@@ -13,6 +13,9 @@ const importHelp = `Examples:
   # Preview selected files and destination inventories without changing files.
   dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --dry-run
 
+  # Only shots taken from 1 to 18 October (also -YYYYMMDD and YYYYMMDD-).
+  dgs photo import /path/to/card --dest /path/to/library --range 20261001-20261018
+
   # Run a profile from photo/config.json: its source, destinations and settings.
   dgs photo import --profile card
 

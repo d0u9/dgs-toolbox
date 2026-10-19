@@ -247,7 +247,7 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{incrementalID, extensionsID, duplicatesID, parallelID, checkRenameID, operationID}
+	want := []string{incrementalID, extensionsID, rangeID, duplicatesID, parallelID, checkRenameID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)

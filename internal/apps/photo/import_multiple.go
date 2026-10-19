@@ -173,6 +173,8 @@ func (m importModel) scanAllTargetsCmd(generation int) tea.Cmd {
 	source, state := m.paths[sourceField], m.stateFilename
 	return func() tea.Msg {
 		src := scanSource(expandHome(source))
+		// Read once while scanning, so Range filters at once as it is typed.
+		src.days = captureDays(expandHome(source), src.source)
 		scans := make([]scanSummary, len(roots))
 		for i, root := range roots {
 			scans[i] = src

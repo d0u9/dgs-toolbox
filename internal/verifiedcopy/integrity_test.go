@@ -100,7 +100,7 @@ func TestAllowCheckRenameLocksTheRootAndNeverReplaces(t *testing.T) {
 	}
 	partial := write("partial", "photo A")
 	final := filepath.Join(root, "20261015", "a.JPG")
-	if err := publish(partial, final, unsupportedOp, unsupportedOp); !errors.Is(err, errNoExclusiveRename) {
+	if err := publish(partial, final, unsupportedOp, unsupportedOp); !errors.Is(err, ErrNoExclusiveRename) {
 		t.Fatalf("not opted in: %v", err)
 	}
 	release, err := AllowCheckRename(root)
@@ -129,14 +129,14 @@ func TestAllowCheckRenameLocksTheRootAndNeverReplaces(t *testing.T) {
 	}
 	// Outside the root, and after release, the fallback is refused again.
 	outside := filepath.Join(t.TempDir(), "b.JPG")
-	if err := publish(other, outside, unsupportedOp, unsupportedOp); !errors.Is(err, errNoExclusiveRename) {
+	if err := publish(other, outside, unsupportedOp, unsupportedOp); !errors.Is(err, ErrNoExclusiveRename) {
 		t.Fatalf("outside root: %v", err)
 	}
 	release()
 	if _, err := os.Stat(filepath.Join(root, LockName)); !os.IsNotExist(err) {
 		t.Fatal("lock left after release")
 	}
-	if err := publish(other, filepath.Join(root, "c.JPG"), unsupportedOp, unsupportedOp); !errors.Is(err, errNoExclusiveRename) {
+	if err := publish(other, filepath.Join(root, "c.JPG"), unsupportedOp, unsupportedOp); !errors.Is(err, ErrNoExclusiveRename) {
 		t.Fatalf("after release: %v", err)
 	}
 }
@@ -172,5 +172,15 @@ func TestAllowCheckRenameTakesOverOnlyADeadLocalOwner(t *testing.T) {
 		if got, _ := os.ReadFile(lock); string(got) != "newer 1\n" {
 			t.Fatal("release removed another owner's lock")
 		}
+	}
+}
+
+func TestCheckPublicationPassesHereAndLeavesNothing(t *testing.T) {
+	dir := t.TempDir()
+	if err := CheckPublication(dir); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("probe left %d files", len(entries))
 	}
 }

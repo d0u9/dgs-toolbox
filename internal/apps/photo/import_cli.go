@@ -132,6 +132,17 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 			return fmt.Errorf("no file in %s has extension %s", source, extension)
 		}
 	}
+	if within, err := parseDateRange(flags["range"]); err != nil {
+		return err
+	} else if within.set() {
+		before := len(files)
+		var undated []string
+		files, undated = withinRange(files, captureDays(source, files), within)
+		for _, path := range undated {
+			fmt.Fprintf(out, "No capture date, not imported: %s\n", path)
+		}
+		fmt.Fprintf(out, "Range %s: %d of %d files\n", flags["range"], len(files), before)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -187,6 +198,9 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 			return err
 		}
 		defer release()
+	}
+	if err := checkPublication(targets); err != nil {
+		return err
 	}
 	fmt.Fprintf(out, "Importing %d files into %d destinations (%s)\n", len(files), len(targets), operation)
 	display := newImportProgress(out, len(targets), len(files), workers)
@@ -408,6 +422,21 @@ func allowCheckRename(out io.Writer, targets []string) (func(), error) {
 	}
 	fmt.Fprintln(out, "Warning: where a destination cannot refuse an existing name, a file another program writes to the same name at the same moment can be replaced.")
 	return release, nil
+}
+
+// checkPublication refuses at once a destination that would refuse every
+// file after it was copied, naming the opt-in that imports there.
+func checkPublication(targets []string) error {
+	for _, target := range targets {
+		err := verifiedcopy.CheckPublication(target)
+		if errors.Is(err, verifiedcopy.ErrUnsafePublication) {
+			return fmt.Errorf("%w; nothing was copied. An SMB mount is like this: add --allow-check-rename (allow_check_rename in a profile, Check-rename in the workspace) to import there", err)
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // listProfiles is --profile given without a name.

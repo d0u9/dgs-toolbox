@@ -525,6 +525,12 @@ func FolderFiles(dir string) ([]File, error) {
 // syncDirectory lets tests fail a rename's durability check.
 var syncDirectory = verifiedcopy.SyncDirectory
 
+// CaptureDate is a photo's EXIF capture time, as organizing reads it.
+func CaptureDate(path string) (time.Time, error) { return captureDate(path) }
+
+// IsPhoto says whether organizing treats the path as a JPG or RAW shot.
+func IsPhoto(path string) bool { return isJPEG(path) || isRAW(path) }
+
 func captureDate(path string) (time.Time, error) {
 	file, err := os.Open(path)
 	if err != nil {

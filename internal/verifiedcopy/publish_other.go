@@ -2,4 +2,4 @@
 
 package verifiedcopy
 
-func renameExclusive(from, to string) error { return errNoExclusiveRename }
+func renameExclusive(from, to string) error { return ErrNoExclusiveRename }
