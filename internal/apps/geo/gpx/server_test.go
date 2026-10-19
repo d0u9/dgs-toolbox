@@ -1496,8 +1496,9 @@ func TestARecordingKeepsItsPartOrder(t *testing.T) {
 }
 
 // Tracks are put in order as routes and waypoints are, and the edits on a
-// track's points go with it: before the save, where the page lays the points,
-// and after it, where the file holds them.
+// track's points go with it before the save, where the page lays the points.
+// Saving writes the points as shown: the removed one is out of the file, and
+// no edit is left over.
 func TestReorderingTracksMovesTheirEdits(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{}))
 	defer server.Close()
@@ -1542,7 +1543,10 @@ func TestReorderingTracksMovesTheirEdits(t *testing.T) {
 	if len(file.Tracks) != 2 || file.Tracks[0].Name != "Two" || file.Tracks[1].Name != "One" {
 		t.Fatalf("tracks in the GPX = %+v", file.Tracks)
 	}
-	if got := edits(); len(got) != 1 || got[0].Points[0] != 1 {
+	if n := len(file.Tracks[0].Segments[0].Points); n != 1 {
+		t.Fatalf("Two holds %d points after the save; the removed one stayed", n)
+	}
+	if got := edits(); len(got) != 0 {
 		t.Fatalf("edits after the save = %+v", got)
 	}
 }

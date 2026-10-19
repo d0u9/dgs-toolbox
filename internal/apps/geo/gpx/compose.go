@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -391,7 +392,12 @@ func movedCuts(a analysis) segment.Params {
 	}
 	moved.Cuts = segment.Clean(moved.Cuts, len(a.line))
 	for _, name := range a.cleaning.Segments.Names {
-		moved.Names = append(moved.Names, segment.Name{Start: a.keptAt(name.Start), Name: name.Name})
+		// A name shows on the segment starting at its point; one whose point
+		// cleaning removed shows nowhere, so it is not carried into the file
+		// where it would land on another segment.
+		if k := sort.SearchInts(a.index, name.Start); k < len(a.index) && a.index[k] == name.Start {
+			moved.Names = append(moved.Names, segment.Name{Start: k, Name: name.Name})
+		}
 	}
 	return moved
 }

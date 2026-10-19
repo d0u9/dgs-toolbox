@@ -70,7 +70,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `/ui/files/dir?path=&ext=&hidden=` | The shared file dialog's listing, mounted by `internal/webfile` rather than this app: one folder's folders and files, narrowed to the suffixes `ext` repeats. Documented in [`docs/web.md`](../../web.md). |
 | `/ui/files/places` | The folders the shared file dialog lists down its side. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops (with `center`, the mean position, and `anchor`, the kept sample index nearest the stop time midpoint, used for the marker) and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
-| `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
+| `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX, where saving applies them to the points. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/file-name` | Rename a draft or any GPX within its current folder (a recording keeps its bytes, checked by digest); `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
@@ -94,7 +94,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `DELETE /api/sidecar` | Discards companion sidecar or embedded dgs edit state. The recorded tracks and standalone waypoints remain. |
 | `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
 | `GET /api/unsaved` | The files holding edits that are not on disk, so a reloaded page shows the same marks again. |
-| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote. Answers `saved` paths and `warnings` for photo cleanup that failed after publication; those edits are already saved and are not replayed. |
+| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote, whose tracks are written as cleaned. Answers `saved` paths and `warnings` for photo cleanup that failed after publication; those edits are already saved and are not replayed. |
 | `POST /api/undo`, `POST /api/redo` | Step one file's unsaved edits back or forward; `{path}` answers `moved`, false when there is nothing to step. A track's `undo` and `redo` say how many steps there are. |
 | `DELETE /api/pending` | Drops unsaved edits, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
@@ -660,8 +660,9 @@ leaves it. Under a divider it carries *Compare with the recording*, a toggle
 rather than a tool, so the inspector's header holds only the track's name. A line at the map's foot says what a click does with the tool in
 use.
 Nothing is removed until a tool is used or a filter is switched on. Settings
-are saved at once to the track's sidecar (see *The sidecar* below); the source
-GPX is never written. Filters run in this order, each seeing only what the
+are held until the file is saved: a recording's go into its sidecar (see *The
+sidecar* below) and the recording is never written; a GPX `dgs` wrote takes
+the cleaned points themselves (see *Embedded edit state*). Filters run in this order, each seeing only what the
 ones before kept.
 
 Each `<trk>` is cleaned on its own, with its own filter settings, so a walk
@@ -940,6 +941,12 @@ GCJ-02 map is displayed. This is a `<wpt>`, not a route-planning waypoint.
 **Embedded edit state.** New dgs GPX files identify themselves with the
 standard root `creator` attribute. Subsequent edits are stored directly in
 their GPX `<extensions>` as dgs state rather than in a new companion file.
+Saving one writes its tracks as the page shows them: points removed by hand
+or by a filter are out of the file, moved points are at their new positions
+and fills are ordinary points, so any GPX reader sees the same track. The
+cleaning is then spent — its removals, filters and fills are not kept, and
+cuts and segment names move to where their points now are. A recording is
+never written: its sidecar holds its edits.
 Save as… merges an external GPX and its sidecar into a new standalone dgs GPX.
 The extension is not encryption or
 authentication: it is readable by dgs and ignored by ordinary GPX readers.
@@ -1142,8 +1149,8 @@ contract tests combine rename → add → save → reload for drafts and saved f
 separate and merged tracks, repeated Save, and Revert. The release test job
 runs both web test files too.
 
-A Save of a dgs-created GPX stages all part edits and embedded state in its
-folder and publishes them with one rename. If a step fails, the original is
+A Save of a dgs-created GPX stages all part edits, its tracks as cleaned and
+its remaining embedded state in its folder and publishes them with one rename. If a step fails, the original is
 unchanged and its pending edits remain available for retry. This has the same
 filesystem durability boundary as the existing single-file replacements.
 Within one process, GPX state edits are serialized and state reads see a
