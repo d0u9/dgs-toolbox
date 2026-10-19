@@ -1,4 +1,4 @@
-import "/ui/dialog.js";
+import { textInput } from "/ui/dialog.js";
 
 // The file dialog every dgs page opens and saves through: one folder browser,
 // as Finder and Explorer have one, so a reader learns it once. It is shared
@@ -175,7 +175,7 @@ function dialog({
     up.innerHTML = iconSvg("arrow-up");
     up.title = "The folder above";
     up.setAttribute("aria-label", "The folder above");
-    const where = document.createElement("input"); where.autocomplete = "off"; where.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
+    const where = textInput();
     where.type = "text";
     where.setAttribute("aria-label", "Folder path");
     where.title = "Type a path; Enter opens it, Tab completes it, Escape restores it.";
@@ -295,7 +295,7 @@ function dialog({
     // toggle, and the two buttons.
     const foot = document.createElement("div");
     foot.className = "file-foot";
-    const input = document.createElement("input"); input.autocomplete = "off"; input.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
+    const input = textInput();
     input.type = "text";
     input.className = "file-name";
     input.value = name;
@@ -481,19 +481,21 @@ function dialog({
     // does not add the folder it leaves.
     const visited = [];
     let lastShown = "";
-    const open = async (path, ...rest) => {
+    // fallbacks are tried in turn when path cannot be read; back is a visit
+    // the Back button makes, which adds nothing to go back to.
+    const open = async (path, { fallbacks = [], back: goingBack = false } = {}) => {
       problem.hidden = true;
       let listing;
       try {
         listing = await listFolder(path, { extensions: extensions(), hidden: showHidden, base: here, endpoint });
       } catch (error) {
-        if (rest.length) return open(rest[0], ...rest.slice(1));
+        if (fallbacks.length) return open(fallbacks[0], { fallbacks: fallbacks.slice(1) });
         problem.textContent = error.message;
         problem.hidden = false;
         return;
       }
       if (listing.writable === false) writable = false;
-      if (lastShown && listing.path !== lastShown && !open.goingBack) visited.push(lastShown);
+      if (lastShown && listing.path !== lastShown && !goingBack) visited.push(lastShown);
       lastShown = listing.path;
       back.disabled = visited.length === 0;
       here = listing.path;
@@ -545,7 +547,7 @@ function dialog({
     // what is drawn.
     const askName = (cell, value, commit) => {
       editing = true;
-      const field = document.createElement("input"); field.autocomplete = "off"; field.setAttribute("data-1p-ignore", ""); // not a login: password managers stay out
+      const field = textInput();
       field.type = "text";
       field.className = "file-rename";
       field.setAttribute("aria-label", "Rename");
@@ -755,8 +757,7 @@ function dialog({
     up.addEventListener("click", () => parent && open(parent));
     back.addEventListener("click", async () => {
       if (!visited.length) return;
-      open.goingBack = true;
-      try { await open(visited.pop()); } finally { open.goingBack = false; }
+      await open(visited.pop(), { back: true });
       back.disabled = visited.length === 0;
     });
     refresh.addEventListener("click", () => open(here));
@@ -797,7 +798,7 @@ function dialog({
     dialog.showModal();
     (places ? Promise.resolve(places) : loadPlaces({ endpoint }).catch(() => []))
       .then((list) => drawPlaces(list));
-    open(folder, ...fallbacks, "");
+    open(folder, { fallbacks: [...fallbacks, ""] });
     if (saving) {
       input.focus();
       const exts = extensions();

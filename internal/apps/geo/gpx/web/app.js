@@ -964,12 +964,20 @@ async function renameGPX(path) {
   }
 }
 
+// refreshEntry reads a file again after an edit and redraws it: its rows, and
+// the inspector when it is focused.
+async function refreshEntry(path) {
+  await reloadEntry(path);
+  renderTracks();
+  if (state.focus === path) setFocus(path, { fit: false });
+}
+
 // renameName changes the GPX's own name, the one the workspace shows. It is
 // an unsaved edit: saving writes it into a GPX dgs wrote, or into the sidecar
-// of a recording.
-async function renameName(path) {
+// of a recording. An empty given name drops the one given here, unasked.
+async function renameName(path, given) {
   const entry = state.tracks.get(path);
-  const name = await promptDialog({
+  const name = given ?? await promptDialog({
     title: "Rename GPX",
     message: entry.track.ours
       ? "The name is written into the GPX when it is saved. The file name stays."
@@ -977,24 +985,10 @@ async function renameName(path) {
     value: entry.track.name,
     confirm: "Rename",
   });
-  if (!name) return;
+  if (name == null) return;
   try {
     await api.renamePart(path, "f", name);
-    await reloadEntry(path);
-    renderTracks();
-    if (state.focus === path) setFocus(path, { fit: false });
-  } catch (error) {
-    showMessage(error.message, true);
-  }
-}
-
-// restoreName drops the name given here, as an unsaved edit like any other.
-async function restoreName(path) {
-  try {
-    await api.renamePart(path, "f", "");
-    await reloadEntry(path);
-    renderTracks();
-    if (state.focus === path) setFocus(path, { fit: false });
+    await refreshEntry(path);
   } catch (error) {
     showMessage(error.message, true);
   }
@@ -1009,9 +1003,7 @@ async function stepEdit(path, back) {
       showMessage(back ? "Nothing to undo since the file was last saved" : "Nothing to redo");
       return;
     }
-    await reloadEntry(path);
-    renderTracks();
-    if (state.focus === path) setFocus(path, { fit: false });
+    await refreshEntry(path);
     showMessage(back ? "Undone" : "Redone");
   } catch (error) {
     showMessage(error.message, true);
@@ -1564,7 +1556,7 @@ function trackRow(path, entry) {
       ? [{ label: "Rename…", title: "Rename this GPX", onSelect: () => renameGPX(path) }]
       : [
         { label: "Rename…", title: "Change the GPX's own name; it is written when the file is saved", onSelect: () => renameName(path) },
-        ...(track.renamed ? [{ label: "Restore the name", title: "Drop the name given here; the GPX's own name shows again", onSelect: () => restoreName(path) }] : []),
+        ...(track.renamed ? [{ label: "Restore the name", title: "Drop the name given here; the GPX's own name shows again", onSelect: () => renameName(path, "") }] : []),
         { label: "Rename file…", title: "Rename the file in its folder; the GPX's own name stays", onSelect: () => renameGPX(path) },
       ],
     [{
@@ -1903,14 +1895,14 @@ function dropAt(x, y, event) {
 
   if (held.kind === "file") {
     // A file lands between files; the rows of a file's parts belong to it.
-    if ((held.group || [held]).some((one) => one.path === targetPath)) return null;
+    if (held.group.some((one) => one.path === targetPath)) return null;
     return { kind: "files", before: above ? targetPath : afterFile(targetPath) };
   }
 
   const heldEntry = state.tracks.get(held.path);
   if (!heldEntry) return null;
   // Reorder only among siblings of the same kind in a writable GPX.
-  const group = held.group || [held];
+  const group = held.group;
   if (group.some((one) => one.path === targetPath)) {
     // Several parts reorder only together: all of one kind in this one file.
     if (group.some((one) => one.path !== held.path || one.kind !== held.kind)) return null;
@@ -2002,7 +1994,7 @@ async function applyDrop(held, target) {
     return;
   }
   if (target.kind === "files") {
-    reorderFiles((held.group || [held]).map((one) => one.path), target.before);
+    reorderFiles(held.group.map((one) => one.path), target.before);
     return;
   }
   if (target.kind === "parts") { await reorderParts(held, target.before); return; }
@@ -2028,7 +2020,8 @@ async function reorderParts(held, before) {
   const entry = state.tracks.get(held.path);
   if (!entry) return;
   const keys = entry.track.parts.filter((part) => part.kind === held.kind).map((part) => part.key);
-  const moved = keys.filter((key) => (held.group || [held]).some((one) => one.key === key));
+  // A drag carries its group; Move up and Move down move the one part.
+  const moved = keys.filter((key) => (held.group ?? [held]).some((one) => one.key === key));
   const without = keys.filter((key) => !moved.includes(key));
   const at = before == null ? without.length : without.indexOf(before);
   without.splice(at < 0 ? without.length : at, 0, ...moved);
@@ -2047,7 +2040,7 @@ async function reorderParts(held, before) {
 // there when Alt, Ctrl or Cmd was held.
 async function dropIntoFile(held, target) {
   // Copy in list order; delete by descending numeric key so added parts do not shift under later deletions.
-  const group = (held.group || [held]).filter((one) => state.tracks.get(one.path)?.track.parts.some((part) => part.key === one.key));
+  const group = held.group.filter((one) => state.tracks.get(one.path)?.track.parts.some((part) => part.key === one.key));
   if (group.length > 1) {
     const listed = [...$("track-list").children].filter((row) => row.dataset.key).map((row) => partId(row.dataset.path, row.dataset.key));
     group.sort((a, b) => listed.indexOf(partId(a.path, a.key)) - listed.indexOf(partId(b.path, b.key)));
@@ -2187,11 +2180,9 @@ async function renamePart(path, entry, part) {
   if (!name) return;
   try {
     await api.renamePart(path, part.key, name);
-    await reloadEntry(path);
     // The new name is in the workspace rows, and in the inspector of the
     // focused file, at once: neither is redrawn by reloading alone.
-    renderTracks();
-    if (state.focus === path) setFocus(path, { fit: false });
+    await refreshEntry(path);
     showMessage(`Renamed to ${name}`);
   } catch (error) {
     showMessage(error.message, true);
