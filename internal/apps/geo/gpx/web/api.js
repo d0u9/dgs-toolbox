@@ -58,6 +58,8 @@ export const api = {
   // copyPart copies one part into another GPX dgs wrote, and takes it out of
   // this one when move is true.
   copyPart: (path, key, target, move = false) => postJSON("api/part/copy", { path, key, target, move }),
+  // joinParts joins tracks, [{ path, key }], into one track named name, added to target.
+  joinParts: (parts, target, name) => postJSON("api/part/join", { parts, target, name }),
   // addPhoto publishes one WebP beside a GPX dgs wrote and answers its name.
   addPhoto: async (path, blob) => (await send("POST", `api/photo?path=${encodeURIComponent(path)}`, "image/webp", blob)).name,
   photoURL: (path, name) => `api/photo?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`,

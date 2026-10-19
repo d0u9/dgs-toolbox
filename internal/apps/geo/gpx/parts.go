@@ -480,20 +480,9 @@ func (a api) copyPart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("choose another GPX to copy into"))
 		return
 	}
-	if err := checkGPX(body.Target); err != nil {
-		writeError(w, statusFor(err), err)
+	if status, err := checkTarget(body.Target); err != nil {
+		writeError(w, status, err)
 		return
-	}
-	if !isDraft(body.Target) {
-		target, err := openGPX(body.Target)
-		if err != nil {
-			writeError(w, statusFor(err), err)
-			return
-		}
-		if !target.IsOurs() {
-			writeError(w, http.StatusUnprocessableEntity, errors.New("that GPX was not written by dgs, so nothing is written into it; convert it to a dgs GPX first"))
-			return
-		}
 	}
 	result, err := analyse(body.Path, stops.Defaults())
 	if err != nil {
@@ -788,4 +777,107 @@ func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (side
 	held.Names, held.Moved, held.Deleted, held.Order, held.Photos = nil, nil, nil, nil, nil
 	held.Added, held.Routes, held.Waypoints = nil, nil, nil
 	return held, nil
+}
+
+// checkTarget refuses a GPX that parts cannot be put into: only a GPX dgs
+// wrote, or a new one not saved yet, is; a recording is never written.
+func checkTarget(path string) (int, error) {
+	if err := checkGPX(path); err != nil {
+		return statusFor(err), err
+	}
+	if isDraft(path) {
+		return 0, nil
+	}
+	target, err := openGPX(path)
+	if err != nil {
+		return statusFor(err), err
+	}
+	if !target.IsOurs() {
+		return http.StatusUnprocessableEntity, errors.New("that GPX was not written by dgs, so nothing is written into it; convert it to a dgs GPX first")
+	}
+	return 0, nil
+}
+
+// joinParts joins tracks of the workspace, from any files, into one track
+// added to a GPX dgs wrote. The tracks joined are not changed.
+func (a api) joinParts(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Parts []struct {
+			Path string `json:"path"`
+			Key  string `json:"key"`
+		} `json:"parts"`
+		Target string `json:"target"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" || strings.ContainsAny(name, "\n\r") {
+		writeError(w, http.StatusBadRequest, errors.New("name the joined track, on one line"))
+		return
+	}
+	if len(body.Parts) < 2 {
+		writeError(w, http.StatusBadRequest, errors.New("choose at least two tracks to join"))
+		return
+	}
+	if status, err := checkTarget(body.Target); err != nil {
+		writeError(w, status, err)
+		return
+	}
+	analysed := map[string]analysis{}
+	seen := map[string]bool{}
+	var tracks []gpxfile.Track
+	for _, part := range body.Parts {
+		id := pendingKey(part.Path) + "\n" + part.Key
+		if seen[id] {
+			writeError(w, http.StatusBadRequest, errors.New("a track is named twice; each is joined once"))
+			return
+		}
+		seen[id] = true
+		result, ok := analysed[part.Path]
+		if !ok {
+			var err error
+			if result, err = analyse(part.Path, stops.Defaults()); err != nil {
+				writeError(w, statusFor(err), err)
+				return
+			}
+			if result.sidecarErr != nil {
+				writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
+				return
+			}
+			analysed[part.Path] = result
+		}
+		at, err := locate(result, part.Key)
+		if err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
+		if at.kind != 't' {
+			writeError(w, http.StatusBadRequest, errors.New("only tracks are joined"))
+			return
+		}
+		// A track is joined as the page shows it, like a copy.
+		trk, ok := editedTrack(result, at.shown)
+		if !ok {
+			continue // cleaning left it no points
+		}
+		trk.Name = partName(result, part.Key)
+		tracks = append(tracks, trk)
+	}
+	if len(tracks) < 2 {
+		writeError(w, http.StatusUnprocessableEntity, errors.New("fewer than two of these tracks have points left to join"))
+		return
+	}
+	joined, err := compose.Join(tracks, name)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	if err := addTracks(body.Target, body.Parts[0].Path, []gpxfile.Track{joined}); err != nil {
+		writeError(w, statusFor(err), err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "target": body.Target})
 }

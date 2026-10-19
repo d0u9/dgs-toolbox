@@ -82,6 +82,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `PUT /api/part-order` | Puts a file's tracks, routes or waypoints in the order `keys` gives, `kind` being `track`, `route` or `waypoint`; the keys are every key of that kind, as the page lists them. Held under `order` until the edit is saved, which puts the elements in that order inside the GPX. Only a GPX `dgs` wrote, or a new one not saved yet, is reordered; a recording is refused. A track's points go with it, so every point index the edits keep is moved to where its point now lies. |
 | `DELETE /api/part` | Takes the `<trk>`, `<rte>` or `<wpt>` `key` names out of a file: out of what is held beside the file at once, and out of a GPX `dgs` wrote when the edit is saved, recorded under `deleted`. A track goes with the edits, cuts and fills on its points. Any other file is refused. |
 | `POST /api/part/copy` | Copies the part `key` names into the GPX `target` names, as the page shows it, and takes it out of this file when `move`. Only a GPX `dgs` wrote, or a new one not yet saved, is copied into; only a file `dgs` wrote is moved out of. |
+| `POST /api/part/join` | Joins the tracks `parts` names — each a `{path, key}` — into one track named `name` and adds it to the GPX `target` names, under the rule of `POST /api/part/copy`. Tracks are put in time order (in the order given when any has no time); overlapping times, and a track named twice, are refused. Each keeps its own segments; a point shared by one track's end and the next one's start is kept once. The sources are not changed. |
 | `POST /api/segments/write` | Writes chosen cleaned segments as separate named tracks by default. `target.merge: true` with a nonempty `target.name` combines them into one track in source order, sharing cut points once and preserving gaps and recording breaks. Mode `add` holds tracks as pending edits for a workspace GPX, including the current file only when dgs created it or it is a draft; Save writes them into a dgs GPX. Mode `create` writes a new GPX without overwriting. Ranges are validated before anything is added. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the companion sidecar or embedded dgs state, inserted after the first; later indices move along. |
@@ -249,7 +250,7 @@ map. It is the interface later milestones build on.
   on a row outside the picked rows picks that row first, as a file manager
   does; on one of several picked rows, the menu offers what can be done to
   each of them without naming a file — saving, reverting, showing, hiding and
-  closing them.
+  closing them — and *Join tracks…*, below.
   Saving and converting name a new file one at a time, so they stay on a
   single row's menu. The menu
   itself is the shared one of [`docs/web.md`](../../web.md); it offers nothing
@@ -354,6 +355,21 @@ map. It is the interface later milestones build on.
     recording; a recording's own parts are copied out of it freely, and moved
     out of nothing. *Move* is a copy and a delete, and each file holds its
     half of the change until it is saved.
+  - *Join tracks…* is offered when several files, or several tracks, are
+    picked. Any tracks are joined, a recording's included. Picked files bring
+    every track they show. It asks where the joined track goes — a new GPX,
+    kept in memory until saved, or a GPX of the workspace that `dgs` wrote or
+    a new one not saved yet, one of the picked files included; never a
+    recording — then for the joined track's name, prefilled with the first
+    track's. A new GPX takes that name. The tracks are taken as the page shows them, like *Copy
+    to…*, and put in time order by their first point; when any of them has no
+    time, the workspace order is kept. Tracks whose times overlap are refused,
+    naming both. Each track keeps its own `<trkseg>` elements, so nothing is
+    drawn or counted across the join; a point ending one track and starting the
+    next is kept once. The joined track is added to the chosen GPX as a track
+    carried beside it, *added from* the first track's file, until that GPX is
+    saved. The tracks joined are left as they were. Cancelling either dialog
+    adds nothing.
   - *Move on the map…* is for a waypoint pinned in the wrong place. The
     waypoint becomes a pin that is dragged to where it belongs; `Esc` leaves
     it where it was. Where it is dropped is read in the system the map draws

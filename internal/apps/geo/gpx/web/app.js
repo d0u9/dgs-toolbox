@@ -1693,6 +1693,10 @@ function manyMenu(paths) {
         for (const path of paths) setVisible(path, shown === 0);
       },
     }],
+    [joinItem(paths.flatMap((path) => {
+      const entry = state.tracks.get(path);
+      return entry.track.parts.filter((part) => part.kind === "track" && entry.visible && !entry.hiddenParts.has(part.key)).map((part) => ({ path, key: part.key, name: part.name }));
+    }))],
     [{
       label: `Close ${files}`,
       title: "Remove them from the workspace; nothing on disk changes",
@@ -1741,6 +1745,7 @@ function partRow(path, entry, part) {
   const targets = copyTargets(path);
   const kind = part.kind;
   li.addEventListener("contextmenu", (event) => openMenu(event, [
+    ...(kind === "track" && pickedTracks().length > 1 && state.partPicks.has(partId(path, part.key)) ? [[joinItem(pickedTracks())]] : []),
     [{ label: "Rename…", title: "Rename this part", onSelect: () => renamePart(path, entry, part) }],
     [
       {
@@ -2243,6 +2248,62 @@ async function copyPartTo(path, part, targets, move) {
     renderTracks();
     if (state.focus && (state.focus === path || state.focus === target)) setFocus(state.focus, { fit: false });
     showMessage(`${move ? "Moved" : "Copied"} ${part.name} to ${basename(target)}`);
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+// pickedTracks are the picked track rows, in the order the workspace lists them.
+function pickedTracks() {
+  return [...state.tracks].flatMap(([path, entry]) => entry.track.parts
+    .filter((part) => part.kind === "track" && state.partPicks.has(partId(path, part.key)))
+    .map((part) => ({ path, key: part.key, name: part.name })));
+}
+
+// joinItem offers to join tracks, [{ path, key, name }], into one track. Any
+// tracks may be joined, recordings' included; the joined track goes only into
+// a GPX dgs wrote, or a new one.
+function joinItem(tracks) {
+  return {
+    label: "Join tracks…",
+    title: tracks.length < 2 ? "Pick at least two tracks to join" : `Join ${tracks.length} tracks into one, added to a GPX dgs wrote or a new one; they stay as they are`,
+    disabled: tracks.length < 2,
+    onSelect: () => joinTracks(tracks),
+  };
+}
+
+const NEW_GPX = "new:"; // never a workspace path, which is absolute or "draft:"
+
+// joinTracks joins tracks into one, in time order, and adds it to a GPX dgs
+// wrote or a new one. The tracks joined are not changed.
+async function joinTracks(tracks) {
+  const target = await chooseDialog({
+    title: `Join ${tracks.length} tracks`,
+    message: "The joined track is added to that GPX, as this page shows the tracks, in time order. The tracks joined stay as they are. Nothing is written until it is saved.",
+    options: [{ value: NEW_GPX, label: "New GPX, kept in memory until saved" }, ...copyTargets(null)],
+    confirm: "Next",
+  });
+  if (!target) return;
+  const name = await promptDialog({ title: "Name the joined track", value: tracks[0].name, confirm: "Join" });
+  if (!name) return;
+  try {
+    const into = target === NEW_GPX ? (await api.newDraft(name)).path : target;
+    try {
+      await api.joinParts(tracks.map(({ path, key }) => ({ path, key })), into, name);
+    } catch (error) {
+      // A new GPX that the join did not fill is not left behind.
+      if (target === NEW_GPX) await api.discardDraft(into).catch(() => {});
+      throw error;
+    }
+    if (target === NEW_GPX) {
+      cutPanel?.remember();
+      await addTrack(into);
+    } else {
+      await reloadEntry(into);
+      renderTracks();
+      if (state.focus === into) setFocus(into, { fit: false });
+    }
+    showMessage(`Joined ${tracks.length} tracks into ${name}${target === NEW_GPX ? ", a new GPX" : ` in ${basename(into)}`}`);
   } catch (error) {
     showMessage(error.message, true);
   }
