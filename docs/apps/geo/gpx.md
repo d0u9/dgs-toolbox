@@ -181,7 +181,11 @@ map. It is the interface later milestones build on.
   It is the same control on a file's row, on one of its tracks, routes or
   waypoints, over the tracks the filter lists, and over a file's tracks,
   routes or waypoints as a group: while any of them is shown it hides them,
-  and once none is it shows them.
+  and once none is it shows them. A file's eye is open only while every part of it is
+  shown. Clicking it then hides them all; clicking it otherwise shows them
+  all. The parts of a hidden file all read as hidden, so showing one shows
+  it alone. A file is drawn while any part of it is shown, and once each
+  part is shown again its eye opens.
 - **Who wrote the file.** The toolbar icon and file hover tip say whether dgs wrote
   this GPX. It decides where a
   later edit goes: inside the file itself, or into a sidecar beside it.

@@ -208,7 +208,8 @@ async function addTrack(path, { color, visible = true, restoring = false, hidden
     return false;
   }
   if (state.tracks.has(path)) return true;
-  const entry = { id: state.nextId++, track, color: color || nextColor(), visible, hiddenParts: new Set(hiddenParts), expanded };
+  // A hidden file hides every part of it, whatever an older page remembered.
+  const entry = { id: state.nextId++, track, color: color || nextColor(), visible, hiddenParts: new Set(visible ? hiddenParts : track.parts.map((part) => part.key)), expanded };
   state.tracks.set(path, entry);
   if (drawable(entry)) {
     layers.add(entry.id, track, entry.color);
@@ -254,13 +255,36 @@ function removeTrack(path) {
 // Only a shown track can be focused.
 function setVisible(path, visible) {
   const entry = state.tracks.get(path);
-  if (!entry || entry.visible === visible) return;
-  entry.visible = visible;
-  if (layers.ids.has(entry.id)) layers.setVisible(entry.id, visible);
-  if (!visible && state.focus === path) focusNextVisible();
-  else if (visible && !state.focus) setFocus(path, { fit: false });
+  if (!entry || (visible ? allShown(entry) : !entry.visible)) return;
+  // A file's eye shows every part of it or hides them all; one part is then
+  // shown alone from its own eye.
+  entry.hiddenParts = new Set(visible ? [] : entry.track.parts.map((part) => part.key));
+  const focused = state.focus === path;
+  showFile(path, entry, visible);
+  // The profile, stops and timeline of the focused file mark what is hidden.
+  if (focused && state.focus === path) setFocus(path, { fit: false });
   renderTracks();
   save();
+}
+
+// allShown says whether a file and every part of it are shown: only then is
+// its eye open.
+function allShown(entry) {
+  return entry.visible && entry.hiddenParts.size === 0;
+}
+
+// showFile draws a file, with its hidden parts left out, or takes it off the
+// map, and moves the focus as that asks.
+function showFile(path, entry, visible) {
+  const was = entry.visible;
+  entry.visible = visible;
+  if (layers.ids.has(entry.id)) {
+    layers.setHiddenParts(entry.id, entry.hiddenParts);
+    layers.setVisible(entry.id, visible);
+  }
+  if (was === visible) return;
+  if (!visible && state.focus === path) focusNextVisible();
+  else if (visible && !state.focus) setFocus(path, { fit: false });
 }
 
 // ---- selecting rows: what a command acts on ----
@@ -1483,8 +1507,9 @@ function trackRow(path, entry) {
     li.classList.add("expandable");
   }
 
-  const eye = iconButton("eye icon-button ui-row-icon", entry.visible ? EYE : EYE_OFF, entry.visible ? "Hide on the map" : "Show on the map", () => setVisible(path, !entry.visible));
-  eye.setAttribute("aria-pressed", String(entry.visible));
+  const all = allShown(entry);
+  const eye = iconButton("eye icon-button ui-row-icon", all ? EYE : EYE_OFF, all ? "Hide it and all its parts" : "Show it and all its parts", () => setVisible(path, !all));
+  eye.setAttribute("aria-pressed", String(all));
 
   const color = document.createElement("input");
   color.type = "color";
@@ -1678,7 +1703,7 @@ function manyMenu(paths) {
 const PART_GLYPH = { track: ROUTE, route: MOVE_HORIZONTAL, waypoint: MAP_PIN_PLUS };
 
 function partRow(path, entry, part) {
-  const hidden = entry.hiddenParts.has(part.key);
+  const hidden = entry.hiddenParts.has(part.key) || !entry.visible;
   const li = document.createElement("li");
   li.className = "part-row ui-file-row" + (hidden || !entry.visible ? " hidden-track" : "")
     + (state.partPicks.has(partId(path, part.key)) || (state.partSelection?.path === path && state.partSelection.key === part.key) ? " selected" : "");
@@ -2311,11 +2336,15 @@ function setPartHidden(path, key, hidden) {
 
 function setPartsHidden(path, keys, hidden) {
   const entry = state.tracks.get(path);
+  // Every part of a hidden file reads as hidden, so showing one shows it alone
+  // and hiding one leaves the file hidden.
+  if (!entry.visible) entry.hiddenParts = new Set(entry.track.parts.map((part) => part.key));
   for (const key of keys) {
     if (hidden) entry.hiddenParts.add(key);
     else entry.hiddenParts.delete(key);
   }
-  if (layers.ids.has(entry.id)) layers.setHiddenParts(entry.id, entry.hiddenParts);
+  // A file is drawn while any part of it is shown.
+  showFile(path, entry, entry.track.parts.some((part) => !entry.hiddenParts.has(part.key)));
   // The profile, stops and timeline mark what is hidden.
   if (state.focus === path) setFocus(path, { fit: false });
   else renderTracks();
