@@ -52,10 +52,11 @@ const (
 	parallelID    = "parallelism"
 	deleteStateID = "delete-state"
 	checkRenameID = "check-rename"
+	rangeID       = "range"
 )
 
 var (
-	parameterIDs = []string{operationID, incrementalID, extensionsID, duplicatesID, parallelID, checkRenameID}
+	parameterIDs = []string{operationID, incrementalID, extensionsID, rangeID, duplicatesID, parallelID, checkRenameID}
 )
 
 const (
@@ -108,6 +109,8 @@ type scanSummary struct {
 	// creates it. It is shown, because the empty mount point of an unmounted
 	// disk looks the same and would receive the photos on the local disk.
 	destinationMissing bool
+	// days are each Source shot's capture day, by pairKey, for Range.
+	days map[string]string
 }
 
 type importPlan struct {
@@ -322,6 +325,7 @@ func newImportModelWithSettings(stateFilename, source string, destinations ...st
 			form.Field{ID: operationID, Kind: form.Radio, Label: "Operation", Value: "Copy", Options: []string{"Copy", "Move"}},
 			form.Field{ID: incrementalID, Kind: form.Checkbox, Label: "Incremental", Checked: true},
 			form.Field{ID: extensionsID, Kind: form.MultiCheckbox, Label: "Extensions", SelectAll: true},
+			form.Field{ID: rangeID, Kind: form.Text, Label: "Range"},
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
 			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: importer.MaxWorkers, Step: 1},
 			// For SMB and other mounts that cannot refuse an existing name.
@@ -1364,6 +1368,10 @@ func (m importModel) filteredSource() []scannedFile {
 			files = append(files, file)
 		}
 	}
+	// An invalid Range filters nothing here; Processing refuses it.
+	if within, err := parseDateRange(m.controls.Value(rangeID)); err == nil && within.set() {
+		files, _ = withinRange(files, m.scan.days, within)
+	}
 	return files
 }
 
@@ -1468,6 +1476,10 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 		m.actionNotice = "Replace is unavailable until atomic backup and rollback are implemented"
 		return m, nil
 	}
+	if _, err := parseDateRange(m.controls.Value(rangeID)); err != nil {
+		m.actionNotice = err.Error()
+		return m, nil
+	}
 	if len(m.scan.sourceErrors) > 0 {
 		m.actionNotice = fmt.Sprintf("Source scan incomplete (%d unreadable): %s — fix access and press r to rescan", len(m.scan.sourceErrors), m.scan.sourceErrors[0])
 		return m, nil
@@ -1491,6 +1503,15 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.releaseCheckRename = release
+	}
+	roots := make([]string, 0, len(m.destinationRoots()))
+	for _, root := range m.destinationRoots() {
+		roots = append(roots, expandHome(root))
+	}
+	if err := checkPublication(roots); err != nil {
+		m.endCheckRename()
+		m.actionNotice = err.Error()
+		return m, nil
 	}
 	if len(m.extraDestinations) > 0 {
 		return m.startMultipleProcessing()

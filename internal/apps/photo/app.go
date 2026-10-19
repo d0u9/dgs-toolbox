@@ -51,6 +51,7 @@ func New() tui.App {
 					{Name: "duplicates", Default: "skip", Usage: "name conflict policy: skip or keep-both"},
 					{Name: "workers", Default: "1", Usage: "whole-file workers per destination (1–8)"},
 					{Name: "ext", Repeatable: true, Usage: "include this extension (e.g. JPG); repeat to select several; default all regular files"},
+					{Name: "range", Usage: "only shots taken in this capture-day range: YYYYMMDD-YYYYMMDD, -YYYYMMDD or YYYYMMDD-"},
 					{Name: "organize", Bool: true, Usage: "organize imported JPG/RAW into YYYYMMDD folders"},
 					{Name: "allow-check-rename", Bool: true, Usage: "on SMB and other mounts without exclusive rename, publish by checking then renaming; locks each destination"},
 					{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "preview selected files and destination inventories without writing or deleting"},

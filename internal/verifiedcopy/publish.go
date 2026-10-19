@@ -38,7 +38,7 @@ func publish(temporary, final string, rename, link func(string, string) error) e
 		return err
 	}
 	if !checkRenameAllowed(final) {
-		return fmt.Errorf("safe publication is unsupported: %w", errNoExclusiveRename)
+		return fmt.Errorf("safe publication is unsupported: %w", ErrNoExclusiveRename)
 	}
 	if _, err := os.Lstat(final); err == nil {
 		return fmt.Errorf("%w: %s", os.ErrExist, final)
@@ -160,7 +160,38 @@ func unsupported(err error) bool {
 	return errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) ||
 		errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOSYS) ||
 		errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EXDEV) ||
-		errors.Is(err, errNoExclusiveRename)
+		errors.Is(err, ErrNoExclusiveRename)
 }
 
-var errNoExclusiveRename = errors.New("exclusive rename is not available on this platform")
+// ErrNoExclusiveRename says a filesystem can neither refuse an existing name
+// on rename nor hard-link, and the destination was not opted in.
+var ErrNoExclusiveRename = errors.New("exclusive rename is not available on this platform")
+
+// ErrUnsafePublication says a directory can neither refuse an existing name
+// on rename nor hard-link, so Publish would refuse every file there.
+var ErrUnsafePublication = errors.New("this filesystem cannot refuse an existing name (no exclusive rename or hard link)")
+
+// CheckPublication tries Publish's safe operations on two scratch files in
+// dir, before any long copy, so a destination that would refuse every file
+// is known at once. A dir opted in with AllowCheckRename passes.
+func CheckPublication(dir string) error {
+	if checkRenameAllowed(filepath.Join(dir, "probe")) {
+		return nil
+	}
+	from, err := os.CreateTemp(dir, ".dgs-probe-*")
+	if err != nil {
+		return err
+	}
+	_ = from.Close()
+	defer os.Remove(from.Name())
+	to := from.Name() + ".published"
+	defer os.Remove(to)
+	err = renameExclusive(from.Name(), to)
+	if err == nil || !unsupported(err) {
+		return err
+	}
+	if err = os.Link(from.Name(), to); err == nil || !unsupported(err) {
+		return err
+	}
+	return fmt.Errorf("%s: %w", dir, ErrUnsafePublication)
+}
