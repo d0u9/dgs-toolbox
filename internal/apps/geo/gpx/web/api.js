@@ -83,6 +83,8 @@ export const api = {
   // newDraft starts a new, empty GPX that lives in the server's memory until saved.
   newDraft: (name) => postJSON("api/draft", { name }),
   discardDraft: (path) => sendJSON("DELETE", "api/draft", { path }),
+  // closeFiles forgets the undo history of files taken out of the workspace; a file still holding edits keeps them.
+  closeFiles: (paths) => postJSON("api/close", { paths }),
   renameFile: (path, name) => sendJSON("PUT", "api/file-name", { path, name }),
   // routeLeg asks the router for the road between two waypoints, [lon, lat] in WGS-84.
   routeLeg: (profile, from, to) => postJSON("api/route/leg", { profile, from, to }),

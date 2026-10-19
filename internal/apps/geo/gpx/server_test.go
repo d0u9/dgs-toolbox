@@ -1132,6 +1132,7 @@ func TestARecordingIsNeverWritten(t *testing.T) {
 		{"part-order", http.MethodPut, "/api/part-order", map[string]any{"path": source, "kind": "waypoint", "keys": []string{"w0"}}},
 		{"copy part", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target}},
 		{"move part out", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target, "move": true}},
+		{"close", http.MethodPost, "/api/close", map[string]any{"paths": []string{source}}},
 		{"join into it", http.MethodPost, "/api/part/join", map[string]any{"parts": []map[string]any{{"path": source, "key": "t0"}, {"path": source, "key": "t0"}}, "target": source, "name": "Joined"}},
 		{"segments/write", http.MethodPost, "/api/segments/write", map[string]any{
 			"path": source, "target": target, "pieces": []int{0}, "mode": "single",

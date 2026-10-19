@@ -1019,16 +1019,16 @@ async function renameName(path, given) {
 }
 
 // stepEdit undoes or redoes one unsaved edit of a file: Cmd+Z and
-// Shift+Cmd+Z, for the focused file. Saved edits are not undone.
+// Shift+Cmd+Z, for the focused file. A save is a step like any edit.
 async function stepEdit(path, back) {
   try {
-    const { moved } = await (back ? api.undo(path) : api.redo(path));
+    const { moved, warning } = await (back ? api.undo(path) : api.redo(path));
     if (!moved) {
-      showMessage(back ? "Nothing to undo since the file was last saved" : "Nothing to redo");
+      showMessage(back ? "Nothing to undo" : "Nothing to redo");
       return;
     }
     await refreshEntry(path);
-    showMessage(back ? "Undone" : "Redone");
+    showMessage(warning || (back ? "Undone" : "Redone"), Boolean(warning));
   } catch (error) {
     showMessage(error.message, true);
   }
@@ -1164,6 +1164,14 @@ async function closeTracks(paths) {
       showMessage(error.message, true);
       return;
     }
+  }
+  // A closed file's undo history goes with it, its saves included.
+  const onDisk = paths.filter((path) => !state.tracks.get(path)?.track.draft);
+  try {
+    if (onDisk.length) await api.closeFiles(onDisk);
+  } catch (error) {
+    showMessage(error.message, true);
+    return;
   }
   for (const path of paths) removeTrack(path);
   clearSelection();
