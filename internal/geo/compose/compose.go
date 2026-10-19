@@ -298,3 +298,71 @@ func RouteFrom(rte gpxfile.Route, from string, at int64) Route {
 	}
 	return route
 }
+
+// ErrOverlap says tracks to be joined were recorded at the same time.
+var ErrOverlap = errors.New("tracks overlap in time")
+
+// Join makes one track of several, each keeping its own segments, so nothing
+// is drawn or counted across a join. They are put in time order by their
+// first timed point; when any has no time, the order given is kept. Tracks
+// whose times overlap are refused. A point ending one track and starting the
+// next is kept once.
+func Join(tracks []gpxfile.Track, name string) (gpxfile.Track, error) {
+	ordered := append([]gpxfile.Track(nil), tracks...)
+	timed := true
+	for _, trk := range ordered {
+		if first, _ := timeSpan(trk); first.IsZero() {
+			timed = false
+		}
+	}
+	if timed {
+		sort.SliceStable(ordered, func(i, j int) bool {
+			a, _ := timeSpan(ordered[i])
+			b, _ := timeSpan(ordered[j])
+			return a.Before(b)
+		})
+		for i := 1; i < len(ordered); i++ {
+			_, end := timeSpan(ordered[i-1])
+			start, _ := timeSpan(ordered[i])
+			if start.Before(end) {
+				return gpxfile.Track{}, fmt.Errorf("%w: %q and %q", ErrOverlap, ordered[i-1].Name, ordered[i].Name)
+			}
+		}
+	}
+	joined := gpxfile.Track{Name: name}
+	var last *gpxfile.Point
+	for _, trk := range ordered {
+		for _, seg := range trk.Segments {
+			points := seg.Points
+			if last != nil && len(points) > 0 && points[0].LatLon == last.LatLon && points[0].Time.Equal(last.Time) {
+				points = points[1:]
+			}
+			last = nil
+			if len(points) == 0 {
+				continue
+			}
+			joined.Segments = append(joined.Segments, gpxfile.Segment{Points: points})
+		}
+		if n := len(joined.Segments); n > 0 {
+			seg := joined.Segments[n-1].Points
+			last = &seg[len(seg)-1]
+		}
+	}
+	return joined, nil
+}
+
+// timeSpan is a track's first and last point times; zero when it has none.
+func timeSpan(trk gpxfile.Track) (first, last time.Time) {
+	for _, seg := range trk.Segments {
+		for _, pt := range seg.Points {
+			if pt.Time.IsZero() {
+				continue
+			}
+			if first.IsZero() {
+				first = pt.Time
+			}
+			last = pt.Time
+		}
+	}
+	return first, last
+}
