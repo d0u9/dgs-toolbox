@@ -93,10 +93,11 @@ server exposes the API under `/api/`; everything else is the page.
 | `DELETE /api/draft` | Discards the draft named by `{path}`, including its copied photos and undo history. A path to a file on disk is refused. |
 | `DELETE /api/sidecar` | Discards companion sidecar or embedded dgs edit state. The recorded tracks and standalone waypoints remain. |
 | `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
+| `POST /api/close` | Forgets the undo history, saves included, of the `paths` taken out of the workspace; the page reverts the edits it asked about first. A file still holding unsaved edits, made from another page since, keeps them and its history. Nothing on disk changes. |
 | `GET /api/unsaved` | The files holding edits that are not on disk, so a reloaded page shows the same marks again. |
-| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote, whose tracks are written as cleaned. Answers `saved` paths and `warnings` for photo cleanup that failed after publication; those edits are already saved and are not replayed. |
-| `POST /api/undo`, `POST /api/redo` | Step one file's unsaved edits back or forward; `{path}` answers `moved`, false when there is nothing to step. A track's `undo` and `redo` say how many steps there are. |
-| `DELETE /api/pending` | Drops unsaved edits, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
+| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote, whose tracks are written as cleaned. Each save is a step undo can take back. Answers `saved` paths and `warnings` for photo cleanup that failed after publication; those edits are already saved and are not replayed. |
+| `POST /api/undo`, `POST /api/redo` | Step one file's edits and saves back or forward; a save is not stepped over a file changed on disk since (409); a step done whose photos could not all be moved answers `warning`; `{path}` answers `moved`, false when there is nothing to step. A track's `undo` and `redo` say how many steps there are. |
+| `DELETE /api/pending` | Drops unsaved edits and the undo history, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -208,13 +209,23 @@ map. It is the interface later milestones build on.
   be taken back whole at any point, and that a half-finished edit never
   reaches the disk.
 - **Undo and redo.** ⌘Z (Ctrl+Z off a Mac) undoes the focused file's latest
-  unsaved edit and ⇧⌘Z redoes it, while no field has the keyboard. Each file
-  keeps its own history of up to 200 edits: every change held before saving —
+  edit and ⇧⌘Z redoes it, while no field has the keyboard. Each file keeps
+  its own history of up to 200 steps: every change held before saving —
   removals, filters, cuts, fills, names, waypoints, parts added, moved or
-  deleted. A new edit ends what could be redone. Saving, *Revert* and
-  discarding forget a file's history, and what touched the disk at once —
-  *Rename file…*, *Save as…*, *Close* — is not undone. The history lives in the
-  `dgs` process, like the edits.
+  deleted — and every save. Undoing a save puts back what it replaced on
+  disk, the GPX `dgs` wrote or a recording's sidecar, byte for byte, and
+  leaves its edits unsaved again; redoing it writes it again. A GPX's photos
+  follow: every step takes out of the trash the photos the file or its
+  unsaved edits link, and a step that puts a saved file back sends to the
+  trash, as a save does, those nothing links. A step that is done but cannot
+  move a photo says so. A save is undone or redone only while the file on disk
+  is as that step left it: a file changed by anything else is never
+  overwritten, and the page says why. A recording itself is never written.
+  A new edit ends what could be redone. *Close*, *Revert* and discarding
+  forget a file's history, saves included, and so does *Rename file…* once a
+  save is in it; what touched the disk at once — *Rename file…*, *Save as…*,
+  *Close* — is not undone. The history is kept in the `dgs` process, like the
+  edits, so it also goes when `dgs` exits; reloading the page keeps it.
 - **Closing an edited file.** *Close* asks first when the file holds unsaved
   edits, or when it is a new GPX never saved — closing is the one way edits
   go without being seen again, because the file is not reopened with them.
@@ -945,8 +956,9 @@ Saving one writes its tracks as the page shows them: points removed by hand
 or by a filter are out of the file, moved points are at their new positions
 and fills are ordinary points, so any GPX reader sees the same track. The
 cleaning is then spent — its removals, filters and fills are not kept, and
-cuts and segment names move to where their points now are. A recording is
-never written: its sidecar holds its edits.
+cuts and segment names move to where their points now are. Undoing the save
+puts the file back as it was (see *Undo and redo*). A recording is never
+written: its sidecar holds its edits.
 Save as… merges an external GPX and its sidecar into a new standalone dgs GPX.
 The extension is not encryption or
 authentication: it is readable by dgs and ignored by ordinary GPX readers.

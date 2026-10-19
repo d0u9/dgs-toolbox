@@ -426,3 +426,45 @@ func renamePhotos(from, to string) error {
 		return nil
 	})
 }
+
+// untrashLinked takes back out of the trash the photos a GPX dgs wrote links,
+// or its held edits link, after an undone or redone save puts back a file and
+// edits that link them again.
+func untrashLinked(path string) error {
+	file, err := gpxfile.Open(path)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, wpt := range file.Waypoints {
+		_, photos := splitLinks(wpt.Links, photoDir(path))
+		for _, photo := range photos {
+			names = append(names, photo.Name)
+		}
+	}
+	if held, ok := pending.get(path); ok {
+		for _, photos := range held.Photos {
+			for _, photo := range photos.Photos {
+				names = append(names, photo.Name)
+			}
+		}
+	}
+	dir := filepath.Join(filepath.Dir(path), photoDir(path))
+	trash := filepath.Join(dir, ".trash")
+	for _, name := range names {
+		if !photoName.MatchString(name) {
+			continue // only a photo this program named is moved
+		}
+		from, to := filepath.Join(trash, name), filepath.Join(dir, name)
+		if _, err := os.Lstat(from); err != nil {
+			continue
+		}
+		if _, err := os.Lstat(to); err == nil {
+			continue // the photo is there already
+		}
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+	}
+	return nil
+}

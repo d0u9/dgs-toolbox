@@ -99,10 +99,27 @@ func flush(path string) error {
 	if !ok {
 		return nil
 	}
+	// What the save replaces on disk is kept, so the save can be undone.
+	target := savedPath(path)
+	var before diskState
+	if target != "" {
+		var err error
+		if before, err = readDisk(target); err != nil {
+			return err
+		}
+	}
 	if err := writeSidecarNow(path, file); err != nil {
 		return err
 	}
-	pending.forget(path)
+	pending.drop(path)
+	if target == "" {
+		history.forget(path)
+	} else if after, err := readDisk(target); err != nil {
+		history.forget(path)
+	} else {
+		before.expect = after.fingerprint()
+		history.record(path, snapshot{file: cloneSidecar(file), held: true, disk: &before})
+	}
 	if err := trashUnlinked(path); err != nil {
 		return fmt.Errorf("saved %s; photo cleanup failed: %w", path, err)
 	}
@@ -170,6 +187,26 @@ func (a api) revertFiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pending.forget(path)
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// closeFiles forgets the undo history, saves included, of files taken out of
+// the workspace. The page reverts the edits it asked about first; a file
+// still holding unsaved edits, made from another page since, keeps them and
+// its history. Nothing on disk changes.
+func (a api) closeFiles(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Paths []string `json:"paths"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
+		return
+	}
+	for _, path := range body.Paths {
+		if !pending.has(path) {
+			history.forget(path)
+		}
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }

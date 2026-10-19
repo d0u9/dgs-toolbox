@@ -97,7 +97,8 @@ func TestUndoRedoUnsavedEdits(t *testing.T) {
 	}
 	step("redo") // nothing to redo is not an error
 	send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path})
-	if got := track(); got.Undo != 0 || got.Redo != 0 || got.Parts[0].Name != "Three" {
-		t.Fatalf("after save: undo %d redo %d %q", got.Undo, got.Redo, got.Parts[0].Name)
+	// The save is one more step: undoing it leaves the edits unsaved again.
+	if got := track(); got.Undo != 3 || got.Redo != 0 || got.Parts[0].Name != "Three" || got.Unsaved {
+		t.Fatalf("after save: undo %d redo %d %q unsaved %v", got.Undo, got.Redo, got.Parts[0].Name, got.Unsaved)
 	}
 }

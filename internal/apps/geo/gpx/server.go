@@ -90,6 +90,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/unsaved", api.unsaved)
 	mux.HandleFunc("POST /api/save", api.saveFiles)
 	mux.HandleFunc("DELETE /api/pending", api.revertFiles)
+	mux.HandleFunc("POST /api/close", api.closeFiles)
 	mux.HandleFunc("DELETE /api/sidecar", api.discardSidecar)
 	mux.HandleFunc("POST /api/draft", api.newDraft)
 	mux.HandleFunc("DELETE /api/draft", api.discardDraft)
