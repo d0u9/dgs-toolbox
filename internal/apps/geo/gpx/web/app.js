@@ -1211,26 +1211,27 @@ function showRange(edit, { fit = false } = {}) {
 async function saveClean(params) {
   const entry = focusedEntry();
   const part = editPart();
-  if (!entry || !part) return;
+  if (!entry || !part) return false;
   const others = entry.track.clean.params.edits.filter((edit) => !inPart(edit, part));
-  await changeFocused((path) => api.saveClean(path, part.first, { ...params, edits: [...others, ...params.edits] }));
+  return changeFocused((path) => api.saveClean(path, part.first, { ...params, edits: [...others, ...params.edits] }));
 }
 
 // changeFocused runs a change to the focused track's sidecar, then fetches the
-// track again and redraws it.
+// track again and redraws it. It answers whether the change was made.
 async function changeFocused(change) {
   const path = state.focus;
   const entry = focusedEntry();
-  if (!entry) return;
+  if (!entry) return false;
   try {
     await change(path);
     await reloadEntry(path);
   } catch (error) {
     showMessage(error.message, true);
-    return;
+    return false;
   }
   if (state.focus === path) setFocus(path, { fit: false });
   reportFocus();
+  return true;
 }
 
 async function reloadEntry(path) {
@@ -3168,6 +3169,7 @@ async function start() {
   cutPanel = new CutPanel({
     root: cleanPanel.segmentsRoot,
     onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
+    onRemove: (first, last) => cleanPanel.addRange(first, last, false),
     onHover: (piece) => cutOverlay.highlight(cutPanel.track, piece),
     onShow: (piece, { fit = false } = {}) => {
       cutOverlay.highlight(cutPanel.track, piece);

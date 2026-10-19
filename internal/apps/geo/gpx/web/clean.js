@@ -106,11 +106,11 @@ export class CleanPanel {
   addEdit(edit) {
     const params = structuredClone(this.track.clean.params);
     params.edits.push({ ...edit, at: Date.now() });
-    this.onChange(params);
+    return this.onChange(params);
   }
 
   addRange(first, last, join = false) {
-    this.addEdit({ kind: "range", first, last, join });
+    return this.addEdit({ kind: "range", first, last, join });
   }
 
   setJoin(index, join) {
