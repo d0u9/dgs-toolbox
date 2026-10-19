@@ -328,3 +328,91 @@ func TestBoxCommandIsRemoved(t *testing.T) {
 		t.Fatalf("removed Box command: %v", err)
 	}
 }
+
+func TestActionReceivesWhichFlagsWereGiven(t *testing.T) {
+	var got map[string]string
+	app := tui.App{ID: "example", Name: "Example", Actions: []tui.Action{{
+		ID: "run", Args: 0,
+		Flags: []tui.ActionFlag{{Name: "workers", Default: "1"}, {Name: "dest", Repeatable: true}, {Name: "move", Bool: true}},
+		Run: func(_ io.Reader, _ io.Writer, _ []string, flags map[string]string) error {
+			got = flags
+			return nil
+		},
+	}}}
+	command := NewRootCommand([]tui.App{app}, func(tui.Launch) error { return nil })
+	command.SetArgs([]string{"example", "run", "--dest", "/a", "--workers", "1"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var given []string
+	if err := json.Unmarshal([]byte(got[tui.GivenFlags]), &given); err != nil {
+		t.Fatal(err)
+	}
+	// A flag given with its default value is still given; move was not.
+	if !reflect.DeepEqual(given, []string{"workers", "dest"}) {
+		t.Fatalf("given = %v", given)
+	}
+}
+
+func TestPhotoImportProfileRunsWithoutSourceArgument(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvPath, filepath.Join(root, "config"))
+	source, target := filepath.Join(root, "card"), filepath.Join(root, "library")
+	for _, dir := range []string{source, target, filepath.Join(root, "config", "photo")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(source, "a.JPG"), []byte("synthetic photo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := json.Marshal(map[string]any{"import": map[string]any{"profiles": map[string]any{"card": map[string]any{"source": source, "dest": []string{target}}}}})
+	if err := os.WriteFile(filepath.Join(root, "config", "photo", "config.json"), profile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		t.Fatal("--profile launched TUI")
+		return nil
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"photo", "import", "--profile", "card"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err, output.String())
+	}
+	if _, err := os.Stat(filepath.Join(target, "a.JPG")); err != nil {
+		t.Fatal("profile import did not copy", err)
+	}
+}
+
+func TestPhotoImportProfileAloneListsProfiles(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvPath, filepath.Join(root, "config"))
+	if err := os.MkdirAll(filepath.Join(root, "config", "photo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profiles := `{"import":{"profiles":{"card":{"source":"/card","dest":["/a","/b"]},"phone":{"source":"/phone","dest":["/a"]}}}}`
+	if err := os.WriteFile(filepath.Join(root, "config", "photo", "config.json"), []byte(profiles), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) (string, error) {
+		command := NewRootCommand(apps.All(), func(tui.Launch) error { t.Fatal("launched TUI"); return nil })
+		var output bytes.Buffer
+		command.SetOut(&output)
+		command.SetErr(&output)
+		command.SetArgs(append([]string{"photo", "import"}, args...))
+		err := command.Execute()
+		return output.String(), err
+	}
+	out, err := run("--profile")
+	if err != nil || !strings.Contains(out, "card   /card → /a, /b") || !strings.Contains(out, "phone  /phone → /a") {
+		t.Fatalf("listing = %q, %v", out, err)
+	}
+	// "--profile name" with a space still names the profile.
+	if _, err := run("--profile", "nope"); err == nil || !strings.Contains(err.Error(), "configured: card, phone") {
+		t.Fatalf("--profile nope = %v", err)
+	}
+	if _, err := run("--profile=nope"); err == nil || !strings.Contains(err.Error(), "configured: card, phone") {
+		t.Fatalf("--profile=nope = %v", err)
+	}
+}

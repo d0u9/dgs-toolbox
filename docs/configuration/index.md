@@ -127,7 +127,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [timelines](timelines.md) | `timelines.<name>.contentRequired` | `false` |
 | [capture](capture.md#reminders) | `apple.reminders.list` | empty — Reminders' own default list |
 | [capture](capture.md#reminders) | `apple.reminders.radius` | `150` |
-| [photo](photo.md) | `import.state_file` | `.dgs-state` — hidden recovery-state filename; unrecognized existing files are preserved; incremental detection also works without it |
+| [photo](photo.md) | `import.state_file` | `_dgs-state` — recovery-state filename starting with `.` or `_`; unrecognized existing files are preserved; incremental detection also works without it |
 | [photo](photo.md) | `encode.source` | empty |
 | [photo](photo.md) | `encode.destination` | empty |
 | [photo](photo.md) | `encode.quality` | `82` |
@@ -139,6 +139,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [photo](photo.md) | `encode.max_pixels` | `40000000` |
 | [photo](photo.md) | `import.source` | empty — the repository's mock path |
 | [photo](photo.md) | `import.dest` | `[]` — initial destinations; empty uses the repository's mock path |
+| [photo](photo.md) | `import.profiles` | `{}` — named source, destinations and settings; see [Import profiles](photo.md#import-profiles) |
 | [doc](doc.md) | `trees` | empty — one tree, the working directory |
 | [doc](doc.md) | `keep_original` | `true` — archive imported images beside converted PDFs |
 | [doc](doc.md) | `date_order` | `DMY` |

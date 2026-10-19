@@ -422,3 +422,14 @@ func TestIncrementalPausedRunCancelsWithoutPublishing(t *testing.T) {
 		t.Fatal("cancellation published a file")
 	}
 }
+
+func TestDefaultAndLegacyStateNamesAreAlwaysArtifacts(t *testing.T) {
+	for _, name := range []string{"_dgs-state", ".dgs-state", "_custom"} {
+		if !IsImportArtifact(name, "_custom") {
+			t.Errorf("%s not treated as state", name)
+		}
+	}
+	if IsImportArtifact("_DSC0001.JPG", "_custom") {
+		t.Error("a photo starting with _ treated as state")
+	}
+}

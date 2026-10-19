@@ -1,7 +1,17 @@
 {
   "import": {
-    "state_file": ".dgs-state",
+    "state_file": "_dgs-state",
     "source": "/Volumes/SD/DCIM",
-    "dest": ["~/Pictures/Inbox", "~/Pictures/Backup"]
+    "dest": ["~/Pictures/Inbox", "~/Pictures/Backup"],
+    "profiles": {
+      "card": {
+        "source": "/Volumes/SD/DCIM",
+        "dest": ["~/Pictures/Inbox", "~/Pictures/Backup"],
+        "ext": ["JPG", "CR3"],
+        "duplicates": "keep-both",
+        "organize": true
+      },
+      "phone": { "source": "~/Downloads/phone", "dest": ["~/Pictures/Inbox"] }
+    }
   }
 }

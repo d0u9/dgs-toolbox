@@ -10,6 +10,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -281,6 +283,33 @@ type PhotoImport struct {
 	Dest      []string `json:"dest"`
 	// Destination is the legacy single-target configuration. Prefer Dest.
 	Destination string `json:"destination,omitempty"`
+	// Profiles name sources and destinations used often, with their settings.
+	Profiles map[string]PhotoImportProfile `json:"profiles,omitempty"`
+}
+
+// PhotoImportProfile is one named import. It has no move setting: deleting
+// sources is always asked for at the time.
+type PhotoImportProfile struct {
+	Source      string   `json:"source"`
+	Dest        []string `json:"dest"`
+	Ext         []string `json:"ext,omitempty"`
+	Duplicates  string   `json:"duplicates,omitempty"`
+	Workers     int      `json:"workers,omitempty"`
+	Incremental *bool    `json:"incremental,omitempty"`
+	Organize    bool     `json:"organize,omitempty"`
+	// AllowCheckRename opts the destinations into check-then-rename
+	// publication where safe publication is unavailable, as on SMB.
+	AllowCheckRename bool `json:"allow_check_rename,omitempty"`
+}
+
+// PhotoImportProfileNames lists the profiles in name order.
+func (c Config) PhotoImportProfileNames() []string {
+	names := make([]string, 0, len(c.Photo.Import.Profiles))
+	for name := range c.Photo.Import.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Shell configures what every command shares: the top bar.
@@ -305,7 +334,7 @@ func Default() Config {
 	return Config{Shell: Shell{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}, Encode: DefaultPhotoEncode()}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
+	}}, Photo: Photo{Import: PhotoImport{StateFile: "_dgs-state"}, Encode: DefaultPhotoEncode()}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
 		Scan: CaptureScan{IndexFile: "index.json"},
 	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}},
 		Plugins: Plugins{Obsidian: PluginsObsidian{
@@ -408,7 +437,7 @@ func (c Config) CaptureReminders() CaptureReminders { return c.Capture.Apple.Rem
 
 func (c Config) PhotoImportStateFile() string {
 	if c.Photo.Import.StateFile == "" {
-		return ".dgs-state"
+		return "_dgs-state"
 	}
 	return c.Photo.Import.StateFile
 }
@@ -690,6 +719,8 @@ var parts = []part{
 	{"cred", nil, nil},
 }
 
+var profileName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 func checkPhoto(c *Config) error {
 	if c.Photo.Import.Dest != nil && c.Photo.Import.Destination != "" {
 		return errors.New("import.dest and legacy import.destination cannot both be configured")
@@ -700,6 +731,29 @@ func checkPhoto(c *Config) error {
 		}
 	}
 
+	for name, profile := range c.Photo.Import.Profiles {
+		if !profileName.MatchString(name) {
+			return fmt.Errorf("import.profiles: %q is not a name of letters, digits, - and _", name)
+		}
+		where := "import.profiles." + name
+		if strings.TrimSpace(profile.Source) == "" {
+			return fmt.Errorf("%s.source is required", where)
+		}
+		if len(profile.Dest) == 0 {
+			return fmt.Errorf("%s.dest needs at least one destination", where)
+		}
+		for i, root := range profile.Dest {
+			if strings.TrimSpace(root) == "" {
+				return fmt.Errorf("%s.dest[%d] must not be empty", where, i)
+			}
+		}
+		if profile.Duplicates != "" && profile.Duplicates != "skip" && profile.Duplicates != "keep-both" {
+			return fmt.Errorf("%s.duplicates must be skip or keep-both", where)
+		}
+		if profile.Workers < 0 || profile.Workers > 8 {
+			return fmt.Errorf("%s.workers must be 1–8", where)
+		}
+	}
 	if err := c.Photo.Encode.validate(); err != nil {
 		return err
 	}
@@ -707,8 +761,9 @@ func checkPhoto(c *Config) error {
 		return err
 	}
 	stateFile := c.PhotoImportStateFile()
-	if filepath.Base(stateFile) != stateFile || !strings.HasPrefix(stateFile, ".") || stateFile == "." || stateFile == ".." {
-		return fmt.Errorf("import.state_file must be a hidden filename, got %q", stateFile)
+	// A leading "." hides it; a leading "_" sorts it apart from the photos.
+	if len(stateFile) < 2 || stateFile == ".." || filepath.Base(stateFile) != stateFile || !strings.ContainsAny(stateFile[:1], "._") {
+		return fmt.Errorf("import.state_file must be a filename starting with . or _, got %q", stateFile)
 	}
 	return nil
 }

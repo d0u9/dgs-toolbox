@@ -25,7 +25,7 @@ func New() tui.App {
 				},
 				NewWithConfig: func(global config.Config) tui.CommandModel {
 					source, destinations := global.PhotoImportPaths()
-					return newImportModelWithSettings(global.PhotoImportStateFile(), source, destinations...)
+					return newImportModelWithSettings(global.PhotoImportStateFile(), source, destinations...).(importModel).withProfiles(global)
 				},
 			},
 			{
@@ -41,9 +41,10 @@ func New() tui.App {
 		},
 		Actions: []tui.Action{
 			{
-				ID: "import", Help: importHelp, Usage: "[<source>]", Args: 1,
+				ID: "import", Help: importHelp, Usage: "[<source>]", MaxArgs: 1, // no source with --profile
 				Description: "Import originals into independently verified destinations.",
 				Flags: []tui.ActionFlag{
+					{Name: "profile", Bare: listProfiles, Usage: "run a profile from photo/config.json: its source, destinations and settings; alone, list them"},
 					{Name: "dest", Repeatable: true, Usage: "destination directory; repeat for each copy"},
 					{Name: "move", Bool: true, Usage: "delete each source only after every destination verifies it"},
 					{Name: "incremental", Bool: true, Default: "true", Usage: "find existing copies by size and SHA-256 in each destination"},
@@ -51,6 +52,7 @@ func New() tui.App {
 					{Name: "workers", Default: "1", Usage: "whole-file workers per destination (1–8)"},
 					{Name: "ext", Repeatable: true, Usage: "include this extension (e.g. JPG); repeat to select several; default all regular files"},
 					{Name: "organize", Bool: true, Usage: "organize imported JPG/RAW into YYYYMMDD folders"},
+					{Name: "allow-check-rename", Bool: true, Usage: "on SMB and other mounts without exclusive rename, publish by checking then renaming; locks each destination"},
 					{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "preview selected files and destination inventories without writing or deleting"},
 					{Name: "delete-state", Bool: true, Usage: "delete destination state after full success; retain unfinished batches"},
 				},

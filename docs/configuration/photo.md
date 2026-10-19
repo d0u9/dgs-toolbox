@@ -5,7 +5,7 @@
 ```json
 {
   "import": {
-    "state_file": ".dgs-state",
+    "state_file": "_dgs-state",
     "source": "",
     "dest": []
   }
@@ -14,9 +14,49 @@
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `import.state_file` | The name of the file Photo Import keeps its state in, inside the destination. It must be a hidden filename (starting with `.`), not a path or a photo name. Unrecognized existing contents are preserved and reported as a state error. | `.dgs-state` |
+| `import.state_file` | The name of the file Photo Import keeps its state in, inside the destination. It must be a filename starting with `.` or `_`, not a path or a photo name; the default and the earlier `.dgs-state` are always recognized as state. Unrecognized existing contents are preserved and reported as a state error. | `_dgs-state` |
 | `import.source` | Where Import reads from. Empty shows the repository's mock path instead. | empty |
 | `import.dest` | Initial destination directories, in display order. Each receives a complete copy. An omitted or empty array shows the repository's mock destination instead. | `[]` |
+
+## Import profiles
+
+`import.profiles` names the sources and destinations used often, each with its
+own import settings, so an import starts without choosing them again:
+
+```json
+{
+  "import": {
+    "profiles": {
+      "card": {
+        "source": "/Volumes/SD/DCIM",
+        "dest": ["~/Pictures/Inbox", "~/Pictures/Backup"],
+        "ext": ["JPG", "CR3"],
+        "duplicates": "keep-both",
+        "organize": true
+      },
+      "phone": { "source": "~/Downloads/phone", "dest": ["~/Pictures/Inbox"] }
+    }
+  }
+}
+```
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `import.profiles.<name>.source` | Directory to import from. Required. `~` is expanded. | — |
+| `import.profiles.<name>.dest` | Destination directories, each receiving a complete copy. At least one is required. | — |
+| `import.profiles.<name>.ext` | Extensions to import, as `--ext` takes them; one the card lacks is skipped with a notice. Empty imports every regular file. | `[]` |
+| `import.profiles.<name>.duplicates` | `skip` or `keep-both`. | `skip` |
+| `import.profiles.<name>.workers` | Whole-file workers per destination, 1–8. | `1` |
+| `import.profiles.<name>.incremental` | Find existing copies by size and SHA-256. | `true` |
+| `import.profiles.<name>.organize` | Organize imported JPG/RAW into date folders. | `false` |
+| `import.profiles.<name>.allow_check_rename` | For destinations that cannot refuse an existing name, such as SMB mounts: publish by checking then renaming, holding `_dgs-lock` in each destination. A file another program writes to the same name at that moment can be replaced. | `false` |
+
+A profile cannot delete sources: there is no `move` key, so moving is always
+asked for at the time, with `--move` or in the workspace. A name is letters,
+digits, `-` and `_`. `dgs photo import --profile` lists the profiles and
+`dgs photo import --profile card` runs one; any flag given
+as well replaces the profile's value, and `--dest` replaces its whole list. In
+the workspace, Setup lists the profiles first.
 
 The legacy `import.destination` string remains readable as one destination. Do not
 combine it with `import.dest`; new configurations use the array.
