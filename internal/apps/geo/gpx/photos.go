@@ -87,6 +87,8 @@ func transferWaypoint(a analysis, key string, wpt gpxfile.Waypoint, target strin
 	if name, ok := a.cleaning.Names[key]; ok {
 		wpt.Name = name
 	}
+	wpt.Translations = translatedAs(a, key, wpt.Translations)
+	wpt.Lang = langAs(a, key, wpt.Lang)
 	wpt.Description = shown.Description
 	photos := make([]sidecar.Photo, 0, len(shown.Photos))
 	for _, photo := range shown.Photos {

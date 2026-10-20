@@ -1,5 +1,5 @@
 // GPX-specific fields use the shared modal lifecycle and action styles.
-import { formDialog } from "/ui/dialog.js";
+import { formDialog, textInput } from "/ui/dialog.js";
 
 export function waypointDialog(entries, coordinates) {
   const target = document.createElement("select"); target.className = "field prompt-input"; target.setAttribute("aria-label", "Target GPX");
@@ -80,5 +80,51 @@ export function photosDialog(part, url, { canAdd, maxSide, quality: qualityValue
       maxSide: Number(size.value),
       quality: Math.min(100, Math.max(1, Number(quality.value) || 90)),
     }),
+  });
+}
+
+// nameDialog asks for a name, the language it is in, and the same name in
+// one other language. It answers { name, lang, translations } — lang a
+// language tag or "" when not known, translations keyed by tag with the
+// part's other languages kept as they were — or null when cancelled.
+// fileLang is the file's language, which a part without its own takes;
+// isFile says the name is the file's, whose language is that default. The
+// other language is the one the part already has, else English for a name
+// in another language and Chinese for one in English; when the language is
+// not known, English for a name in Chinese, Japanese or Korean script.
+export function nameDialog({ title, message, name: value, lang: ownLang = "", fileLang = "", isFile = false, translations = {}, confirm = "Rename", required = true }) {
+  const name = textInput(); name.className = "field prompt-input"; name.value = value || ""; name.required = required; name.setAttribute("aria-label", "Name");
+  const languages = document.createElement("datalist"); languages.id = "name-languages";
+  for (const tag of ["en", "zh", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]) { const option = document.createElement("option"); option.value = tag; languages.append(option); }
+  const tagInput = (label) => { const input = textInput(); input.className = "field prompt-input"; input.setAttribute("aria-label", label); input.setAttribute("list", "name-languages"); input.spellcheck = false; return input; };
+  const nameLang = tagInput("Language of the name"); nameLang.value = ownLang;
+  nameLang.placeholder = isFile || !fileLang ? "not known, e.g. zh" : `${fileLang}, the file's`;
+  const known = (ownLang || (isFile ? "" : fileLang)).toLowerCase();
+  const lang = tagInput("Other language"); lang.placeholder = "en";
+  const other = Object.keys(translations)[0] || (known ? (known === "en" || known.startsWith("en-") ? "zh" : "en") : /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(value || "") ? "en" : "zh");
+  lang.value = other;
+  const translated = textInput(); translated.className = "field prompt-input"; translated.setAttribute("aria-label", "Name in that language"); translated.placeholder = "Name in that language (optional)";
+  translated.value = translations[other] || "";
+  // Tags match whatever their case.
+  const tagOf = (tag) => Object.keys(translations).find((key) => key.toLowerCase() === tag.toLowerCase());
+  lang.addEventListener("input", () => { translated.value = translations[tagOf(lang.value.trim()) ?? ""] ?? translated.value; });
+  const field = (text, ...inputs) => { const label = document.createElement("label"); label.textContent = text; label.append(...inputs); return label; };
+  const nameLangLabel = isFile ? "Language of the name, and of the parts' names" : "Language of the name";
+  const fields = [field("Name", name), field(nameLangLabel, nameLang, languages), field("Other language", lang), field("Name in that language", translated)];
+  return formDialog({ title, message, fields, focus: name, confirm,
+    read: () => {
+      if (required && !name.value.trim()) return null;
+      const tag = lang.value.trim();
+      const kept = { ...translations };
+      delete kept[other];
+      if (tag && tagOf(tag)) delete kept[tagOf(tag)];
+      if (tag && translated.value.trim()) kept[tag] = translated.value.trim();
+      // A part newly put in the file's language says nothing of its own: it
+      // takes the file's. One left as it was stays, so confirming the dialog
+      // unchanged changes nothing.
+      let given = nameLang.value.trim();
+      if (!isFile && fileLang && given !== ownLang && given.toLowerCase() === fileLang.toLowerCase()) given = "";
+      return { name: name.value.trim(), lang: given, translations: kept };
+    },
   });
 }

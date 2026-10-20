@@ -141,19 +141,23 @@ func configuredMap(tile config.GeoGPXTile) baseMap {
 // trackJSON is a track as the page draws it: parallel arrays, one entry per
 // point, so a long track stays compact. Missing values are null.
 type trackJSON struct {
-	Path      string       `json:"path"`
-	Name      string       `json:"name"`
-	Renamed   bool         `json:"renamed,omitempty"` // the name was given here, not the file's own
-	Undo      int          `json:"undo"`              // edits that can be undone
-	Redo      int          `json:"redo"`              // edits that can be redone
-	Points    [][2]float64 `json:"points"`            // [lon, lat], the order map libraries take
-	Segments  []int        `json:"segments"`
-	Distance  []float64    `json:"distance"`  // metres from the start
-	Elevation []*float64   `json:"elevation"` // metres
-	Speed     []*float64   `json:"speed"`     // metres per second
-	Time      []*int64     `json:"time"`      // Unix milliseconds
-	Stats     statsJSON    `json:"stats"`
-	Stops     []stopJSON   `json:"stops"`
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	Renamed bool   `json:"renamed,omitempty"` // the name was given here, not the file's own
+	// Translations are the GPX's name in other languages, keyed by BCP 47 tag;
+	// Lang is the language of its name and of every part's without its own.
+	Translations map[string]string `json:"translations,omitempty"`
+	Lang         string            `json:"lang,omitempty"`
+	Undo         int               `json:"undo"`   // edits that can be undone
+	Redo         int               `json:"redo"`   // edits that can be redone
+	Points       [][2]float64      `json:"points"` // [lon, lat], the order map libraries take
+	Segments     []int             `json:"segments"`
+	Distance     []float64         `json:"distance"`  // metres from the start
+	Elevation    []*float64        `json:"elevation"` // metres
+	Speed        []*float64        `json:"speed"`     // metres per second
+	Time         []*int64          `json:"time"`      // Unix milliseconds
+	Stats        statsJSON         `json:"stats"`
+	Stops        []stopJSON        `json:"stops"`
 	// Parts are what the file holds, for listing and showing one at a time:
 	// each <trk> (its points are first..last of the arrays above), then each
 	// <rte> and <wpt>.
@@ -221,11 +225,15 @@ type cleanJSON struct {
 // partJSON is one track, route or waypoint of a file. Key names it for the
 // page: "t0", "r0", "w0".
 type partJSON struct {
-	Key   string `json:"key"`
-	Kind  string `json:"kind"` // "track", "route" or "waypoint"
-	Name  string `json:"name"`
-	First int    `json:"first"` // a track's first point index
-	Last  int    `json:"last"`
+	Key  string `json:"key"`
+	Kind string `json:"kind"` // "track", "route" or "waypoint"
+	Name string `json:"name"`
+	// Translations are the name in other languages, keyed by BCP 47 tag;
+	// Lang is the language of the name when the part says, else "".
+	Translations map[string]string `json:"translations,omitempty"`
+	Lang         string            `json:"lang,omitempty"`
+	First        int               `json:"first"` // a track's first point index
+	Last         int               `json:"last"`
 	// Clean are the filters a track's points are cleaned with: its own, or
 	// the file's when it has none.
 	Clean       *clean.Filters  `json:"clean,omitempty"`
@@ -465,6 +473,8 @@ func trackResponse(a analysis) trackJSON {
 	// a sidecar from an earlier save and unsaved edits over it.
 	response.Unsaved = pending.has(a.path) && !response.Draft
 	_, response.Renamed = a.cleaning.Names[fileNameKey]
+	response.Translations = translatedAs(a, fileNameKey, a.file.Translations)
+	response.Lang = langAs(a, fileNameKey, a.file.Lang)
 	response.Undo, response.Redo = history.counts(a.path)
 	if !response.Draft {
 		if _, err := os.Stat(sidecar.PathFor(a.path)); err == nil || a.sidecarErr != nil {
@@ -559,7 +569,7 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 	list := []partJSON{}
 	for i, trk := range a.file.Tracks {
 		key := a.keys.Tracks[i]
-		part := partJSON{Key: key, Kind: "track", Name: named(a, key, trk.Name, "Track", nameIndex(key))}
+		part := partJSON{Key: key, Kind: "track", Name: named(a, key, trk.Name, "Track", nameIndex(key)), Translations: translatedAs(a, key, trk.Translations), Lang: langAs(a, key, trk.Lang)}
 		if at, err := locate(a, key); err == nil && at.held >= 0 {
 			part.Added = &addedJSON{Index: at.held, From: a.cleaning.Added[at.held].From}
 		}
@@ -591,7 +601,7 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 	}
 	for i, rte := range a.file.Routes {
 		key := a.keys.Routes[i]
-		part := partJSON{Key: key, Kind: "route", Name: named(a, key, rte.Name, "Route", nameIndex(key))}
+		part := partJSON{Key: key, Kind: "route", Name: named(a, key, rte.Name, "Route", nameIndex(key)), Translations: translatedAs(a, key, rte.Translations), Lang: langAs(a, key, rte.Lang)}
 		if copied := nameIndex(key) - a.layout.Routes; copied >= 0 && copied < len(a.cleaning.Routes) {
 			part.Added = &addedJSON{Index: copied, From: a.cleaning.Routes[copied].From}
 		}
@@ -612,10 +622,12 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 	for i, wpt := range a.file.Waypoints {
 		key := a.keys.Waypoints[i]
 		part := partJSON{
-			Key:    key,
-			Kind:   "waypoint",
-			Name:   named(a, key, wpt.Name, "Waypoint", nameIndex(key)),
-			Points: [][2]float64{{wpt.Lon, wpt.Lat}},
+			Key:          key,
+			Kind:         "waypoint",
+			Name:         named(a, key, wpt.Name, "Waypoint", nameIndex(key)),
+			Translations: translatedAs(a, key, wpt.Translations),
+			Lang:         langAs(a, key, wpt.Lang),
+			Points:       [][2]float64{{wpt.Lon, wpt.Lat}},
 		}
 		shown := waypointPhotos(a, key, wpt)
 		part.Description, part.Photos = shown.Description, shown.Photos
@@ -647,6 +659,34 @@ func named(a analysis, key, name, kind string, index int) string {
 		return orNumbered(renamed, kind, index)
 	}
 	return orNumbered(name, kind, index)
+}
+
+// translatedAs is a part's name in other languages as the page shows it: the
+// translations held for it, else its own. Held ones replace all of its own.
+func translatedAs(a analysis, key string, own map[string]string) map[string]string {
+	if held, ok := a.cleaning.Translations[key]; ok {
+		return held
+	}
+	return own
+}
+
+// langAs is the language of a part's name as the page shows it: the one held
+// for it, else its own.
+func langAs(a analysis, key, own string) string {
+	if held, ok := a.cleaning.Langs[key]; ok {
+		return held
+	}
+	return own
+}
+
+// nameLangOf is the language a part's name is in: its own, else the file's.
+// A part copied to another file takes it as its own, since that file's
+// default may be another.
+func nameLangOf(a analysis, key, own string) string {
+	if lang := langAs(a, key, own); lang != "" {
+		return lang
+	}
+	return langAs(a, fileNameKey, a.file.Lang)
 }
 
 func orNumbered(name, kind string, index int) string {

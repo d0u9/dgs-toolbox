@@ -33,7 +33,10 @@ export const api = {
   // first names the track whose filters these are, by its first point.
   saveClean: (path, first, clean) => sendJSON("PUT", "api/clean", { path, first, clean }),
   // renamePart names one <trk>, <rte> or <wpt> of a file, keyed "t0", "r0", "w0".
-  renamePart: (path, key, name) => sendJSON("PUT", "api/part-name", { path, key, name }),
+  // translations, { "en": "…" }, replace its names in other languages, and
+  // lang, a language tag or "" for not known, is the language name is in;
+  // left out, either stays as it is.
+  renamePart: (path, key, name, translations, lang) => sendJSON("PUT", "api/part-name", { path, key, name, translations, lang }),
   // undo and redo step one file's unsaved edits back or forward.
   undo: (path) => postJSON("api/undo", { path }),
   redo: (path) => postJSON("api/redo", { path }),

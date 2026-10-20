@@ -17,7 +17,7 @@ import { iconSvg, EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, 
 import { RoutePlanner } from "./route.js";
 import { ViewGestures } from "./gestures.js";
 import { UI_SCALE, uiPx } from "./density.js";
-import { waypointDialog, photosDialog } from "./dialog.js";
+import { waypointDialog, photosDialog, nameDialog } from "./dialog.js";
 import { cropDialog } from "./crop.js";
 import { sharpen } from "./sharpen.js";
 import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
@@ -203,7 +203,7 @@ async function addTrack(path, { color, visible = true, restoring = false, hidden
   }
   let track;
   try {
-    track = await api.track(path, state.stops, state.coordinates);
+    track = await loadTrack(path);
   } catch (error) {
     showMessage(error.message, true);
     return false;
@@ -919,7 +919,7 @@ async function saveAs(path, { convert = false } = {}) {
       title: "Save the new GPX",
       message: `${entry.track.name} holds ${held}, saved as they are being edited. Choose the folder to save it in and name it; an existing file is not replaced.`,
       folder: root,
-      name: `${entry.track.name}.gpx`,
+      name: `${ownName(entry.track)}.gpx`,
     }
     : {
       ...common,
@@ -973,7 +973,7 @@ async function renameGPX(path) {
     message: entry.track.draft
       ? "Name this new GPX. It stays in memory until you save it."
       : `Rename this file in its current folder, with its sidecar and photos. The GPX's own name stays${entry.track.ours ? "" : ", and the recording's contents are not changed"}. Unsaved edits stay unsaved. An existing file is not replaced.`,
-    value: entry.track.draft ? entry.track.name : basename(path).replace(/\.gpx$/i, ""),
+    value: entry.track.draft ? ownName(entry.track) : basename(path).replace(/\.gpx$/i, ""),
     confirm: "Rename",
   });
   if (!name) return;
@@ -1002,17 +1002,20 @@ async function refreshEntry(path) {
 // of a recording. An empty given name drops the one given here, unasked.
 async function renameName(path, given) {
   const entry = state.tracks.get(path);
-  const name = given ?? await promptDialog({
+  const answer = given != null ? { name: given } : await nameDialog({
     title: "Rename GPX",
     message: entry.track.ours
       ? "The name is written into the GPX when it is saved. The file name stays."
       : "The name is kept in the sidecar when it is saved; the recorded file is not written. The file name stays.",
-    value: entry.track.name,
-    confirm: "Rename",
+    name: ownName(entry.track),
+    lang: entry.track.lang,
+    isFile: true,
+    translations: entry.track.translations,
+    required: false,
   });
-  if (name == null) return;
+  if (answer == null) return;
   try {
-    await api.renamePart(path, "f", name);
+    await api.renamePart(path, "f", answer.name, answer.translations, answer.lang);
     await refreshEntry(path);
   } catch (error) {
     showMessage(error.message, true);
@@ -1243,10 +1246,56 @@ async function changeFocused(change) {
   return true;
 }
 
+// nameLanguage is the language names are shown in, "" for each part's own
+// <name>: a preview of what a reader in that language sees. It changes only
+// what is shown; renaming still starts from the part's own name.
+let nameLanguage = "";
+try { nameLanguage = localStorage.getItem("gpx.nameLanguage") || ""; } catch {}
+
+async function loadTrack(path) {
+  return localize(await api.track(path, state.stops, state.coordinates));
+}
+
+// localize shows a track and its parts by their names in nameLanguage, where
+// they have one, keeping the own name as ownName.
+function localize(track) {
+  for (const named of [track, ...(track.parts || [])]) {
+    named.ownName ??= named.name;
+    // A part without a language of its own takes the file's.
+    const lang = named === track ? track.lang : named.lang || track.lang;
+    named.name = nameIn(nameLanguage, named.ownName, lang, named.translations);
+  }
+  return track;
+}
+
+// ownName is a track's or part's own name, whatever language names are
+// shown in: what is written, and where writing starts from, is never the
+// preview.
+function ownName(named) {
+  return named.ownName ?? named.name;
+}
+
+// nameIn is the name to show for lang, as docs/apps/geo/gpx-names.md says:
+// among the translations, and the own name when its language is known, the
+// one in lang, else the first by tag in one of its regions or scripts — so
+// "zh" finds "zh-Hant" — else the own name. The own name wins a tie, and tags
+// match whatever their case.
+function nameIn(lang, own, ownLang, translations = {}) {
+  if (!lang) return own;
+  const wanted = lang.toLowerCase();
+  const candidates = Object.entries(translations).map(([tag, name]) => [tag.toLowerCase(), name]);
+  if (ownLang) candidates.unshift([ownLang.toLowerCase(), own]);
+  const exact = candidates.find(([tag]) => tag === wanted);
+  if (exact) return exact[1];
+  // A stable sort keeps the own name first among equal tags.
+  const near = candidates.filter(([tag]) => tag.startsWith(wanted + "-")).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return near.length ? near[0][1] : own;
+}
+
 async function reloadEntry(path) {
   const entry = state.tracks.get(path);
   if (!entry) return;
-  entry.track = await api.track(path, state.stops, state.coordinates);
+  entry.track = await loadTrack(path);
   redraw(entry);
 }
 
@@ -1377,7 +1426,7 @@ async function setStopParams(stops) {
 async function reloadTracks() {
   for (const [path, entry] of state.tracks) {
     try {
-      entry.track = await api.track(path, state.stops, state.coordinates);
+      entry.track = await loadTrack(path);
       redraw(entry);
     } catch (error) {
       showMessage(error.message, true);
@@ -1591,7 +1640,7 @@ function trackRow(path, entry) {
       ? [{ label: "Rename…", title: "Rename this GPX", onSelect: () => renameGPX(path) }]
       : [
         { label: "Rename…", title: "Change the GPX's own name; it is written when the file is saved", onSelect: () => renameName(path) },
-        ...(track.renamed ? [{ label: "Restore the name", title: "Drop the name given here; the GPX's own name shows again", onSelect: () => renameName(path, "") }] : []),
+        ...(track.renamed ? [{ label: "Restore the name", title: "Drop the name and translations given here; the GPX's own show again", onSelect: () => renameName(path, "") }] : []),
         { label: "Rename file…", title: "Rename the file in its folder; the GPX's own name stays", onSelect: () => renameGPX(path) },
       ],
     [{
@@ -1704,7 +1753,7 @@ function manyMenu(paths) {
     }],
     [joinItem(paths.flatMap((path) => {
       const entry = state.tracks.get(path);
-      return entry.track.parts.filter((part) => part.kind === "track" && entry.visible && !entry.hiddenParts.has(part.key)).map((part) => ({ path, key: part.key, name: part.name }));
+      return entry.track.parts.filter((part) => part.kind === "track" && entry.visible && !entry.hiddenParts.has(part.key)).map((part) => ({ path, key: part.key, name: ownName(part) }));
     }))],
     [{
       label: `Close ${files}`,
@@ -2209,17 +2258,20 @@ async function toWebP(bitmap, rect, maxSide, quality) {
 // so the recorded file stays as it was.
 async function renamePart(path, entry, part) {
   const inFile = entry.track.ours && part.kind === "track" && !entry.track.draft && !part.added;
-  const name = await promptDialog({
+  const answer = await nameDialog({
     title: `Rename ${part.name}`,
     message: inFile
       ? "The name is written into the GPX itself, which dgs wrote."
       : "The name is kept beside the GPX, in its sidecar; the recorded file is not written.",
-    value: part.name,
-    confirm: "Rename",
+    name: ownName(part),
+    lang: part.lang,
+    fileLang: entry.track.lang,
+    translations: part.translations,
   });
-  if (!name) return;
+  if (!answer) return;
+  const { name } = answer;
   try {
-    await api.renamePart(path, part.key, name);
+    await api.renamePart(path, part.key, name, answer.translations, answer.lang);
     // The new name is in the workspace rows, and in the inspector of the
     // focused file, at once: neither is redrawn by reloading alone.
     await refreshEntry(path);
@@ -2266,7 +2318,7 @@ async function copyPartTo(path, part, targets, move) {
 function pickedTracks() {
   return [...state.tracks].flatMap(([path, entry]) => entry.track.parts
     .filter((part) => part.kind === "track" && state.partPicks.has(partId(path, part.key)))
-    .map((part) => ({ path, key: part.key, name: part.name })));
+    .map((part) => ({ path, key: part.key, name: ownName(part) })));
 }
 
 // joinItem offers to join tracks, [{ path, key, name }], into one track. Any
@@ -3572,6 +3624,17 @@ async function start() {
   });
 
   bindLayersPanel();
+  $("name-language").value = nameLanguage;
+  $("name-language").addEventListener("change", () => {
+    nameLanguage = $("name-language").value;
+    try { localStorage.setItem("gpx.nameLanguage", nameLanguage); } catch {}
+    for (const entry of state.tracks.values()) {
+      localize(entry.track);
+      redraw(entry);
+    }
+    if (state.focus) setFocus(state.focus, { fit: false });
+    else renderTracks();
+  });
   $("coordinates").addEventListener("change", () => {
     state.gcj = $("coordinates").value;
     save();
