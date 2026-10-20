@@ -119,6 +119,10 @@
       <span class="chart-toggles segmented-control" role="group" aria-label="Charts">
         <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
         <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>
+        <span class="layout-toggles">
+          <button id="axis-distance" class="chip" aria-pressed="true" title="Distance along the track across the charts">km</button>
+          <button id="axis-time" class="chip" aria-pressed="false" title="Time across the charts, in the chosen time zone; points without time are left out">Time</button>
+        </span>
         <span id="layout-toggles" class="layout-toggles">
           <button id="layout-stacked" class="chip icon-button" aria-pressed="true" title="Charts one above the other">☰</button>
           <button id="layout-side" class="chip icon-button" aria-pressed="false" title="Charts side by side">◫</button>
@@ -154,6 +158,12 @@
             <input id="timeline-compress" type="checkbox"> Compress
           </label>
         </span>
+        <span class="timeline-group" role="group" aria-label="Zoom">
+          <span class="timeline-group-name">Zoom</span>
+          <label class="stop-toggle" title="Link the map: zooming the charts or the timeline frames that stretch on the map, and zooming or panning the map shows on them what it shows">
+            <input id="link-zoom" type="checkbox"> Map
+          </label>
+        </span>
         <span class="timeline-group" role="group" aria-label="Cursor">
           <span class="timeline-group-name">Cursor</span>
           <label class="stop-toggle" title="Snap the cursor to stops, data edges, cuts, hidden stretches and the track's ends; off, it follows the pointer">
@@ -177,7 +187,7 @@
         <div id="chart-speed" class="chart"></div>
       </div>
     </div>
-    <p id="chart-hint" class="hint">Drag to zoom · scroll to zoom · double-click to reset</p>
+    <p id="chart-hint" class="hint">Drag to pan · scroll to zoom · double-click to show on the map</p>
   </section>
 </main>
 

@@ -15,14 +15,17 @@ export class Timeline {
   // onStop(index) when a stop is clicked; onStopHover(index | null) when the
   // pointer enters or leaves one; onView([from, to] | null) when zooming or
   // panning changes the visible time, null meaning the whole track.
-  constructor({ root, bar, labels, overview, ticks, onScrub, onStop, onStopHover, onView }) {
-    Object.assign(this, { root, bar, labels, overview, ticks, onScrub, onStop, onStopHover, onView });
+  // onMenu(event, index) opens the menu at a point of the track: the bar's
+  // right click, away from the marks that have menus of their own.
+  // onJump(index) shows a double-clicked point on the map.
+  constructor({ root, bar, labels, overview, ticks, onScrub, onStop, onStopHover, onView, onMenu, onJump }) {
+    Object.assign(this, { root, bar, labels, overview, ticks, onScrub, onStop, onStopHover, onView, onMenu, onJump });
     this.view = null; // [from, to] in Unix milliseconds, or null for the whole track
     this.window = document.createElement("div");
     this.window.className = "timeline-window";
     overview.append(this.window);
     this.bindZoom();
-    bar.title = `Wheel to zoom · ${format.keys.shift}-wheel or ${format.keys.alt}-drag to pan · double-click for the whole track`;
+    bar.title = `Wheel to zoom · drag, ${format.keys.shift}-wheel or ${format.keys.alt}-drag to pan · double-click to show that point on the map`;
     this.track = null;
     this.timed = []; // indices of timed points, in time order
     this.timeZone = format.browserTimeZone();
@@ -67,24 +70,28 @@ export class Timeline {
         this.selectRange(event);
         return;
       }
-      if (event.target.closest(".timeline-stop") && !this.cutting) return;
-      // A click selects a point; cutting is an explicit context-menu action.
-      try {
-        bar.setPointerCapture(event.pointerId);
-      } catch {
-        // The scrub still follows the pointer while it stays over the bar.
+      // A click on a stop opens it; holding and dragging still pans.
+      if (event.target.closest(".timeline-stop") && !this.cutting) {
+        this.panBar(event, { scrub: false });
+        return;
       }
+      // A click selects a point; holding and dragging moves the time under
+      // the pointer with it. Cutting is an explicit context-menu action.
       this.scrub(event);
+      this.panBar(event);
     });
     bar.addEventListener("contextmenu", event => {
-      if (!this.cutting) return;
+      // Cut marks, and removed stretches while editing, have menus of their
+      // own; a stop has none, so a right click on one is a click on the bar.
+      if (event.target.closest(".timeline-cut, .timeline-candidate") || (this.editing && event.target.closest(".timeline-removed"))) return;
       const index = this.indexAt(event.clientX);
       if (index == null) return;
       this.onScrub(index); this.setIndex(index);
-      openMenu(event, [[{ label: "Cut here", onSelect: () => this.cutting?.onAdd(index) }]]);
+      this.onMenu?.(event, index);
     });
     bar.addEventListener("pointermove", (event) => {
       this.pointerX = event.clientX;
+      if (event.buttons && this.dragging) return; // a drag pans, it does not scrub
       this.scrub(event);
     });
     ticks.addEventListener("pointermove", event => {
@@ -490,27 +497,41 @@ export class Timeline {
       this.keepWheelGesture();
     }, { passive: false });
 
+    // A double-click shows that point on the map; Fit shows the whole track.
     bar.addEventListener("dblclick", (event) => {
       if (event.target.closest(".timeline-stop, .timeline-cut, .timeline-candidate")) return;
-      this.clearWheelAnchor();
-      this.changeView(null);
+      const index = this.indexAt(event.clientX);
+      if (index != null) this.onJump?.(index);
     });
 
-    const drag = (element, perPixel) => (event) => {
+    // drag pans while the pointer is held. With a threshold in pixels it
+    // starts only once the pointer has moved that far, and takes the pointer
+    // only then, so a click stays a click on what it was on.
+    const drag = (element, perPixel, threshold = 0) => (event) => {
       event.preventDefault();
       event.stopPropagation();
       const startX = event.clientX;
       const startRange = this.range.map((t) => this.toAxis(t));
-      try {
-        element.setPointerCapture(event.pointerId);
-      } catch {
-        // The pan still follows the pointer while it stays over the element.
-      }
+      const capture = () => {
+        try {
+          element.setPointerCapture(event.pointerId);
+        } catch {
+          // The pan still follows the pointer while it stays over the element.
+        }
+      };
+      if (threshold === 0) capture();
+      this.dragging = threshold === 0;
       const move = (e) => {
+        // Released outside before the drag began: no pointerup came.
+        if (!(e.buttons & 1)) { up(); return; }
+        if (!this.dragging && Math.abs(e.clientX - startX) < threshold) return;
+        if (!this.dragging) capture();
+        this.dragging = true;
         const shift = (e.clientX - startX) * perPixel();
         this.changeView(this.axisView(startRange[0] + shift, startRange[1] + shift));
       };
       const up = () => {
+        this.dragging = false;
         element.removeEventListener("pointermove", move);
         element.removeEventListener("pointerup", up);
         element.removeEventListener("pointercancel", up);
@@ -519,11 +540,23 @@ export class Timeline {
       element.addEventListener("pointerup", up);
       element.addEventListener("pointercancel", up);
     };
-    // Alt-drag on the bar moves the time under the pointer with it.
+    // Dragging the bar, or Alt-dragging it under a tool, moves the time under
+    // the pointer with it.
+    const barPerPixel = () => -(this.toAxis(this.range[1]) - this.toAxis(this.range[0])) / bar.getBoundingClientRect().width;
+    // panBar pans a zoomed timeline once a press moves. Showing the whole
+    // track there is nothing to pan, and a held drag scrubs as it always did,
+    // unless scrub is false.
+    this.panBar = (event, { scrub = true } = {}) => {
+      if (this.full && this.isZoomed()) {
+        drag(bar, barPerPixel, DRAG_START)(event);
+        return;
+      }
+      if (scrub) try { bar.setPointerCapture(event.pointerId); } catch { /* scrubs while over the bar */ }
+    };
     bar.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
       if (!event.altKey || !this.full) return;
-      drag(bar, () => -(this.toAxis(this.range[1]) - this.toAxis(this.range[0])) / bar.getBoundingClientRect().width)(event);
+      drag(bar, barPerPixel)(event);
     });
     // Dragging the overview's window moves it across the whole track.
     this.window.addEventListener("pointerdown", (event) => {
@@ -889,6 +922,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const DATA_GAP = 60 * 1000; // milliseconds without a point that count as empty time
 const FOLD_PIXELS = 24; // width of a compressed stop or empty stretch across the whole track
+const DRAG_START = 3; // pixels the pointer moves before a press becomes a drag
 const SNAP_GRAB = 10; // pixels within which the snapping cursor sticks to a target
 const SNAP_RELEASE = 18; // pixels the pointer must move away to free it
 const MIN_DISTANCE = 1; // metres; shared spatial floor with the profile charts

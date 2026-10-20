@@ -603,25 +603,31 @@ map. It is the interface later milestones build on.
 - **Timeline.** Above the charts, the focused track's clock time from first to
   last point: moving periods in the track colour, stops as numbered dark
   blocks, and hatched gaps where nothing was recorded. Moving the pointer along
-  it, or dragging, marks the point recorded nearest that moment on the map and
+  it marks the point recorded nearest that moment on the map and
   the charts; pointing at the map or a chart marks the timeline. Clicking a
   stop opens it on the map. A file without time says so in its place.
 - **Timeline zoom.** The wheel, or a trackpad pinch, zooms the timeline about
   the pointer, redrawn at most once a frame however fast a trackpad sends
   events. Its
   narrowest view is the shortest recorded time in which this track travels one
-  metre; Shift-wheel, a sideways scroll or Option-drag (Alt-drag off a Mac)
+  metre; holding and dragging it, Shift-wheel, a sideways scroll or
+  Option-drag (Alt-drag off a Mac, and the one drag that pans under a tool
+  that drags on the timeline)
   pans. One wheel gesture stays either a zoom or a pan throughout, even when
   macOS changes the delta axis or omits Shift on later frames. A mouse wheel
-  counting in lines pans as far as a trackpad; double-click shows the whole
+  counting in lines pans as far as a trackpad; *Fit* (⤢) shows the whole
   track again. A strip above it always keeps its layout space, so zooming does
   not move the charts; while zoomed it marks the stretch shown — drag it to
   pan, click beside it to jump — and the end labels gain
   seconds, and ticks mark round times in the page's time zone, from days down
   to seconds. The charts zoom with it: the timeline's stretch shows on them as
   the distance those points cover, and zooming a chart shows on the timeline
-  as the time the points in its distance range span. A stop has no distance,
-  so a stretch of mostly stop shows on the charts as little more than a point.
+  as the time its points span. A stop has no distance, so a stretch of mostly
+  stop shows on the charts as little more than a point. What passes between
+  them, and to the map, is the stretch's points — its first and last — not
+  its distance: distance does not grow across a break in the recording, so
+  the last point before a break and the first after it share one, though
+  they can be far apart in place and hours apart in time.
 - **Profile.** The focused track has an elevation chart and a speed chart
   (km/h) against distance, with its distance, duration, ascent and descent. A
   file without elevation or without time says so in place of that chart.
@@ -635,11 +641,37 @@ map. It is the interface later milestones build on.
   marks the nearest point on the map and draws a marker line at the same place
   on both charts; moving along a chart marks the point on the map. A readout
   shows distance, elevation, speed and local time of that point.
-- **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis,
-  no narrower than one metre; double-click resets. Both charts always show the
-  same range. *Fit* (⤢) in the profile header puts the whole track back
+- **Axis.** *km* and *Time* in the profile header put distance along the
+  track or time across both charts; the choice is remembered with the page.
+  Time is labelled in the chosen time zone, and points without time are left
+  out of the charts on that axis; a file with none shows no charts there.
+- **Zoom.** Scrolling on a chart zooms the x axis, and holding and dragging
+  pans it, the distance or time under the pointer staying under it; a press
+  that moves less than three pixels stays a click. Zooming goes no
+  narrower than one metre or one second. Both charts always show the
+  same range. A double-click on a chart or the timeline centres the map on
+  that point at the zoom it has and inspects it; with zoom linked, the charts
+  keep their stretch. *Fit* (⤢) in the profile header puts the whole track back
   across both charts and the timeline, and frames on the map the points the
   timeline shows: kept, in shown tracks, without the file's routes and waypoints.
+  The charts and the timeline always zoom together. *Zoom: Map* in the
+  timeline bar, remembered with the page, brings the map in too: zooming or
+  panning a chart or the timeline centres the map on the point in the middle
+  of its view and zooms it out as far as the stretch needs on its farther
+  side, and zooming or panning the map
+  shows on the charts and the timeline one pass of the track through the view
+  — all of it when every shown point is in view. A track can pass through the
+  same view more than once, at a loop's start and end or on both legs of an
+  out-and-back, and the first point in view to the last would span everything
+  between; the pass shown is the one overlapping what the charts show now the
+  most, else the longest. A point is in view when it lands on the map's
+  canvas, so a tilted 3D map counts only what it draws. Being centred, the
+  map shows more than the stretch, and with it the parts of the track that
+  cross that area.
+- **Right-click on a chart or the timeline** inspects the point under it and
+  offers what the map offers on the track there: *Add waypoint here…*, and
+  *Cut here* under the Edit tools on the track being edited. Marks on the
+  timeline that have menus of their own keep them.
 - **Folding a panel away.** Each panel carries the button that hides it — the
   workspace `‹`, the charts `▾`, the edit panel `›` — and the map then carries
   a small tab at that edge to bring it back, so nothing is hidden without a

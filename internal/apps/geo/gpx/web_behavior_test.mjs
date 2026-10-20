@@ -1390,8 +1390,9 @@ test('map hover follows the selected track and synchronizes time, elevation and 
  const context=vm.createContext({format,state,map,layers,requestAnimationFrame:fn=>frames.push(fn),waypointAt:()=>null,showPhotoHover(){},focusedEntry:()=>entry,cutting:()=>false,uncheckedRanges:()=>[]});
  loadModule('profile',context);loadModule('timeline',context);
  const profile=vm.runInContext('Object.create(Profile.prototype)',context),timeline=vm.runInContext('Object.create(Timeline.prototype)',context);
- const chart=values=>({over:{clientHeight:20},valToPos:value=>value,setCursor:cursor=>values.push(cursor.left)});
- Object.assign(profile,{track,charts:[chart(elevation),chart(speed)],labels:{readout},timeZone:'UTC'});
+ const chart=values=>({over:{clientHeight:20},data:[track.distance.map(m=>m/1000)],valToPos:value=>value,setCursor:cursor=>values.push(cursor.left)});
+ const indices=[0,1,2,3,4,5];
+ Object.assign(profile,{track,charts:[chart(elevation),chart(speed)],indices,byFile:indices,chartAt:new Map(indices.map(i=>[i,i])),labels:{readout},timeZone:'UTC'});
  Object.assign(timeline,{track,range:[0,5000],cursor:{style:{}},percent:time=>`${time/50}%`});Object.assign(context,{profile,timeline});
  const app=source('app');vm.runInContext(app.slice(app.indexOf('function inspect(index)'),app.indexOf('// ---- the timeline')),context);
  vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
@@ -1422,7 +1423,7 @@ test('profile axes and canvas margins inspect samples even outside the narrow uP
  };
  loadModule('profile',context);
  const profile=vm.runInContext('Object.create(Profile.prototype)',context);
- Object.assign(profile,{charts:[],offset:0,setIndex:index=>calls.push(['cursor',index]),onHover:index=>calls.push(['hover',index]),showReadout:index=>calls.push(['readout',index])});
+ Object.assign(profile,{charts:[],indices:[0,1,2],byFile:[0,1,2],chartAt:new Map([[0,0],[1,1],[2,2]]),setIndex:index=>calls.push(['cursor',index]),onHover:index=>calls.push(['hover',index]),showReadout:index=>calls.push(['readout',index])});
  const container=new Element('div');container.clientWidth=300;container.clientHeight=100;
  profile.addChart(container,[0,1,2],[10,20,30],'#0072b2',false,'empty',String);
  await chart.root.fire('pointermove',{clientX:200,buttons:0,target:container});assert.deepEqual(calls,[['cursor',1],['hover',1]]);
@@ -1461,3 +1462,81 @@ test('map reset zoom frames the selected visible track or visible GPX files', as
   await reset.fire('click');
   assert.equal(calls.pop()[1].length,0);
 });
+
+test('profile time axis leaves out untimed points and keeps ranges as point indices',()=>{
+ const context=vm.createContext({document:documentStub(),format,uiPx:value=>value,getComputedStyle:()=>({getPropertyValue:()=>'',fontFamily:'sans-serif'}),ResizeObserver:class{observe(){}}});
+ const charts=[];
+ context.uPlot=class{
+  constructor(options,data){this.options=options;this.root=new Element('div');this.over=new Element('div');this.data=data;this.scales={};charts.push(this);}
+  setScale(key,scale){this.scales[key]=scale;}
+  destroy(){}
+ };
+ loadModule('profile',context);
+ const box=()=>{const e=new Element('div');e.clientWidth=300;e.clientHeight=100;return e;};
+ const label=()=>new Element('span');
+ const profile=vm.runInContext('(o)=>new Profile(o)',context)({root:new Element('div'),elevation:box(),speed:box(),name:label(),swatch:label(),stats:label(),readout:label(),onHover(){},onRange(){}});
+ const track={name:'t',distance:[0,100,200,300],time:[1000,null,3000,4000],elevation:[1,2,3,4],speed:[1,null,1,1],stats:{distance:300,duration:3}};
+ profile.setAxis('time');profile.show(track,'#0072b2');
+ assert.deepEqual(plain(profile.indices),[0,2,3]);
+ assert.deepEqual(plain(charts[0].data[0]),[1,3,4]);
+ assert.equal(charts[0].options.scales.x.time,true);
+ // Ranges are point indices on either axis.
+ profile.setRange([2,3]);assert.deepEqual(plain(charts[0].scales.x),{min:3,max:4});
+ assert.deepEqual(plain(profile.indexRange(charts[0],3,4)),[2,3]);
+ // An index without time takes the nearest timed point, the later on a tie.
+ assert.equal(profile.fileIndex(profile.chartIndex(1)),2);
+ // Tracks kept out of time order are charted in time order.
+ charts.length=0;profile.show({...track,time:[3000,null,1000,2000]},'#0072b2');
+ assert.deepEqual(plain(profile.indices),[2,3,0]);assert.deepEqual(plain(charts[0].data[0]),[1,2,3]);
+ // One point in range, at the end of the axis: a second's span, kept inside it.
+ profile.setRange([0,1]);assert.deepEqual(plain(charts[0].scales.x),{min:2,max:3});
+ charts.length=0;profile.show(track,'#0072b2');profile.setRange([2,3]);
+ // Switching the axis keeps the stretch zoomed into.
+ charts.forEach(chart=>{chart.valToIdx=value=>chart.data[0].indexOf(value);});
+ charts.length=0;profile.setAxis('distance');
+ assert.deepEqual(plain(charts[0].data[0]),[0,0.1,0.2,0.3]);
+ assert.deepEqual(plain(charts[0].scales.x),{min:0.2,max:0.3});
+});
+
+test('the map stretch is one pass through the view, the one the charts already show',()=>{
+ const context=vm.createContext({});const app=source('app');
+ vm.runInContext(app.slice(app.indexOf('function viewRun('),app.indexOf('// showMapStretch')),context);
+ // A loop: points 0–2 and 8–10 are near the start, in view; 3–7 are away.
+ const distance=[0,1,2,3,4,5,6,7,8,9,10],shown=()=>true,inView=i=>i<=2||i>=8;
+ assert.deepEqual(plain(context.viewRun(11,distance,shown,inView,[7.5,10])),[8,10]);
+ assert.deepEqual(plain(context.viewRun(11,distance,shown,inView,[0,1])),[0,2]);
+ // Nothing shown yet overlaps: the longest pass.
+ assert.deepEqual(plain(context.viewRun(11,distance,shown,i=>i<=1||i>=6,null)),[6,10]);
+ assert.equal(context.viewRun(11,distance,shown,()=>true,null),'all');
+ assert.equal(context.viewRun(11,distance,shown,()=>false,null),null);
+ // Points not shown neither join nor break a pass.
+ assert.deepEqual(plain(context.viewRun(11,distance,i=>i!==5,i=>i>=3&&i!==5||i===10,null)),[3,10]);
+});
+
+test('a frame the charts ask for is marked before the map moves, so its moves are not taken back',()=>{
+ const track={points:[[0,0],[1,1],[2,2]],distance:[0,10,20],removed:[],parts:[]};
+ const state={linkZoom:true},seen=[];
+ const context=vm.createContext({state,performance:{now:()=>1000},editPart:()=>null,hiddenRanges:()=>[],focusedEntry:()=>({track}),
+  // fitBox resizes the map first, which ends a move at once.
+  fitBox:box=>seen.push({box,guarded:state.framedUntil>1000})});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('function shownPoint('),app.indexOf('// viewRun')),context);
+ context.linkStretch([1,2]);
+ assert.deepEqual(plain(seen),[{box:[[1,1],[2,2]],guarded:true}]);
+ // Centred on the middle point, the frame reaches as far on either side.
+ context.linkStretch([1,2],1);assert.deepEqual(plain(seen[1].box),[[0,0],[2,2]]);
+ state.linkZoom=false;context.linkStretch(null);assert.equal(seen.length,2);
+});
+
+test('a stretch is its points, not its distance: across a break in the recording distance stays, places do not',()=>{
+ // Points 0–1, then a break: point 2 is far away and later, at the same distance.
+ const track={points:[[0,0],[0.01,0],[5,5],[5.01,5]],distance:[0,1000,1000,2000],time:[0,60000,7200000,7260000],removed:[],parts:[]};
+ const seen=[];
+ const context=vm.createContext({state:{linkZoom:true},performance:{now:()=>0},editPart:()=>null,hiddenRanges:()=>[],focusedEntry:()=>({track}),fitBox:box=>seen.push(box)});
+ const app=source('app');
+ vm.runInContext(app.slice(app.indexOf('function shownPoint('),app.indexOf('// viewRun')),context);
+ vm.runInContext(app.slice(app.indexOf('// timeSpan is'),app.indexOf('// selectStop')),context);
+ context.linkStretch([0,1]);
+ assert.deepEqual(plain(seen[0]),[[0,0],[0.01,0]]);
+ assert.deepEqual(plain(context.timeSpan(track,[0,1])),[0,60000]);
+});
+
