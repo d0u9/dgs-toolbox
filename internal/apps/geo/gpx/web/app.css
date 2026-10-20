@@ -45,7 +45,7 @@ body {
 
 /* scrollbar-gutter keeps the rows where they are when opening a row's
    adjustments makes the panel long enough to scroll. */
-.layers-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: min(340px, calc(100vw - 16px)); box-sizing: border-box; max-height: 70vh; overflow-y: auto; scrollbar-gutter: stable; padding: 6px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--paper); box-shadow: 0 4px 16px rgba(0, 0, 0, .15); }
+.layers-panel { position: fixed; z-index: 20; width: min(340px, calc(100vw - 16px)); box-sizing: border-box; max-height: 70vh; overflow-y: auto; scrollbar-gutter: stable; padding: 6px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--paper); box-shadow: 0 4px 16px rgba(0, 0, 0, .15); }
 .layers-hint { margin: 2px 6px 6px; color: var(--graphite); font-size: 12px; }
 .layer-list { margin: 0; padding: 0; list-style: none; }
 .layer-row { padding: 4px 6px; border-radius: 6px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
