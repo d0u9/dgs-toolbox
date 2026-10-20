@@ -66,7 +66,10 @@ type Track struct {
 	Name         string
 	Lang         string // of Name, when the track says
 	Translations map[string]string
-	Segments     []Segment
+	// Type is the GPX 1.1 <type>: what kind of track it is, such as drive
+	// or hike. GPX does not list the kinds; "" when the track says none.
+	Type     string
+	Segments []Segment
 }
 
 type Segment struct {
@@ -127,6 +130,7 @@ type xmlRoute struct {
 
 type xmlTrack struct {
 	Name         string           `xml:"name"`
+	Type         string           `xml:"type"`
 	Translations []xmlTranslation `xml:"extensions>name"`
 	Lang         []xmlLang        `xml:"extensions>lang"`
 	Segments     []xmlSegment     `xml:"trkseg"`
@@ -172,7 +176,7 @@ func Parse(r io.Reader) (*File, error) {
 		file.Name = strings.TrimSpace(doc.Name)
 	}
 	for _, trk := range doc.Tracks {
-		track := Track{Name: strings.TrimSpace(trk.Name), Lang: nameLang(trk.Lang), Translations: translations(trk.Translations)}
+		track := Track{Name: strings.TrimSpace(trk.Name), Lang: nameLang(trk.Lang), Translations: translations(trk.Translations), Type: strings.TrimSpace(trk.Type)}
 		for _, seg := range trk.Segments {
 			segment := Segment{Points: make([]Point, 0, len(seg.Points))}
 			for _, pt := range seg.Points {

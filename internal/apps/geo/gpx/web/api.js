@@ -36,7 +36,7 @@ export const api = {
   // translations, { "en": "…" }, replace its names in other languages, and
   // lang, a language tag or "" for not known, is the language name is in;
   // left out, either stays as it is.
-  renamePart: (path, key, name, translations, lang) => sendJSON("PUT", "api/part-name", { path, key, name, translations, lang }),
+  renamePart: (path, key, name, translations, lang, type) => sendJSON("PUT", "api/part-name", { path, key, name, translations, lang, type }),
   // undo and redo step one file's unsaved edits back or forward.
   undo: (path) => postJSON("api/undo", { path }),
   redo: (path) => postJSON("api/redo", { path }),

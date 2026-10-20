@@ -64,6 +64,10 @@ type File struct {
 	// the one under "f" is the file's default too. A key held here replaces
 	// the part's own; "" takes it out. They go where Names go.
 	Langs map[string]string `json:"langs,omitempty"`
+	// Types are the <type> of tracks, keyed "t0" as Names is: what kind of
+	// track each is, such as drive or hike. A key held here replaces the
+	// track's own; "" takes it out. They go where Names go.
+	Types map[string]string `json:"types,omitempty"`
 	// Order puts the parts of one kind in another order than the file has
 	// them, keyed "r" for routes and "w" for waypoints, each holding every
 	// key of that kind — "w2", "w0", "w1" — in the order wanted. Tracks keep
@@ -95,7 +99,7 @@ type Photo struct {
 // Active reports whether the file records anything.
 func (f File) Active() bool {
 	return f.Clean.Active() || f.tracksActive() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 ||
-		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Translations) > 0 || len(f.Langs) > 0 || len(f.Order) > 0 || len(f.Photos) > 0 || f.Plan != nil
+		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Translations) > 0 || len(f.Langs) > 0 || len(f.Types) > 0 || len(f.Order) > 0 || len(f.Photos) > 0 || f.Plan != nil
 }
 
 // tracksActive reports whether a track's own filters change anything. One

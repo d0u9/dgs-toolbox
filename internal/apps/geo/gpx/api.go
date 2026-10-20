@@ -232,7 +232,8 @@ type partJSON struct {
 	// Lang is the language of the name when the part says, else "".
 	Translations map[string]string `json:"translations,omitempty"`
 	Lang         string            `json:"lang,omitempty"`
-	First        int               `json:"first"` // a track's first point index
+	Type         string            `json:"type,omitempty"` // a track's <type>
+	First        int               `json:"first"`          // a track's first point index
 	Last         int               `json:"last"`
 	// Clean are the filters a track's points are cleaned with: its own, or
 	// the file's when it has none.
@@ -569,7 +570,7 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 	list := []partJSON{}
 	for i, trk := range a.file.Tracks {
 		key := a.keys.Tracks[i]
-		part := partJSON{Key: key, Kind: "track", Name: named(a, key, trk.Name, "Track", nameIndex(key)), Translations: translatedAs(a, key, trk.Translations), Lang: langAs(a, key, trk.Lang)}
+		part := partJSON{Key: key, Kind: "track", Name: named(a, key, trk.Name, "Track", nameIndex(key)), Translations: translatedAs(a, key, trk.Translations), Lang: langAs(a, key, trk.Lang), Type: typeAs(a, key, trk.Type)}
 		if at, err := locate(a, key); err == nil && at.held >= 0 {
 			part.Added = &addedJSON{Index: at.held, From: a.cleaning.Added[at.held].From}
 		}
@@ -674,6 +675,15 @@ func translatedAs(a analysis, key string, own map[string]string) map[string]stri
 // for it, else its own.
 func langAs(a analysis, key, own string) string {
 	if held, ok := a.cleaning.Langs[key]; ok {
+		return held
+	}
+	return own
+}
+
+// typeAs is a track's <type> as the page shows it: the one held for it, else
+// its own.
+func typeAs(a analysis, key, own string) string {
+	if held, ok := a.cleaning.Types[key]; ok {
 		return held
 	}
 	return own

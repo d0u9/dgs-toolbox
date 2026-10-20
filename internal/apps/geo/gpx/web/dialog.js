@@ -92,7 +92,9 @@ export function photosDialog(part, url, { canAdd, maxSide, quality: qualityValue
 // other language is the one the part already has, else English for a name
 // in another language and Chinese for one in English; when the language is
 // not known, English for a name in Chinese, Japanese or Korean script.
-export function nameDialog({ title, message, name: value, lang: ownLang = "", fileLang = "", isFile = false, translations = {}, confirm = "Rename", required = true }) {
+// A track's type, given as a string, is asked for too and answered as type:
+// what kind of track it is, chosen from the usual kinds, or none.
+export function nameDialog({ title, message, name: value, lang: ownLang = "", fileLang = "", isFile = false, translations = {}, type: ownType = null, confirm = "Rename", required = true }) {
   const name = textInput(); name.className = "field prompt-input"; name.value = value || ""; name.required = required; name.setAttribute("aria-label", "Name");
   const languages = document.createElement("datalist"); languages.id = "name-languages";
   for (const tag of ["en", "zh", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]) { const option = document.createElement("option"); option.value = tag; languages.append(option); }
@@ -111,6 +113,17 @@ export function nameDialog({ title, message, name: value, lang: ownLang = "", fi
   const field = (text, ...inputs) => { const label = document.createElement("label"); label.textContent = text; label.append(...inputs); return label; };
   const nameLangLabel = isFile ? "Language of the name, and of the parts' names" : "Language of the name";
   const fields = [field("Name", name), field(nameLangLabel, nameLang, languages), field("Other language", lang), field("Name in that language", translated)];
+  // A select, not a datalist: the browser's suggestion popup filters to the
+  // value typed and looks broken. A type of the track's own outside the list
+  // is offered too, so it is kept.
+  const kind = document.createElement("select"); kind.className = "field prompt-input"; kind.setAttribute("aria-label", "Type");
+  if (ownType != null) {
+    const kinds = ["drive", "hike", "run", "bike", "ship", "flight", "drone", "other"];
+    if (ownType && !kinds.includes(ownType)) kinds.push(ownType);
+    for (const [value, text] of [["", "None"], ...kinds.map((tag) => [tag, tag])]) { const option = document.createElement("option"); option.value = value; option.textContent = text; kind.append(option); }
+    kind.value = ownType;
+    fields.push(field("Type", kind));
+  }
   return formDialog({ title, message, fields, focus: name, confirm,
     read: () => {
       if (required && !name.value.trim()) return null;
@@ -124,7 +137,9 @@ export function nameDialog({ title, message, name: value, lang: ownLang = "", fi
       // unchanged changes nothing.
       let given = nameLang.value.trim();
       if (!isFile && fileLang && given !== ownLang && given.toLowerCase() === fileLang.toLowerCase()) given = "";
-      return { name: name.value.trim(), lang: given, translations: kept };
+      const answer = { name: name.value.trim(), lang: given, translations: kept };
+      if (ownType != null) answer.type = kind.value.trim();
+      return answer;
     },
   });
 }

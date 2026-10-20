@@ -1554,3 +1554,21 @@ test('a name in a wanted language counts the own name, in its known language, am
  assert.equal(nameIn('','西湖','zh',{en:'West Lake'}),'西湖');
 });
 
+test('the rename dialog asks a track for its type and answers it; a part without one is not asked',async()=>{
+  const context=vm.createContext({document:documentStub()});
+  context.textInput=()=>context.document.createElement('input');
+  let shown;context.formDialog=options=>{shown=options;return options;};
+  loadModule('dialog',context);
+  const field=label=>shown.fields.flatMap(field=>field.children).find(child=>child.attributes?.['aria-label']===label);
+  await context.nameDialog({title:'Rename',name:'Walk',type:'drive'});
+  const kind=field('Type');
+  assert.equal(kind.value,'drive');
+  assert.equal(kind.tagName,'SELECT');
+  kind.value='  hike ';
+  assert.equal(shown.read().type,'hike');
+  kind.value='';
+  assert.equal(shown.read().type,'');
+  await context.nameDialog({title:'Rename',name:'Hotel'});
+  assert.equal(field('Type'),undefined);
+  assert.equal('type' in shown.read(),false);
+});

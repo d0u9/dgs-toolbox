@@ -50,3 +50,27 @@ func TestJoinKeepsGivenOrderWithoutTime(t *testing.T) {
 		t.Fatalf("given order not kept: %+v %v", joined, err)
 	}
 }
+
+func TestJoinKeepsATypeAllShare(t *testing.T) {
+	typed := func(kind string, minutes ...int) gpxfile.Track {
+		trk := joinTrack(kind, minutes...)
+		trk.Type = kind
+		return trk
+	}
+	for _, c := range []struct {
+		tracks []gpxfile.Track
+		want   string
+	}{
+		{[]gpxfile.Track{typed("drive", 0, 10), typed("drive", 20, 30)}, "drive"},
+		{[]gpxfile.Track{typed("drive", 0, 10), typed("hike", 20, 30)}, ""},
+		{[]gpxfile.Track{typed("drive", 0, 10), typed("", 20, 30)}, ""},
+	} {
+		joined, err := Join(c.tracks, "day")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if joined.Type != c.want {
+			t.Fatalf("type %q, want %q", joined.Type, c.want)
+		}
+	}
+}

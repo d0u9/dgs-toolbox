@@ -2267,11 +2267,12 @@ async function renamePart(path, entry, part) {
     lang: part.lang,
     fileLang: entry.track.lang,
     translations: part.translations,
+    type: part.kind === "track" ? part.type || "" : null,
   });
   if (!answer) return;
   const { name } = answer;
   try {
-    await api.renamePart(path, part.key, name, answer.translations, answer.lang);
+    await api.renamePart(path, part.key, name, answer.translations, answer.lang, answer.type);
     // The new name is in the workspace rows, and in the inspector of the
     // focused file, at once: neither is redrawn by reloading alone.
     await refreshEntry(path);

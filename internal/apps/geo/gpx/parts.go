@@ -295,12 +295,14 @@ func (a api) deletePart(w http.ResponseWriter, r *http.Request) {
 		file.Names = dropPartValue(file.Names, body.Key)
 		file.Translations = dropPartValue(file.Translations, body.Key)
 		file.Langs = dropPartValue(file.Langs, body.Key)
+		file.Types = dropPartValue(file.Types, body.Key)
 		file.Moved = dropPartValue(file.Moved, body.Key)
 		file.Photos = dropPartValue(file.Photos, body.Key)
 	} else {
 		delete(file.Names, body.Key)
 		delete(file.Translations, body.Key)
 		delete(file.Langs, body.Key)
+		delete(file.Types, body.Key)
 		delete(file.Moved, body.Key)
 		delete(file.Photos, body.Key)
 	}
@@ -315,6 +317,9 @@ func (a api) deletePart(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(file.Langs) == 0 {
 		file.Langs = nil
+	}
+	if len(file.Types) == 0 {
+		file.Types = nil
 	}
 	if err := saveSidecar(body.Path, file); err != nil {
 		writeError(w, statusFor(err), err)
@@ -661,7 +666,7 @@ func onGlobe(lon, lat float64) bool {
 // the page gave. The point indices kept beside the file already count the
 // tracks in that order, so once the file holds them so, no index moves.
 func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (sidecar.File, error) {
-	if len(held.Names) == 0 && len(held.Translations) == 0 && len(held.Langs) == 0 && len(held.Moved) == 0 && len(held.Deleted) == 0 && len(held.Order) == 0 &&
+	if len(held.Names) == 0 && len(held.Translations) == 0 && len(held.Langs) == 0 && len(held.Types) == 0 && len(held.Moved) == 0 && len(held.Deleted) == 0 && len(held.Order) == 0 &&
 		len(held.Added) == 0 && len(held.Routes) == 0 && len(held.Waypoints) == 0 && len(held.Photos) == 0 {
 		return held, nil
 	}
@@ -721,6 +726,15 @@ func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (side
 			names = given
 		}
 		if err := gpxfile.SetTranslations(path, part, index, lang, names); err != nil {
+			return held, err
+		}
+	}
+	for key, kind := range held.Types {
+		letter, index, err := partKey(key)
+		if err != nil || letter != 't' || index >= counts['t'] || deleted[key] {
+			continue
+		}
+		if err := gpxfile.SetTrackType(path, index, kind); err != nil {
 			return held, err
 		}
 	}
@@ -804,6 +818,9 @@ func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (side
 		tracks[i].Name = named('t', i, tracks[i].Name)
 		tracks[i].Translations = translated('t', i, tracks[i].Translations)
 		tracks[i].Lang = langOf('t', i, tracks[i].Lang)
+		if given, ok := held.Types[fmt.Sprintf("t%d", counts['t']+i)]; ok {
+			tracks[i].Type = given
+		}
 	}
 	if len(tracks) > 0 {
 		if err := gpxfile.Append(path, tracks); err != nil {
@@ -858,7 +875,7 @@ func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (side
 	}
 	// Everything above is in the file now, under the names the page gave it,
 	// so nothing of it is kept beside the file.
-	held.Names, held.Translations, held.Langs, held.Moved, held.Deleted, held.Order, held.Photos = nil, nil, nil, nil, nil, nil, nil
+	held.Names, held.Translations, held.Langs, held.Types, held.Moved, held.Deleted, held.Order, held.Photos = nil, nil, nil, nil, nil, nil, nil, nil
 	held.Added, held.Routes, held.Waypoints = nil, nil, nil
 	return held, nil
 }
