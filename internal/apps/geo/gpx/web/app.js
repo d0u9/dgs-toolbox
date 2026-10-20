@@ -3038,15 +3038,19 @@ function bindTerrain(saved) {
 function bindLayersPanel() {
   const panel = $("layers-panel");
   const toggle = $("layers-toggle");
-  // place keeps the popover inside the window: it starts under the button's
-  // left edge and moves left as far as the window's right edge asks.
+  // place pins the popover to the window under the button's left edge, moved
+  // left as far as the window's right edge asks. It is placed when it opens
+  // and when the window changes size, not when the header reflows: ticking a
+  // map renames the button and relabels the GCJ-02 choice, which moves the
+  // button, and a popover that followed it would jump under the pointer.
   const place = () => {
     if (panel.hidden) return;
-    panel.style.left = "0px";
     const margin = 8;
-    const box = panel.getBoundingClientRect();
-    const over = box.right - (window.innerWidth - margin);
-    if (over > 0) panel.style.left = `${-Math.min(over, box.left - margin)}px`;
+    const anchor = toggle.getBoundingClientRect();
+    panel.style.top = `${anchor.bottom + 6}px`;
+    panel.style.left = `${anchor.left}px`;
+    const over = panel.getBoundingClientRect().right - (window.innerWidth - margin);
+    if (over > 0) panel.style.left = `${Math.max(margin, anchor.left - over)}px`;
   };
   const open = (on) => {
     panel.hidden = !on;

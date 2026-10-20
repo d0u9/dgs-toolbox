@@ -527,6 +527,9 @@ map. It is the interface later milestones build on.
   top, and everything under the tracks. The button names the lowest shown map,
   which GCJ-02's *Auto* follows; a shown layer in the other system than the
   tracks carries a ⚠, as it sits several hundred metres off them in China.
+  The panel stays where it opened while maps are ticked: the button's new
+  name moves the button, and a panel that followed it would jump under the
+  pointer. It is placed again when the window changes size.
   A **vector style** — OpenFreeMap Fiord — is a map like any other in the
   list: its own sources and layers are put under the tracks, under that map's
   prefix, so the page keeps its own style and the tracks keep their place
