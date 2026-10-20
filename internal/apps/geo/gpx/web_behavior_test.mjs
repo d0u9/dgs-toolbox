@@ -22,14 +22,14 @@ test('closing drafts discards server state; cancellation or a failed discard kee
   ])};
   const context=vm.createContext({state,
    confirmDialog:async()=>outcome!=='cancelled',
-   api:{discardDraft:async path=>{calls.push(['discard',path]);if(outcome==='failed')throw Error('Discard refused');},revertFiles:async paths=>calls.push(['revert',plain(paths)])},
+   api:{discardDraft:async path=>{calls.push(['discard',path]);if(outcome==='failed')throw Error('Discard refused');},revertFiles:async paths=>calls.push(['revert',plain(paths)]),closeFiles:async paths=>calls.push(['close',plain(paths)])},
    removeTrack:path=>state.tracks.delete(path),clearSelection(){},renderTracks(){},showMessage:(...args)=>calls.push(['message',...args]),
   });
   vm.runInContext(app.slice(app.indexOf('async function closeTracks('),app.indexOf('const basename')),context);
   await context.closeTracks([...state.tracks.keys()]);
   if(outcome==='closed'){
    assert.equal(state.tracks.size,0);
-   assert.deepEqual(calls,[['discard','draft:1/Synthetic.gpx'],['revert',['source.gpx']]]);
+   assert.deepEqual(calls,[['discard','draft:1/Synthetic.gpx'],['revert',['source.gpx']],['close',['source.gpx']]]);
   }else{
    assert.equal(state.tracks.size,2);
    assert.deepEqual(calls,outcome==='cancelled'?[]:[['discard','draft:1/Synthetic.gpx'],['message','Discard refused',true]]);
@@ -80,6 +80,7 @@ function treeHarness(track){
   loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
   loadModule('drag',context);
   const app=source('app');
+  vm.runInContext(app.slice(app.indexOf('function allShown('),app.indexOf('// showFile')),context);
   vm.runInContext(app.slice(app.indexOf('const doubleRowClick'),app.indexOf('// manyMenu')),context);
   vm.runInContext(app.slice(app.indexOf('function partRow('),app.indexOf('// ---- dragging rows')),context);
   vm.runInContext(app.slice(app.indexOf('function showPart('),app.indexOf('\nfunction openWaypoint(')),context);
@@ -553,9 +554,9 @@ test('secondary workspace actions remain accessible in the context menu after re
   menu.find(item=>item.label==='Move down').onSelect();assert.deepEqual(h.calls.at(-1),['order','current.gpx',null]);
 });
 
-test('segment rows keep plain numbers and names, move details into tips, and retain cut removal in the menu',async()=>{
+test('segment rows keep plain numbers and names, move details into tips, carry one × and retain cut removal in the menu',async()=>{
   const h=segmentHarness(pieces),row=h.root.all(e=>e.classList.contains('cut-row'))[1];
-  assert.equal(row.all(e=>e.classList.contains('cut-row-meta')).length,0);assert.equal(row.all(e=>e.classList.contains('cut-remove')).length,0);
+  assert.equal(row.all(e=>e.classList.contains('cut-row-meta')).length,0);assert.equal(row.all(e=>e.classList.contains('cut-remove')).length,1);
   const number=row.all(e=>e.classList.contains('cut-number'))[0];assert.equal(number.textContent,'2');assert.equal(number.style.background,undefined);
   assert.ok(row.tip.some(line=>line.includes('3 points')));assert.equal(row.style.borderLeftColor,h.context.pieceColor?h.context.pieceColor(1):vm.runInContext('pieceColor(1)',h.context));
   const menus=[];h.context.openMenu=(event,sections)=>menus.push(sections.flat());
