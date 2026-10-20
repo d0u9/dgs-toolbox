@@ -144,6 +144,7 @@ function save() {
       routeOpen: state.routeOpen,
       route: planner?.toJSON(),
       joinGaps: state.joinGaps,
+      linkZoom: state.linkZoom,
       trackPoints: state.trackPoints,
       showManual: state.showManual,
       compare: state.compare,
@@ -2538,18 +2539,111 @@ function fitCharts() {
   if (!entry) return;
   timeline.setView(null);
   profile.setRange(null);
-  // Frame the line the timeline shows: its kept points, not the file's
-  // routes, waypoints or hidden tracks, which would pull the frame aside.
+  if (!frameStretch(entry)) fit([entry.track]);
+}
+
+// shownPoint says whether a point of the focused track is on the line the
+// charts and the timeline show: kept, not in a hidden track, and in the
+// track being edited when there is one.
+function shownPoint(entry) {
   const { track } = entry;
   const part = editPart();
   const hidden = [...hiddenRanges(entry), ...(part ? [[0, part.first - 1], [part.last + 1, track.points.length]] : [])];
+  return (i) => !track.removed[i] && !hidden.some(([first, last]) => i >= first && i <= last);
+}
+
+// FRAME_SETTLE is how long, in milliseconds, a frame the charts asked for
+// takes to settle: fitBox's 400 ms and some slack.
+const FRAME_SETTLE = 700;
+
+// frameStretch frames on the map the shown points first to last, [first,
+// last] point indices, or all of them without a range: the line the timeline
+// shows, not the file's routes, waypoints or hidden tracks, which would pull
+// the frame aside. With centre, a point index, the map is centred on that
+// point and zoomed out as far as the stretch needs on its farther side. It
+// answers false when no point is in it.
+function frameStretch(entry, range = null, centre = null) {
+  const { track } = entry;
+  const shown = shownPoint(entry);
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   track.points.forEach(([lon, lat], i) => {
-    if (track.removed[i] || hidden.some(([first, last]) => i >= first && i <= last)) return;
+    if (!shown(i) || (range && (i < range[0] || i > range[1]))) return;
     w = Math.min(w, lon); s = Math.min(s, lat); e = Math.max(e, lon); n = Math.max(n, lat);
   });
-  if (w <= e) fitBox([[w, s], [e, n]]);
-  else fit([track]);
+  if (w > e) return false;
+  const middle = centre == null ? null : track.points[centre];
+  if (middle) {
+    const [lon, lat] = middle;
+    const dLon = Math.max(lon - w, e - lon), dLat = Math.max(lat - s, n - lat);
+    [w, s, e, n] = [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+  }
+  // This move is the charts', not one to take back to them. fitBox resizes
+  // the map first, which ends a move at once, so the mark goes up before.
+  state.framedUntil = performance.now() + FRAME_SETTLE;
+  fitBox([[w, s], [e, n]]);
+  return true;
+}
+
+
+// linkStretch frames on the map what the charts or the timeline zoomed into,
+// [first, last] point indices or null for all of it, centred on the point in
+// the middle of their view, when zoom is linked.
+function linkStretch(range, centre = null) {
+  const entry = focusedEntry();
+  if (!state.linkZoom || !entry) return;
+  frameStretch(entry, range, range && centre);
+}
+
+// viewRun picks the stretch of a track the map shows. A track can pass
+// through the view more than once — a loop's start and end, the two legs of
+// an out-and-back — and the first point in view to the last would then span
+// everything between. Each pass is a run of shown points in view, ended by a
+// shown point out of view; the run kept is the one that overlaps current, the
+// [first, last] point indices shown now, the most, else the longest. It answers
+// [first, last] point indices, "all" when every shown point is in view, or
+// null when none is.
+function viewRun(count, distance, shown, inView, current) {
+  const runs = [];
+  let open = null, all = true;
+  for (let i = 0; i < count; i++) {
+    if (!shown(i)) continue;
+    if (!inView(i)) { all = false; open = null; continue; }
+    if (!open) runs.push(open = [i, i]);
+    open[1] = i;
+  }
+  if (!runs.length) return null;
+  if (all) return "all";
+  const length = ([first, last]) => distance[last] - distance[first];
+  const overlap = ([first, last]) => (current ? Math.min(last, current[1]) - Math.max(first, current[0]) : -Infinity);
+  return runs.reduce((best, run) => {
+    const a = overlap(run), b = overlap(best);
+    return a > b || (a === b && length(run) > length(best)) ? run : best;
+  });
+}
+
+// showMapStretch shows on the charts and the timeline the part of the focused
+// track the map shows: one pass through the view (see viewRun). A point is
+// in view when it projects inside the canvas, which a tilted map's bounding
+// box would overstate.
+function showMapStretch() {
+  const entry = focusedEntry();
+  if (!entry) return;
+  const { track } = entry;
+  const canvas = map.getCanvas();
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  const inView = (i) => {
+    const { x, y } = map.project(track.points[i]);
+    return x >= 0 && x <= width && y >= 0 && y <= height;
+  };
+  const run = viewRun(track.points.length, track.distance, shownPoint(entry), inView, profile.shownRange());
+  if (!run) return;
+  if (run === "all") {
+    timeline.setView(null);
+    profile.setRange(null);
+    return;
+  }
+  timeline.setView(timeSpan(track, run));
+  profile.setRange(run);
 }
 
 function syncChartsToTimeline(view) {
@@ -2559,19 +2653,15 @@ function syncChartsToTimeline(view) {
     profile.setRange(null);
     return;
   }
-  const { track } = entry;
-  const first = timeline.nearest(view[0]);
-  const last = timeline.nearest(view[1]);
-  profile.setRange([track.distance[first] / 1000, track.distance[last] / 1000]);
+  profile.setRange([timeline.nearest(view[0]), timeline.nearest(view[1])]);
 }
 
-// timeSpan is the [from, to] times of the kept, timed points whose distance
-// lies within [min, max] metres, or null when there are none.
-function timeSpan(track, min, max) {
+// timeSpan is the [from, to] times of the kept, timed points first to last,
+// or null when there are none.
+function timeSpan(track, [first, last]) {
   let from = null, to = null;
-  for (let i = 0; i < track.distance.length; i++) {
-    const d = track.distance[i];
-    if (d < min || d > max || track.time[i] == null || track.removed[i]) continue;
+  for (let i = first; i <= last; i++) {
+    if (track.time[i] == null || track.removed[i]) continue;
     if (from == null || track.time[i] < from) from = track.time[i];
     if (to == null || track.time[i] > to) to = track.time[i];
   }
@@ -2679,17 +2769,13 @@ function bindMap() {
     const actions = [[{ label: "Add waypoint…", onSelect: () => addWaypointAt(position) }]];
     const found = waypointAt(event.point);
     const cutEntry = focusedEntry();
-    // Cut here is offered on the track under every Edit tool; cutting opens
-    // the Segments tab, where the cuts are listed.
-    const editing = state.cleanOpen && !state.routeOpen && Boolean(editPart());
-    if (!found && editing && cutEntry) {
+    // Cut here is offered on the track being edited, under every Edit tool.
+    if (!found && cutEntry && state.cleanOpen && !state.routeOpen && editPart()) {
       const index = layers.nearest(cutEntry.track, event.point, 24, pickHidden(cutEntry));
-      if (index >= 0) {
+      const cut = index >= 0 ? cutAction(index) : null;
+      if (cut) {
         inspect(index);
-        actions.push([{ label: "Cut here", onSelect: () => {
-          if (!cutting()) setTool("cut");
-          cutPanel.addCut(index);
-        } }]);
+        actions.push(cut);
       }
     }
     if (found) {
@@ -2783,6 +2869,43 @@ function pickTrack({ path, entry, part }) {
   showPart(path, part);
 }
 
+// cutAction is Cut here at a point of the focused track, offered under every
+// Edit tool on the track being edited, or null; cutting opens the Segments
+// tab, where the cuts are listed.
+function cutAction(index) {
+  const part = state.cleanOpen && !state.routeOpen ? editPart() : null;
+  if (!part || index < part.first || index > part.last) return null;
+  return [{ label: "Cut here", onSelect: () => {
+    if (!cutting()) setTool("cut");
+    cutPanel.addCut(index);
+  } }];
+}
+
+// jumpTo centres the map on a point of the focused track, at the zoom it
+// has, and inspects it: a double-click on the charts or the timeline. With
+// zoom linked, the move is not taken back to the charts.
+function jumpTo(index) {
+  const point = focusedEntry()?.track.points[index];
+  if (!point) return;
+  inspect(index);
+  state.framedUntil = performance.now() + FRAME_SETTLE;
+  map.easeTo({ center: point, duration: 400 });
+}
+
+// pointMenu is the right click on the charts and the timeline: at one point
+// of the focused track, what the map offers on the track there.
+function pointMenu(event, index) {
+  const entry = focusedEntry();
+  const point = entry?.track.points[index];
+  if (!point) return;
+  event.preventDefault();
+  inspect(index);
+  const actions = [[{ label: "Add waypoint here…", onSelect: () => addWaypointAt({ lngLat: { lng: point[0], lat: point[1] } }) }]];
+  const cut = cutAction(index);
+  if (cut) actions.push(cut);
+  openMenu(event, actions);
+}
+
 // ---- layout ----
 
 function bindSplitters() {
@@ -2845,6 +2968,11 @@ function applyCharts() {
   $("toggle-elevation").setAttribute("aria-pressed", String(elevation));
   $("toggle-speed").setAttribute("aria-pressed", String(speed));
   $("layout-stacked").setAttribute("aria-pressed", String(layout !== "side"));
+  const axis = state.charts.axis === "time" ? "time" : "distance";
+  $("axis-distance").setAttribute("aria-pressed", String(axis === "distance"));
+  $("axis-time").setAttribute("aria-pressed", String(axis === "time"));
+  // The charts are built after the toggles are bound; they take it then.
+  profile?.setAxis(axis);
   $("layout-side").setAttribute("aria-pressed", String(layout === "side"));
 }
 
@@ -2854,6 +2982,7 @@ function bindCharts(saved) {
       elevation: saved.elevation !== false,
       speed: saved.speed !== false,
       layout: saved.layout === "side" ? "side" : "stacked",
+      axis: saved.axis === "time" ? "time" : "distance",
     };
   }
   const change = (patch) => {
@@ -2868,6 +2997,8 @@ function bindCharts(saved) {
   $("toggle-speed").addEventListener("click", () => change({ speed: !state.charts.speed }));
   $("layout-stacked").addEventListener("click", () => change({ layout: "stacked" }));
   $("layout-side").addEventListener("click", () => change({ layout: "side" }));
+  $("axis-distance").addEventListener("click", () => change({ axis: "distance" }));
+  $("axis-time").addEventListener("click", () => change({ axis: "time" }));
   applyCharts();
 }
 
@@ -3156,6 +3287,19 @@ async function start() {
     layers.setJoinGaps(state.joinGaps);
     save();
   });
+  state.linkZoom = saved.linkZoom === true;
+  $("link-zoom").checked = state.linkZoom;
+  $("link-zoom").addEventListener("change", () => {
+    state.linkZoom = $("link-zoom").checked;
+    save();
+  });
+  map.on("moveend", () => {
+    // A move the charts asked for is not taken back to them. A wheel on a
+    // chart asks again before the last frame has settled, and each new frame
+    // ends the one before, so every move until the last has settled is theirs.
+    if (performance.now() < state.framedUntil) return;
+    if (state.linkZoom) showMapStretch();
+  });
   state.trackPoints = saved.trackPoints === true;
   layers.setPointsVisible(state.trackPoints);
   $("track-points").innerHTML = iconSvg("ellipsis");
@@ -3265,13 +3409,18 @@ async function start() {
     stats: $("profile-stats"),
     readout: $("profile-readout"),
     onHover: inspect,
-    onRange: (range) => {
-      // The charts' distance range, shown as the time those points span.
+    onMenu: pointMenu,
+    onJump: jumpTo,
+    onRange: (range, { user = false, centre = null } = {}) => {
+      // The charts' stretch, shown as the time its points span.
       const entry = focusedEntry();
       if (!entry) return;
-      timeline.setView(range && timeSpan(entry.track, range[0] * 1000, range[1] * 1000));
+      timeline.setView(range && timeSpan(entry.track, range));
+      // Only a zoom or pan by hand moves the map; a chart being built does not.
+      if (user) linkStretch(range, centre);
     },
   });
+  profile.setAxis(state.charts.axis === "time" ? "time" : "distance");
   stopMarkers = new StopMarkers(map, { onSelect: (index) => selectStop(index), onRemove: removeStop });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -3330,7 +3479,13 @@ async function start() {
     },
     onStop: (index, options) => selectStop(index, options),
     onStopHover: (index) => stopMarkers.highlight(index),
-    onView: (view) => syncChartsToTimeline(view),
+    onView: (view) => {
+      syncChartsToTimeline(view);
+      if (!focusedEntry()) return;
+      linkStretch(view && [timeline.nearest(view[0]), timeline.nearest(view[1])], view && timeline.nearest(timeline.timeAt(0.5)));
+    },
+    onMenu: pointMenu,
+    onJump: jumpTo,
   });
   bindMap();
   applyCleanPanel();
