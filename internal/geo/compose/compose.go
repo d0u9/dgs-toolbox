@@ -46,7 +46,8 @@ type Added struct {
 	// Waypoint carry both too.
 	Lang         string            `json:"lang,omitempty"`
 	Translations map[string]string `json:"translations,omitempty"`
-	From         string            `json:"from"` // the file it was taken from
+	Type         string            `json:"type,omitempty"` // the track's <type>
+	From         string            `json:"from"`           // the file it was taken from
 	At           int64             `json:"at,omitempty"`
 	Segments     [][]AddedPoint    `json:"segments"`
 }
@@ -64,7 +65,7 @@ type AddedPoint struct {
 
 // Track is an added track as a GPX track.
 func (a Added) Track() gpxfile.Track {
-	trk := gpxfile.Track{Name: a.Name, Lang: a.Lang, Translations: maps.Clone(a.Translations)}
+	trk := gpxfile.Track{Name: a.Name, Lang: a.Lang, Translations: maps.Clone(a.Translations), Type: a.Type}
 	for _, seg := range a.Segments {
 		var out gpxfile.Segment
 		for _, pt := range seg {
@@ -90,7 +91,7 @@ func (a Added) Track() gpxfile.Track {
 
 // AddedFrom turns a GPX track into an added track.
 func AddedFrom(trk gpxfile.Track, from string, at int64) Added {
-	added := Added{Name: trk.Name, Lang: trk.Lang, Translations: maps.Clone(trk.Translations), From: from, At: at}
+	added := Added{Name: trk.Name, Lang: trk.Lang, Translations: maps.Clone(trk.Translations), Type: trk.Type, From: from, At: at}
 	for _, seg := range trk.Segments {
 		var out []AddedPoint
 		for _, pt := range seg.Points {
@@ -318,7 +319,8 @@ var ErrOverlap = errors.New("tracks overlap in time")
 // is drawn or counted across a join. They are put in time order by their
 // first timed point; when any has no time, the order given is kept. Tracks
 // whose times overlap are refused. A point ending one track and starting the
-// next is kept once.
+// next is kept once. The joined track has the tracks' <type> when they all
+// have the same one, and none otherwise.
 func Join(tracks []gpxfile.Track, name string) (gpxfile.Track, error) {
 	ordered := append([]gpxfile.Track(nil), tracks...)
 	timed := true
@@ -342,6 +344,13 @@ func Join(tracks []gpxfile.Track, name string) (gpxfile.Track, error) {
 		}
 	}
 	joined := gpxfile.Track{Name: name}
+	for i, trk := range ordered {
+		if i == 0 {
+			joined.Type = trk.Type
+		} else if trk.Type != joined.Type {
+			joined.Type = ""
+		}
+	}
 	var last *gpxfile.Point
 	for _, trk := range ordered {
 		for _, seg := range trk.Segments {

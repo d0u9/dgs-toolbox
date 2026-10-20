@@ -224,9 +224,15 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Target.Merge {
 		merged := gpxfile.Track{Name: strings.TrimSpace(body.Target.Name)}
-		for _, span := range segment.Merge(ranges) {
+		for i, span := range segment.Merge(ranges) {
 			part := result.trackOf(span.First, span.Last, "")
 			merged.Segments = append(merged.Segments, part.Segments...)
+			// The merged track has the parts' type when they all have one.
+			if i == 0 {
+				merged.Type = part.Type
+			} else if part.Type != merged.Type {
+				merged.Type = ""
+			}
 		}
 		tracks = []gpxfile.Track{merged}
 	}
@@ -258,6 +264,12 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 // keep their <src>.
 func (a analysis) trackOf(first, last int, name string) gpxfile.Track {
 	trk := gpxfile.Track{Name: name}
+	// The points are of one track, whose type they keep.
+	if first >= 0 && first < len(a.source) {
+		if i := a.source[first].Track; i >= 0 && i < len(a.file.Tracks) {
+			trk.Type = typeAs(a, a.keys.Tracks[i], a.file.Tracks[i].Type)
+		}
+	}
 	if len(a.line) == 0 {
 		return trk
 	}

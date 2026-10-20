@@ -34,6 +34,11 @@ func EncodeTracks(w io.Writer, tracks []Track) error {
 			_ = xml.EscapeText(&b, []byte(trk.Name))
 			b.WriteString("</name>\n")
 		}
+		if trk.Type != "" {
+			b.WriteString("    ")
+			writeType(&b, trk.Type)
+			b.WriteString("\n")
+		}
 		writeExtensions(&b, "    ", trk.Lang, trk.Translations)
 		for _, seg := range trk.Segments {
 			b.WriteString("    <trkseg>\n")
@@ -388,6 +393,86 @@ func RenamePart(path string, part Part, index int, name string) error {
 	}
 	b.Write(data[end:])
 	return replaceFile(path, b.Bytes())
+}
+
+// SetTrackType replaces the <type> of the index-th <trk> of a file written by
+// this program, keeping every other byte; "" takes it out. A track without
+// one gets it where GPX 1.1 puts it: after its other children, before its
+// <extensions> and its <trkseg>s. A file created by something else is
+// refused.
+func SetTrackType(path string, index int, kind string) error {
+	data, parsed, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	if index < 0 || index >= len(parsed.Tracks) {
+		return fmt.Errorf("%s: no trk %d", path, index)
+	}
+	start, end, err := partSpan(data, PartTrack, index)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	element := data[start:end]
+	open := bytes.IndexByte(element, '>')
+	if open < 0 || element[open-1] == '/' {
+		return fmt.Errorf("%s: trk %d holds nothing to keep a type in", path, index)
+	}
+	// The track's own children end where its <extensions> or points start;
+	// a <link> holds a <type> of its own, so the search starts after the last.
+	limit := len(element) - len("</trk>")
+	for _, nested := range []string{"<extensions", "<trkseg"} {
+		if at := bytes.Index(element, []byte(nested)); at >= 0 && at < limit {
+			limit = at
+		}
+	}
+	from := open + 1
+	if at := bytes.LastIndex(element[:limit], []byte("</link>")); at >= 0 {
+		from = at + len("</link>")
+	}
+	var b bytes.Buffer
+	b.Write(data[:start])
+	at := bytes.Index(element[from:limit], []byte("<type>"))
+	switch {
+	case at >= 0:
+		at += from
+		to := bytes.Index(element[at:limit], []byte("</type>"))
+		if to < 0 {
+			return fmt.Errorf("%s: trk %d: <type> is not closed", path, index)
+		}
+		to += at + len("</type>")
+		if kind == "" {
+			// The line it sits on goes with it.
+			for at > 0 && (element[at-1] == ' ' || element[at-1] == '\t') {
+				at--
+			}
+			if at > 0 && element[at-1] == '\n' {
+				at--
+			}
+			b.Write(element[:at])
+			b.Write(element[to:])
+			break
+		}
+		b.Write(element[:at])
+		writeType(&b, kind)
+		b.Write(element[to:])
+	case kind == "":
+		return nil
+	default:
+		// After the last of the track's own children.
+		at := len(bytes.TrimRight(element[:limit], " \t\r\n"))
+		b.Write(element[:at])
+		b.WriteString("\n    ")
+		writeType(&b, kind)
+		b.Write(element[at:])
+	}
+	b.Write(data[end:])
+	return replaceFile(path, b.Bytes())
+}
+
+func writeType(b *bytes.Buffer, kind string) {
+	b.WriteString("<type>")
+	_ = xml.EscapeText(b, []byte(kind))
+	b.WriteString("</type>")
 }
 
 // ErrNotOurs is returned when a file this program did not write would be

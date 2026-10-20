@@ -33,6 +33,9 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		// Lang, when sent, is the language of name, a language tag; "" says
 		// it is not known, so a part takes the file's. Left out, it stays.
 		Lang *string `json:"lang"`
+		// Type, when sent, is a track's <type>, such as drive or hike; ""
+		// takes it out. Left out, it stays. Only a track has one.
+		Type *string `json:"type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
@@ -59,6 +62,17 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		*body.Lang = strings.TrimSpace(*body.Lang)
 		if *body.Lang != "" && !languageTag.MatchString(*body.Lang) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("%q is not a language tag such as en or zh-Hans", *body.Lang))
+			return
+		}
+	}
+	if body.Type != nil {
+		*body.Type = strings.TrimSpace(*body.Type)
+		if !strings.HasPrefix(body.Key, "t") {
+			writeError(w, http.StatusBadRequest, errors.New("only a track has a type"))
+			return
+		}
+		if strings.ContainsAny(*body.Type, "\n\r") {
+			writeError(w, http.StatusBadRequest, errors.New("a type is one line"))
 			return
 		}
 	}
@@ -168,6 +182,18 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(file.Translations) == 0 {
 			file.Translations = nil
+		}
+	}
+	if body.Type != nil {
+		if file.Types == nil {
+			file.Types = map[string]string{}
+		}
+		file.Types[body.Key] = *body.Type
+		if *body.Type == result.file.Tracks[at.shown].Type {
+			delete(file.Types, body.Key)
+		}
+		if len(file.Types) == 0 {
+			file.Types = nil
 		}
 	}
 	// A rename that changes nothing — the dialog confirmed as it opened —

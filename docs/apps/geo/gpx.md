@@ -73,7 +73,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX, where saving applies them to the points. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/file-name` | Rename a draft or any GPX within its current folder (a recording keeps its bytes, checked by digest); `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
-| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. `translations`, `{"en": "…"}` keyed by language tag, replace the part's names in other languages and are held under `translations` the same way; `lang`, a language tag or `""` for not known, is the language of the name, held under `langs` — the file's, keyed `f`, is the default for its parts. Each left out stays as it is, except that an empty `f` name also gives back the file's own translations and language. A rename that changes nothing holds no edit. |
+| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. `translations`, `{"en": "…"}` keyed by language tag, replace the part's names in other languages and are held under `translations` the same way; `lang`, a language tag or `""` for not known, is the language of the name, held under `langs` — the file's, keyed `f`, is the default for its parts. `type`, for a track only, is its GPX `<type>` (`""` takes it out), held under `types`. Each left out stays as it is, except that an empty `f` name also gives back the file's own translations and language. A rename that changes nothing holds no edit. |
 | `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
 | `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
 | `POST /api/photo` | Takes one WebP, sent as an `image/webp` body, for the GPX `path` names — a dgs GPX on disk. Anything that does not decode as WebP is refused; the bytes are kept as the page encoded them. Publishes it into `<gpx name>.photos/` under the first 12 hex digits of the encoded bytes' SHA-256. Answers its `name`. An identical file already there is reused. Nothing is referenced until `PUT /api/waypoint-photos` holds it and the edit is saved. |
@@ -332,6 +332,13 @@ map. It is the interface later milestones build on.
   cut, details sit on a line of their own, and row buttons appear over the
   row's end on hover rather than reserving width. The full path is the row's
   tooltip.
+- **Track type.** A track's GPX `<type>` says what kind of track it is.
+  *Rename…* on a track asks for it too, from `drive`, `hike`, `run`,
+  `bike`, `ship`, `flight`, `drone` and `other`, or none, which takes it
+  out; a type of the track's own outside the list is offered as well. It is held and saved like the name: into a GPX `dgs` wrote, and
+  under `types` in the sidecar of a recording. *Save as…*, *Copy to…*,
+  *Move to…*, a cleaned save and segments written out keep it; tracks
+  joined, or segments merged, keep it when they all have the same one.
 - **What a file holds.** A GPX file may hold several tracks, planned routes
   and waypoints. Every workspace row that holds anything has a disclosure (▶,
   at the row's end so rows start at the left edge) that lists them beneath it
@@ -1080,6 +1087,7 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
   "names": { "t1": "Evening ride" },
   "translations": { "t1": { "zh": "傍晚骑行" } },
   "langs": { "f": "zh", "t1": "en" },
+  "types": { "t1": "bike" },
   "order": { "w": ["w2", "w0", "w1"] },
   "added": [
     { "name": "Phone, tunnel", "from": "/trips/phone.gpx", "at": 1788657600000,
