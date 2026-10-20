@@ -1540,3 +1540,17 @@ test('a stretch is its points, not its distance: across a break in the recording
  assert.deepEqual(plain(context.timeSpan(track,[0,1])),[0,60000]);
 });
 
+test('a name in a wanted language counts the own name, in its known language, among the translations',()=>{
+ const context=vm.createContext({});const app=source('app');
+ vm.runInContext(app.slice(app.indexOf('// nameIn is the name'),app.indexOf('async function reloadEntry(path)')),context);
+ const nameIn=context.nameIn;
+ assert.equal(nameIn('zh','西湖','zh',{'zh-Hant':'西湖繁'}),'西湖');
+ assert.equal(nameIn('zh','西湖','zh-Hans',{'zh-Hant':'西湖繁'}),'西湖');
+ assert.equal(nameIn('ZH','West Lake','en',{'zh-Hant':'西湖繁','zh-hans':'西湖简'}),'西湖简');
+ assert.equal(nameIn('zh','西湖','zh',{zh:'别名'}),'西湖');
+ // The own name's language unknown: it is only the fallback.
+ assert.equal(nameIn('zh','西湖','',{'zh-Hant':'西湖繁'}),'西湖繁');
+ assert.equal(nameIn('ja','西湖','zh',{en:'West Lake'}),'西湖');
+ assert.equal(nameIn('','西湖','zh',{en:'West Lake'}),'西湖');
+});
+

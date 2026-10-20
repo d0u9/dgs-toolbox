@@ -19,6 +19,12 @@ import (
 // its standalone waypoints, each in file order.
 type File struct {
 	Name string
+	// Translations are the file's name in other languages, keyed by BCP 47
+	// tag, from dgs's name extension; Track, Route and Waypoint carry theirs.
+	Translations map[string]string
+	// Lang is the language of the file's <name>, and of every other <name>
+	// without its own Lang, as a BCP 47 tag; "" when the file does not say.
+	Lang string
 	// Creator is the creator attribute of <gpx>: which program wrote the file.
 	Creator   string
 	Tracks    []Track
@@ -28,15 +34,19 @@ type File struct {
 
 // Route is one <rte>: a planned path, its points in order, usually untimed.
 type Route struct {
-	Name   string
-	Points []Point
+	Name         string
+	Lang         string // of Name, when the route says
+	Translations map[string]string
+	Points       []Point
 }
 
 // Waypoint is one <wpt>: a named place on its own, not part of a path.
 type Waypoint struct {
 	Point
-	Name        string
-	Description string
+	Name         string
+	Lang         string // of Name, when the waypoint says
+	Translations map[string]string
+	Description  string
 	// CaptureID identifies a Capture waypoint in a dgs GPX extension.
 	CaptureID string
 	// Links are the waypoint's <link> elements, in file order.
@@ -53,8 +63,10 @@ type Link struct {
 // Track is one <trk>; its segments are the pieces the recorder kept apart,
 // usually because the signal or the recording paused in between.
 type Track struct {
-	Name     string
-	Segments []Segment
+	Name         string
+	Lang         string // of Name, when the track says
+	Translations map[string]string
+	Segments     []Segment
 }
 
 type Segment struct {
@@ -96,7 +108,9 @@ func Open(path string) (*File, error) {
 type xmlGPX struct {
 	Creator  string `xml:"creator,attr"`
 	Metadata struct {
-		Name string `xml:"name"`
+		Name         string           `xml:"name"`
+		Translations []xmlTranslation `xml:"extensions>name"`
+		Lang         []xmlLang        `xml:"extensions>lang"`
 	} `xml:"metadata"`
 	Name      string     `xml:"name"` // GPX 1.0 keeps the name at the root
 	Tracks    []xmlTrack `xml:"trk"`
@@ -105,13 +119,17 @@ type xmlGPX struct {
 }
 
 type xmlRoute struct {
-	Name   string     `xml:"name"`
-	Points []xmlPoint `xml:"rtept"`
+	Name         string           `xml:"name"`
+	Translations []xmlTranslation `xml:"extensions>name"`
+	Lang         []xmlLang        `xml:"extensions>lang"`
+	Points       []xmlPoint       `xml:"rtept"`
 }
 
 type xmlTrack struct {
-	Name     string       `xml:"name"`
-	Segments []xmlSegment `xml:"trkseg"`
+	Name         string           `xml:"name"`
+	Translations []xmlTranslation `xml:"extensions>name"`
+	Lang         []xmlLang        `xml:"extensions>lang"`
+	Segments     []xmlSegment     `xml:"trkseg"`
 }
 
 type xmlSegment struct {
@@ -129,7 +147,11 @@ type xmlPoint struct {
 	Name      string  `xml:"name"`
 	Desc      string  `xml:"desc"`
 	CaptureID string  `xml:"extensions>captureId"`
-	Links     []struct {
+	// Translations and Lang are read from a <wpt> only; a point of a path
+	// has none.
+	Translations []xmlTranslation `xml:"extensions>name"`
+	Lang         []xmlLang        `xml:"extensions>lang"`
+	Links        []struct {
 		Href string `xml:"href,attr"`
 		Text string `xml:"text"`
 		Type string `xml:"type"`
@@ -145,12 +167,12 @@ func Parse(r io.Reader) (*File, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("parse GPX: %w", err)
 	}
-	file := &File{Name: strings.TrimSpace(doc.Metadata.Name), Creator: strings.TrimSpace(doc.Creator)}
+	file := &File{Name: strings.TrimSpace(doc.Metadata.Name), Creator: strings.TrimSpace(doc.Creator), Translations: translations(doc.Metadata.Translations), Lang: nameLang(doc.Metadata.Lang)}
 	if file.Name == "" {
 		file.Name = strings.TrimSpace(doc.Name)
 	}
 	for _, trk := range doc.Tracks {
-		track := Track{Name: strings.TrimSpace(trk.Name)}
+		track := Track{Name: strings.TrimSpace(trk.Name), Lang: nameLang(trk.Lang), Translations: translations(trk.Translations)}
 		for _, seg := range trk.Segments {
 			segment := Segment{Points: make([]Point, 0, len(seg.Points))}
 			for _, pt := range seg.Points {
@@ -164,7 +186,7 @@ func Parse(r io.Reader) (*File, error) {
 		file.Tracks = append(file.Tracks, track)
 	}
 	for _, rte := range doc.Routes {
-		route := Route{Name: strings.TrimSpace(rte.Name), Points: make([]Point, 0, len(rte.Points))}
+		route := Route{Name: strings.TrimSpace(rte.Name), Lang: nameLang(rte.Lang), Translations: translations(rte.Translations), Points: make([]Point, 0, len(rte.Points))}
 		for _, pt := range rte.Points {
 			if !pt.validPosition() {
 				return nil, fmt.Errorf("parse GPX: route point is off the globe")
@@ -178,11 +200,13 @@ func Parse(r io.Reader) (*File, error) {
 			return nil, fmt.Errorf("parse GPX: waypoint is off the globe")
 		}
 		file.Waypoints = append(file.Waypoints, Waypoint{
-			Point:       wpt.point(),
-			Name:        strings.TrimSpace(wpt.Name),
-			Description: strings.TrimSpace(wpt.Desc),
-			CaptureID:   strings.TrimSpace(wpt.CaptureID),
-			Links:       wpt.links(),
+			Point:        wpt.point(),
+			Name:         strings.TrimSpace(wpt.Name),
+			Lang:         nameLang(wpt.Lang),
+			Translations: translations(wpt.Translations),
+			Description:  strings.TrimSpace(wpt.Desc),
+			CaptureID:    strings.TrimSpace(wpt.CaptureID),
+			Links:        wpt.links(),
 		})
 	}
 	return file, nil

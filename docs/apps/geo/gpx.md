@@ -73,7 +73,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX, where saving applies them to the points. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/file-name` | Rename a draft or any GPX within its current folder (a recording keeps its bytes, checked by digest); `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
-| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
+| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`; the key `f` names the GPX itself (its `<metadata><name>`), and an empty `f` name gives back the file's own. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. `translations`, `{"en": "…"}` keyed by language tag, replace the part's names in other languages and are held under `translations` the same way; `lang`, a language tag or `""` for not known, is the language of the name, held under `langs` — the file's, keyed `f`, is the default for its parts. Each left out stays as it is, except that an empty `f` name also gives back the file's own translations and language. A rename that changes nothing holds no edit. |
 | `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
 | `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
 | `POST /api/photo` | Takes one WebP, sent as an `image/webp` body, for the GPX `path` names — a dgs GPX on disk. Anything that does not decode as WebP is refused; the bytes are kept as the page encoded them. Publishes it into `<gpx name>.photos/` under the first 12 hex digits of the encoded bytes' SHA-256. Answers its `name`. An identical file already there is reused. Nothing is referenced until `PUT /api/waypoint-photos` holds it and the edit is saved. |
@@ -247,7 +247,7 @@ map. It is the interface later milestones build on.
   changes its name in memory. On a saved file *Rename…* changes the GPX's own
   name as an unsaved edit: saving writes it into a GPX dgs wrote, and into the
   sidecar of a recording. Once a name is given, *Restore the name* drops it,
-  also as an unsaved edit, and the GPX's own name shows again. Every saved file also offers *Rename file…*: the
+  also as an unsaved edit, and the GPX's own name, language and translations show again. Every saved file also offers *Rename file…*: the
   file and any companion sidecar move to the new name in the same folder, the
   GPX's own name stays, a recording's bytes are unchanged, pending edits follow it and remain unsaved, and
   existing names are refused. A file's row also offers *Save* and
@@ -317,6 +317,16 @@ map. It is the interface later milestones build on.
 - **Names.** A GPX is named by its own `<metadata><name>`, or the name given
   it here, and only by its file name when it has neither. The file name may
   change while the name stays.
+  The GPX, and each track, route and waypoint, may also be named in other
+  languages (see *Names in other languages*). *Rename…* asks for the name, the
+  language it is in, and one other language with the name in it. The GPX's
+  language is the default for its parts; a part's own, when given, overrides
+  it, and a part newly given the file's language takes the file's instead of
+  holding its own. The other language offered is the one the part already
+  has; else, with the name's language known, Chinese for an English name and
+  English for any other; else English for a name in Chinese, Japanese or
+  Korean script and Chinese otherwise. A blank name in that language takes
+  it out. Language tags match whatever their case.
   Names run long, so the sidebar reads a size smaller, a name wraps to two
   lines (breaking anywhere, since names mix words, dates and CJK) before it is
   cut, details sit on a line of their own, and row buttons appear over the
@@ -998,6 +1008,43 @@ Save as… merges an external GPX and its sidecar into a new standalone dgs GPX.
 The extension is not encryption or
 authentication: it is readable by dgs and ignored by ordinary GPX readers.
 
+### Names in other languages
+
+GPX 1.1 gives `<name>` one string and no language, so a name in another
+language is a dgs extension, one element per language in the part's own
+`<extensions>`:
+
+```xml
+<trk>
+  <name>西湖</name>
+  <extensions><dgs:name xmlns:dgs="urn:dgs-toolbox:gpx:1" xml:lang="en">West Lake</dgs:name></extensions>
+  <trkseg>…</trkseg>
+</trk>
+```
+
+`<metadata>`, `<trk>`, `<rte>` and `<wpt>` take them; `xml:lang` is a BCP 47
+tag such as `en` or `zh-Hant`. The format, for writers and readers other than
+dgs, is specified in [Names in other languages in GPX](gpx-names.md). `<name>` stays the name every GPX reader shows.
+A reader that knows the extension shows the name for its language and falls
+back to `<name>`. Segment names are dgs state and have none.
+
+The language `<name>` itself is in is a `<dgs:lang>` beside the translations:
+the one in `<metadata>` is the file's and the default for every part, and a
+part's own overrides it. Without either it is not known.
+
+Like names, translations and languages are held until the edit is saved.
+Saving writes them into a GPX `dgs` wrote and into the sidecar of a
+recording, under `translations` — keyed as `names` is and then by language —
+and `langs`, keyed as `names` is. *Save as…*, *Copy to…* and *Move to…*
+carry them into the GPX written; a copied part takes the language its name
+was in as its own, unless that is the other GPX's default.
+
+*Names* in the header previews them: set to a language, the workspace, the
+inspector and the map show each name in it where there is one — the own
+name counting when its language is known — as a reader in that language would
+by [the spec](gpx-names.md#readers), and the own name elsewhere. Only what is shown changes;
+*Rename…* still starts from the own name. The choice is kept in this browser.
+
 ### The sidecar
 
 Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
@@ -1031,6 +1078,8 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
     { "first": 3000, "last": 3140, "profile": "car", "route": [[120.1501, 30.2502], [120.1512, 30.2515]], "at": 1788657500000 }
   ],
   "names": { "t1": "Evening ride" },
+  "translations": { "t1": { "zh": "傍晚骑行" } },
+  "langs": { "f": "zh", "t1": "en" },
   "order": { "w": ["w2", "w0", "w1"] },
   "added": [
     { "name": "Phone, tunnel", "from": "/trips/phone.gpx", "at": 1788657600000,

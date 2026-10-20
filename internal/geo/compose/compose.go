@@ -9,6 +9,7 @@ package compose
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"time"
@@ -39,10 +40,15 @@ func (f Fill) Inserted() (first, last int) { return f.First + 1, f.First + len(f
 // Added is a track brought from another GPX file, as that file's cleaning
 // left it. Added tracks follow the file's own tracks, in the order added.
 type Added struct {
-	Name     string         `json:"name"`
-	From     string         `json:"from"` // the file it was taken from
-	At       int64          `json:"at,omitempty"`
-	Segments [][]AddedPoint `json:"segments"`
+	Name string `json:"name"`
+	// Lang is the language of Name, a BCP 47 tag, when it is known; and
+	// Translations are the name in other languages, keyed by tag. Route and
+	// Waypoint carry both too.
+	Lang         string            `json:"lang,omitempty"`
+	Translations map[string]string `json:"translations,omitempty"`
+	From         string            `json:"from"` // the file it was taken from
+	At           int64             `json:"at,omitempty"`
+	Segments     [][]AddedPoint    `json:"segments"`
 }
 
 // AddedPoint is one point of an added track, with only what GPX gave it.
@@ -58,7 +64,7 @@ type AddedPoint struct {
 
 // Track is an added track as a GPX track.
 func (a Added) Track() gpxfile.Track {
-	trk := gpxfile.Track{Name: a.Name}
+	trk := gpxfile.Track{Name: a.Name, Lang: a.Lang, Translations: maps.Clone(a.Translations)}
 	for _, seg := range a.Segments {
 		var out gpxfile.Segment
 		for _, pt := range seg {
@@ -84,7 +90,7 @@ func (a Added) Track() gpxfile.Track {
 
 // AddedFrom turns a GPX track into an added track.
 func AddedFrom(trk gpxfile.Track, from string, at int64) Added {
-	added := Added{Name: trk.Name, From: from, At: at}
+	added := Added{Name: trk.Name, Lang: trk.Lang, Translations: maps.Clone(trk.Translations), From: from, At: at}
 	for _, seg := range trk.Segments {
 		var out []AddedPoint
 		for _, pt := range seg.Points {
@@ -228,12 +234,14 @@ func addedTracks(added []Added) []gpxfile.Track {
 // already written keeps its waypoints in the GPX itself; a draft has nowhere
 // else to hold them until it is saved.
 type Waypoint struct {
-	Lon         float64        `json:"lon"`
-	Lat         float64        `json:"lat"`
-	Name        string         `json:"name"`
-	Description string         `json:"desc,omitempty"`
-	Links       []gpxfile.Link `json:"links,omitempty"`
-	At          int64          `json:"at,omitempty"` // Unix milliseconds it was added
+	Lon          float64           `json:"lon"`
+	Lat          float64           `json:"lat"`
+	Name         string            `json:"name"`
+	Lang         string            `json:"lang,omitempty"`
+	Translations map[string]string `json:"translations,omitempty"`
+	Description  string            `json:"desc,omitempty"`
+	Links        []gpxfile.Link    `json:"links,omitempty"`
+	At           int64             `json:"at,omitempty"` // Unix milliseconds it was added
 	// Elevation and Time are what the waypoint was copied with; a point
 	// placed by hand has neither.
 	Elevation *float64 `json:"ele,omitempty"`
@@ -246,10 +254,12 @@ type Waypoint struct {
 // Point is the waypoint as a GPX waypoint.
 func (w Waypoint) Point() gpxfile.Waypoint {
 	point := gpxfile.Waypoint{
-		Point:       gpxfile.Point{LatLon: geo.LatLon{Lat: w.Lat, Lon: w.Lon}},
-		Name:        w.Name,
-		Description: w.Description,
-		Links:       append([]gpxfile.Link(nil), w.Links...),
+		Point:        gpxfile.Point{LatLon: geo.LatLon{Lat: w.Lat, Lon: w.Lon}},
+		Name:         w.Name,
+		Lang:         w.Lang,
+		Translations: maps.Clone(w.Translations),
+		Description:  w.Description,
+		Links:        append([]gpxfile.Link(nil), w.Links...),
 	}
 	if w.Elevation != nil {
 		point.Elevation, point.HasElevation = *w.Elevation, true
@@ -262,7 +272,7 @@ func (w Waypoint) Point() gpxfile.Waypoint {
 
 // WaypointFrom turns a GPX waypoint into one carried in a sidecar.
 func WaypointFrom(wpt gpxfile.Waypoint, from string, at int64) Waypoint {
-	waypoint := Waypoint{Lon: wpt.Lon, Lat: wpt.Lat, Name: wpt.Name, Description: wpt.Description, Links: append([]gpxfile.Link(nil), wpt.Links...), At: at, From: from}
+	waypoint := Waypoint{Lon: wpt.Lon, Lat: wpt.Lat, Name: wpt.Name, Lang: wpt.Lang, Translations: maps.Clone(wpt.Translations), Description: wpt.Description, Links: append([]gpxfile.Link(nil), wpt.Links...), At: at, From: from}
 	if wpt.HasElevation {
 		waypoint.Elevation = ptr(wpt.Elevation)
 	}
@@ -275,15 +285,17 @@ func WaypointFrom(wpt gpxfile.Waypoint, from string, at int64) Waypoint {
 // Route is a planned route brought from another GPX file. Added routes follow
 // the file's own routes, in the order added.
 type Route struct {
-	Name   string       `json:"name"`
-	From   string       `json:"from"` // the file it was taken from
-	At     int64        `json:"at,omitempty"`
-	Points [][2]float64 `json:"points"` // [lon, lat]
+	Name         string            `json:"name"`
+	Lang         string            `json:"lang,omitempty"`
+	Translations map[string]string `json:"translations,omitempty"`
+	From         string            `json:"from"` // the file it was taken from
+	At           int64             `json:"at,omitempty"`
+	Points       [][2]float64      `json:"points"` // [lon, lat]
 }
 
 // Route is the added route as a GPX route.
 func (r Route) Route() gpxfile.Route {
-	rte := gpxfile.Route{Name: r.Name}
+	rte := gpxfile.Route{Name: r.Name, Lang: r.Lang, Translations: maps.Clone(r.Translations)}
 	for _, pt := range r.Points {
 		rte.Points = append(rte.Points, gpxfile.Point{LatLon: geo.LatLon{Lat: pt[1], Lon: pt[0]}})
 	}
@@ -292,7 +304,7 @@ func (r Route) Route() gpxfile.Route {
 
 // RouteFrom turns a GPX route into an added route.
 func RouteFrom(rte gpxfile.Route, from string, at int64) Route {
-	route := Route{Name: rte.Name, From: from, At: at}
+	route := Route{Name: rte.Name, Lang: rte.Lang, Translations: maps.Clone(rte.Translations), From: from, At: at}
 	for _, pt := range rte.Points {
 		route.Points = append(route.Points, [2]float64{pt.Lon, pt.Lat})
 	}

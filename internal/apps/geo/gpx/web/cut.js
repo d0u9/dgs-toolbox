@@ -550,7 +550,8 @@ export function pieceBounds(track, piece) {
 }
 
 function defaultCreatePath(track, folder = "") {
-  if (track.draft) return `${folder.replace(/[\\/]$/, "")}/${track.name} segments.gpx`;
+  // The draft's own name, not one shown in another language.
+  if (track.draft) return `${folder.replace(/[\\/]$/, "")}/${track.ownName ?? track.name} segments.gpx`;
   const source = track.path;
   const dot = source.toLowerCase().lastIndexOf(".gpx");
   return `${dot > 0 ? source.slice(0, dot) : source} segments.gpx`;

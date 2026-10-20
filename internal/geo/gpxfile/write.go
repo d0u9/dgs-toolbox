@@ -34,6 +34,7 @@ func EncodeTracks(w io.Writer, tracks []Track) error {
 			_ = xml.EscapeText(&b, []byte(trk.Name))
 			b.WriteString("</name>\n")
 		}
+		writeExtensions(&b, "    ", trk.Lang, trk.Translations)
 		for _, seg := range trk.Segments {
 			b.WriteString("    <trkseg>\n")
 			for _, pt := range seg.Points {
@@ -84,28 +85,32 @@ func CreateWith(path string, name string, routes []Route, tracks []Track) error 
 // in the order GPX gives them. It refuses to replace a file that is already
 // there.
 func CreateAll(path string, name string, waypoints []Waypoint, routes []Route, tracks []Track) error {
+	return CreateNamed(path, File{Name: name}, waypoints, routes, tracks)
+}
+
+// CreateNamed is CreateAll with the file named as named is: its Name, the
+// Lang of it, which is the file's default, and its Translations, written in
+// its <metadata>. Nothing else of named is read.
+func CreateNamed(path string, named File, waypoints []Waypoint, routes []Route, tracks []Track) error {
+	name, lang, translated := named.Name, named.Lang, named.Translations
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	b.WriteString(`<gpx version="1.1" creator="` + Creator + `" xmlns="http://www.topografix.com/GPX/1/1">` + "\n")
-	if name != "" {
-		b.WriteString("  <metadata><name>")
-		_ = xml.EscapeText(&b, []byte(name))
-		b.WriteString("</name></metadata>\n")
+	if name != "" || hasTranslations(lang, translated) {
+		b.WriteString("  <metadata>")
+		if name != "" {
+			b.WriteString("<name>")
+			_ = xml.EscapeText(&b, []byte(name))
+			b.WriteString("</name>")
+		}
+		writeExtensions(&b, "", lang, translated)
+		b.WriteString("</metadata>\n")
 	}
 	for _, wpt := range waypoints {
 		writeWaypoint(&b, wpt)
 	}
 	for _, rte := range routes {
-		b.WriteString("  <rte>\n")
-		if rte.Name != "" {
-			b.WriteString("    <name>")
-			_ = xml.EscapeText(&b, []byte(rte.Name))
-			b.WriteString("</name>\n")
-		}
-		for _, pt := range rte.Points {
-			fmt.Fprintf(&b, "    <rtept lat=\"%s\" lon=\"%s\"></rtept>\n", coordinate(pt.Lat), coordinate(pt.Lon))
-		}
-		b.WriteString("  </rte>\n")
+		writeRoute(&b, rte)
 	}
 	if err := EncodeTracks(&b, tracks); err != nil {
 		return err
@@ -145,12 +150,45 @@ func writeWaypoint(b *bytes.Buffer, wpt Waypoint) {
 		b.WriteString("</desc>")
 	}
 	writeLinks(b, wpt.Links)
-	if wpt.CaptureID != "" {
-		b.WriteString(`<extensions><dgs:captureId xmlns:dgs="urn:dgs-toolbox:capture">`)
-		_ = xml.EscapeText(b, []byte(wpt.CaptureID))
-		b.WriteString("</dgs:captureId></extensions>")
+	if wpt.CaptureID != "" || hasTranslations(wpt.Lang, wpt.Translations) {
+		b.WriteString("<extensions>")
+		writeTranslations(b, wpt.Lang, wpt.Translations)
+		if wpt.CaptureID != "" {
+			b.WriteString(`<dgs:captureId xmlns:dgs="urn:dgs-toolbox:capture">`)
+			_ = xml.EscapeText(b, []byte(wpt.CaptureID))
+			b.WriteString("</dgs:captureId>")
+		}
+		b.WriteString("</extensions>")
 	}
 	b.WriteString("</wpt>\n")
+}
+
+func writeRoute(b *bytes.Buffer, rte Route) {
+	b.WriteString("  <rte>\n")
+	if rte.Name != "" {
+		b.WriteString("    <name>")
+		_ = xml.EscapeText(b, []byte(rte.Name))
+		b.WriteString("</name>\n")
+	}
+	writeExtensions(b, "    ", rte.Lang, rte.Translations)
+	for _, pt := range rte.Points {
+		fmt.Fprintf(b, "    <rtept lat=\"%s\" lon=\"%s\"></rtept>\n", coordinate(pt.Lat), coordinate(pt.Lon))
+	}
+	b.WriteString("  </rte>\n")
+}
+
+// writeExtensions writes an element's translations in an <extensions> of
+// their own, on a line at indent; nothing when there are none.
+func writeExtensions(b *bytes.Buffer, indent, lang string, names map[string]string) {
+	if !hasTranslations(lang, names) {
+		return
+	}
+	b.WriteString(indent + "<extensions>")
+	writeTranslations(b, lang, names)
+	b.WriteString("</extensions>")
+	if indent != "" {
+		b.WriteString("\n")
+	}
 }
 
 func writeLinks(b *bytes.Buffer, links []Link) {
@@ -382,10 +420,10 @@ func AddWaypoint(path string, waypoint Waypoint) error {
 			end = at
 		}
 	}
-	// A waypoint may have its own <extensions>; only the root extension is a
-	// boundary for adding another waypoint.
+	// A waypoint or the metadata may have its own <extensions>; only the
+	// root extension is a boundary for adding another waypoint.
 	if ext := bytes.LastIndex(data[:end], []byte("<extensions")); ext >= 0 {
-		last := max(bytes.LastIndex(data[:end], []byte("</wpt>")), bytes.LastIndex(data[:end], []byte("</rte>")), bytes.LastIndex(data[:end], []byte("</trk>")))
+		last := max(bytes.LastIndex(data[:end], []byte("</wpt>")), bytes.LastIndex(data[:end], []byte("</rte>")), bytes.LastIndex(data[:end], []byte("</trk>")), bytes.LastIndex(data[:end], []byte("</metadata>")))
 		if ext > last {
 			end = ext
 		}
@@ -532,9 +570,17 @@ func AddRoute(path string, route Route) error {
 	if end < 0 {
 		return fmt.Errorf("%s: no closing </gpx>", path)
 	}
-	for _, tag := range [][]byte{[]byte("<trk>"), []byte("<trk "), []byte("<extensions>")} {
+	for _, tag := range [][]byte{[]byte("<trk>"), []byte("<trk ")} {
 		if at := bytes.Index(data, tag); at >= 0 && at < end {
 			end = at
+		}
+	}
+	// Only the root's own <extensions>, after every part, bounds the routes;
+	// a waypoint or the metadata may hold one of its own.
+	if ext := bytes.LastIndex(data[:end], []byte("<extensions")); ext >= 0 {
+		last := max(bytes.LastIndex(data[:end], []byte("</wpt>")), bytes.LastIndex(data[:end], []byte("</rte>")), bytes.LastIndex(data[:end], []byte("</metadata>")))
+		if ext > last {
+			end = ext
 		}
 	}
 	for end > 0 && (data[end-1] == ' ' || data[end-1] == '\t') {
@@ -542,16 +588,7 @@ func AddRoute(path string, route Route) error {
 	}
 	var b bytes.Buffer
 	b.Write(data[:end])
-	b.WriteString("  <rte>\n")
-	if route.Name != "" {
-		b.WriteString("    <name>")
-		_ = xml.EscapeText(&b, []byte(route.Name))
-		b.WriteString("</name>\n")
-	}
-	for _, pt := range route.Points {
-		fmt.Fprintf(&b, "    <rtept lat=\"%s\" lon=\"%s\"></rtept>\n", coordinate(pt.Lat), coordinate(pt.Lon))
-	}
-	b.WriteString("  </rte>\n")
+	writeRoute(&b, route)
 	b.Write(data[end:])
 	return replaceFile(path, b.Bytes())
 }

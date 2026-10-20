@@ -348,8 +348,15 @@ func composeInto(target string, result analysis) error {
 		if name, ok := file.Names[result.keys.Routes[i]]; ok {
 			routes[i].Name = name
 		}
+		routes[i].Translations = translatedAs(result, result.keys.Routes[i], routes[i].Translations)
+		routes[i].Lang = langAs(result, result.keys.Routes[i], routes[i].Lang)
 	}
-	return gpxfile.CreateAll(target, result.name, waypoints, routes, editedTracks(result))
+	named := gpxfile.File{
+		Name:         result.name,
+		Lang:         langAs(result, fileNameKey, result.file.Lang),
+		Translations: translatedAs(result, fileNameKey, result.file.Translations),
+	}
+	return gpxfile.CreateNamed(target, named, waypoints, routes, editedTracks(result))
 }
 
 // editedTracks is every track of a file as the page shows it: the points
@@ -379,6 +386,8 @@ func editedTrack(a analysis, index int) (gpxfile.Track, bool) {
 		name = renamed
 	}
 	written := a.trackOf(first, last, name)
+	written.Translations = translatedAs(a, a.keys.Tracks[index], a.file.Tracks[index].Translations)
+	written.Lang = langAs(a, a.keys.Tracks[index], a.file.Tracks[index].Lang)
 	return written, len(written.Segments) > 0
 }
 
