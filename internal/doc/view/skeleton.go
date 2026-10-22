@@ -210,13 +210,63 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 			if f.Each != "" {
 				groups = nil
 				if _, isType := types.byType[f.Each]; isType {
+					// An Item belongs to the anchors its about or for names.
+					// Only anchors this folder's conditions take make folders,
+					// so none is named after an anchor it leaves out.
+					links := map[string][]string{}
+					anchors := map[string]bool{}
+					for _, i := range pool {
+						fields := i.CurrentFields()
+						links[i.ID] = append(strings.Split(fields["about"], tree.MultipleSeparator), fields["for"])
+						if i.Type != f.Each && !types.Is(i.Type, f.Each) {
+							continue
+						}
+						e := env{keys: keysOf(i, len(i.Revisions), anchor), item: i, types: types, tags: i.Tags}
+						anchors[i.ID] = !slices.ContainsFunc(filters, func(c expr.Expr) bool { return !c.Eval(e) })
+					}
+					// home is the anchor whose folder an anchor goes into: one
+					// filed under another, as a translation under its book,
+					// follows it up the chain; a cycle settles on its least ID.
+					// ponytail: an anchor follows only its first linked anchor.
+					home := func(id string) string {
+						var path []string
+						for {
+							if at := slices.Index(path, id); at >= 0 {
+								return slices.Min(path[at:])
+							}
+							path = append(path, id)
+							next := ""
+							for _, l := range links[id] {
+								if l != id && anchors[l] {
+									next = l
+									break
+								}
+							}
+							if next == "" {
+								return id
+							}
+							id = next
+						}
+					}
+					homes := map[string]string{}
+					for id, ok := range anchors {
+						if ok {
+							homes[id] = home(id)
+						}
+					}
 					for _, anchor := range pool {
-						if anchor.Type != f.Each && !types.Is(anchor.Type, f.Each) {
+						if homes[anchor.ID] != anchor.ID {
 							continue
 						}
 						g := group{value: anchor.ID, keys: keysOf(anchor, len(anchor.Revisions), "")}
 						for _, i := range pool {
-							if i.ID == anchor.ID || slices.Contains(strings.Split(i.CurrentFields()["about"], tree.MultipleSeparator), anchor.ID) {
+							in := homes[i.ID] == anchor.ID
+							if _, isAnchor := anchors[i.ID]; !isAnchor {
+								for _, l := range links[i.ID] {
+									in = in || homes[l] == anchor.ID
+								}
+							}
+							if in {
 								g.items = append(g.items, i)
 							}
 						}

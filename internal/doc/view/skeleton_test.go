@@ -55,6 +55,38 @@ func TestSkeletonAnchorAndValidityPerRevision(t *testing.T) {
 	if err != nil || len(result.Files) != 2 || !strings.HasPrefix(result.Files[0].Path, "11-Rental/Example Street/2020-01-01-2030-12-31/") {
 		t.Fatal(result, err)
 	}
+	guide := skeletonItem("guide", "bill", "alice", "澳大利亚", "Guide")
+	guide.Fields["for"] = "home"
+	result, err = BuildFolders([]Folder{{Name: "{address}", Each: "tenancy"}}, []tree.Item{tenant, guide}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil || len(result.Files) != 2 || !strings.HasPrefix(result.Files[1].Path, "Example Street/") {
+		t.Fatal("for anchors like about", result, err)
+	}
+	sublet := skeletonItem("sublet", "tenancy", "alice", "澳大利亚", "Sublet")
+	sublet.Fields["address"] = "Sublet Street"
+	sublet.Fields["for"] = "home"
+	result, err = BuildFolders([]Folder{{Name: "{address}", Each: "tenancy"}}, []tree.Item{tenant, sublet}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil || len(result.Files) != 2 || !strings.HasPrefix(result.Files[0].Path, "Example Street/") || !strings.HasPrefix(result.Files[1].Path, "Example Street/") {
+		t.Fatal("an anchor filed under another has no folder of its own", result, err)
+	}
+	guide.Fields["for"] = "sublet"
+	loop := skeletonItem("loop", "tenancy", "alice", "澳大利亚", "Loop")
+	loop.Fields["address"] = "Loop Street"
+	loop.Fields["for"] = "loop-b"
+	loopB := skeletonItem("loop-b", "tenancy", "alice", "澳大利亚", "Loop B")
+	loopB.Fields["address"] = "Loop B Street"
+	loopB.Fields["for"] = "loop"
+	result, err = BuildFolders([]Folder{{Name: "{address}", Each: "tenancy"}}, []tree.Item{tenant, sublet, guide, loop, loopB}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	folders := map[string]int{}
+	for _, f := range result.Files {
+		folders[path.Dir(f.Path)]++
+	}
+	if err != nil || len(result.Files) != 5 || folders["Example Street"] != 3 || folders["Loop Street"] != 2 {
+		t.Fatal("chains follow to the top anchor and a cycle settles on its least ID", folders, err)
+	}
+	result, err = BuildFolders([]Folder{{Name: "{address}", Each: "tenancy", If: "name != Lease"}}, []tree.Item{tenant, sublet}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil || len(result.Files) != 1 || !strings.HasPrefix(result.Files[0].Path, "Sublet Street/") {
+		t.Fatal("an anchor the folder leaves out names no folder", result, err)
+	}
 	card := skeletonItem("card", "passport", "alice", "中国", "护照")
 	card.Revisions = []tree.Revision{{ID: "old", Paper: "old", Digest: strings.Repeat("a", 64), Path: "old.pdf", Snapshot: true, Fields: map[string]string{"name": "护照", "date": "2016-01-01/2020-12-31"}}, {ID: "corrected", Paper: "old", Digest: strings.Repeat("a", 64), Path: "old.pdf", Snapshot: true, Fields: map[string]string{"name": "护照", "date": "2016-01-01/2021-12-31"}}, {ID: "new", Paper: "new", Digest: strings.Repeat("b", 64), Path: "new.pdf", Snapshot: true, Fields: map[string]string{"name": "护照", "date": "2026-01-01/2036-12-31"}}}
 	card.Head = "new"
