@@ -22,7 +22,7 @@ func TestEval(t *testing.T) {
 		"type == money":                                true,
 		"type == payment":                              false,
 		"category == utility && type == money":         true,
-		"tags in [network-6, network-5]":                     true,
+		"tags in [network-6, network-5]":               true,
 		"tags == paid && tags != late":                 true,
 		"!(type == bill || type == invoice)":           false,
 		"name ~ water":                                 true,
