@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -77,5 +78,18 @@ func TestInPlaceEmptySkeletonCanBeSavedAndReloaded(t *testing.T) {
 	loaded, err := Load(st)
 	if err != nil || len(loaded) != 1 || loaded[0].Mount == nil {
 		t.Fatal("empty mount lost", loaded, err)
+	}
+}
+
+func TestSnapshotKeepsItemsPlacedByEarlierMounts(t *testing.T) {
+	now := time.Unix(0, 0)
+	rule := view.View{Name: "identity", Folders: []view.Folder{{Name: "IDs", Take: view.Values{"id_card"}}}}
+	o := Outline{Name: "all", Rules: []view.View{rule}, Mount: []Assembly{{Rule: "identity"}, {Snapshot: "tax", At: "alice"}}}
+	tax := snapshot.Snapshot{Name: "tax", Taken: now.Format(time.RFC3339), Files: []snapshot.File{{Path: "2023/card.pdf", Item: "alice", Revision: "d"}}}
+	item := tree.Item{ID: "alice", Type: "id_card", Kind: tree.KindDocument, Head: "d", Fields: map[string]string{"name": "Card"}, Revisions: []tree.Revision{{Digest: "d", Path: "card.pdf"}}}
+	types := view.TypesOf([]tree.Template{{Type: "id_card", Lineage: []string{"id_card"}}})
+	group, err := GroupAt(o, []snapshot.Snapshot{tax}, []tree.Item{item}, types, now)
+	if err != nil || len(group.Files) != 2 || group.Files[0].Path != "IDs/01-Card.pdf" || group.Files[1].Path != "alice/tax/2023/card.pdf" {
+		t.Fatal(group.Files, err)
 	}
 }

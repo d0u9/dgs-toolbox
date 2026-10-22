@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"path"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -172,16 +171,9 @@ func groupSkeleton(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, 
 			}
 			folder = path.Join(m.At, folder)
 			folders = append(folders, folder)
+			// A Snapshot is fixed by hand and always complete: an Item placed
+			// earlier still appears here, so the export may hold it twice.
 			for _, f := range resolved.Files {
-				target := ""
-				for p, pin := range o.Pins {
-					if slices.Contains(pin.Items, f.Item) {
-						target = p
-					}
-				}
-				if assigned[f.Item] || target != "" && target != folder {
-					continue
-				}
 				f.Path = path.Join(folder, f.Path)
 				f.Node = folder
 				plan.Files = append(plan.Files, f)
