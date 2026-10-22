@@ -250,7 +250,11 @@ map. It is the interface later milestones build on.
   also as an unsaved edit, and the GPX's own name, language and translations show again. Every saved file also offers *Rename file…*: the
   file and any companion sidecar move to the new name in the same folder, the
   GPX's own name stays, a recording's bytes are unchanged, pending edits follow it and remain unsaved, and
-  existing names are refused. A file's row also offers *Save* and
+  existing names are refused. On a share that can refuse an existing name
+  neither on rename nor by hard link, such as SMB, the rename checks the name
+  is free and then renames, one at a time in this dgs; another program
+  creating that name in between could be replaced. Unlike Photo Import, this
+  needs no opt-in. A file's row also offers *Save* and
   *Revert* for what is edited but not on disk, then *Save as…* and
   *Convert to a dgs GPX…*, then discarding its sidecar or its embedded edits,
   then *Close*, which takes it out of the workspace and changes nothing on
