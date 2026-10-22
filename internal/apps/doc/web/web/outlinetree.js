@@ -76,12 +76,12 @@ export function resizable(pane, key, { after = true, fallback = 480, min = 260 }
 // unpicked); a folder's chevron opens or shuts it. Without, a click opens or
 // shuts a folder and a PDF links to its Item. With onWhy, each PDF has a ?
 // button calling it with the file, to explain where it is. empty is the
-// text drawn when there is nothing. A folder with snapshot set is a Snapshot's, drawn as one
-// and shut until opened.
+// text drawn when there is nothing. A folder with snapshot set is a Snapshot's, drawn as one.
+// Every folder is shut until opened, so a long tree shows its top first.
 // Folded is a set of folder paths kept in this browser under a key, so a
 // tree opens as it was left. load switches it to another key; with none it
-// keeps nothing. Snapshot folders shut once are kept beside it, in seen,
-// so one opened stays open.
+// keeps nothing. Folders shut once are kept beside it, in seen, so one
+// opened stays open.
 const FOLDED_KEY = "dgs-doc-folded";
 export class Folded extends Set {
   constructor() { super(); this.seen = new Set(); this.key = ""; }
@@ -114,7 +114,7 @@ export class Folded extends Set {
 
 export function outlineTree(host, state, { onPick, onWhy, empty = () => "" } = {}) {
   const closed = new Folded(); // folder paths ("a/b/") drawn shut
-  const seen = closed.seen; // Snapshot folders already shut once
+  const seen = closed.seen; // folders already shut once
   let picked = "";
   let grouping = null;
   const name = (id) => { const item = state().items.find((i) => i.id === id); return item ? label(state(), item) : id; };
@@ -128,7 +128,7 @@ export function outlineTree(host, state, { onPick, onWhy, empty = () => "" } = {
     if (picked === UNPLACED && !lost.length) picked = "";
     const files = [];
     const walk = (node) => {
-      if (node.snapshot && !seen.has(node.path)) { seen.add(node.path); closed.add(node.path + "/"); }
+      if (node.path && !seen.has(node.path)) { seen.add(node.path); closed.add(node.path + "/"); }
       files.push(...node.files);
       node.children.forEach(walk);
     };
