@@ -26,11 +26,11 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/mosaic v0.0.0-20260216111343-536eb63c1f4c // indirect
-	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/d0u9/rhumb v0.1.4-0.20261003143551-6ae3f4dc9cda
+	github.com/d0u9/rhumb v0.1.4-0.20261015135929-039fe9e6e1e3
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -59,5 +59,5 @@ require (
 	golang.org/x/image v0.44.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/text v0.42.0
 )
