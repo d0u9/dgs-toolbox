@@ -1281,6 +1281,15 @@ A file is published under the same contract as
 read back independently, and renamed to its final name only when the readback
 matches its SHA-256.
 
+A tree on a filesystem that can neither refuse an existing name on rename
+nor hard-link, such as an SMB mount on macOS, publishes by checking then
+renaming: when the server opens such a tree it takes `_dgs-lock` in the
+tree's root and holds it while it runs. Only dgs writes a tree, so the
+remaining risk, another program writing the same name between the check
+and the rename, is accepted. A lock held by another host or live process
+leaves the tree refusing such writes, as without it. Export destinations
+outside a tree never fall back.
+
 Export removes only files it wrote itself, recorded in a manifest at the
 root of the folder; anything else under it is never touched.
 

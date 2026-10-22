@@ -196,6 +196,9 @@ func Handler(settings Settings) http.Handler {
 		s := shared
 		s.root, s.name = t.Root, t.Name
 		s.documents, s.treeError = tree.Open(t.Root)
+		if s.documents != nil {
+			allowCheckRename(t.Root)
+		}
 		s.items = itemcache.New(s.documents, settings.CacheDir)
 		if s.documents != nil {
 			s.documents.UseForChecks(s.items.Items)
