@@ -386,8 +386,9 @@ export class MapStack {
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     const rows = [...this.root.children];
-    const gap = new SortGap(rows, [rows[from]]);
+    // The copy is made before the row is marked held, which hides it.
     const ghost = makeGhost(rows[from], event.clientX, event.clientY);
+    const gap = new SortGap(rows, [rows[from]]);
     let to = from;
     const move = (e) => {
       ghost.follow(e.clientX, e.clientY);
