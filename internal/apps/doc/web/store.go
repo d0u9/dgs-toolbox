@@ -3,9 +3,28 @@ package web
 import (
 	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/tree"
+	"dgs-toolbox/internal/verifiedcopy"
+	"errors"
+	"log"
 	"net/http"
 	"sync"
 )
+
+// allowCheckRename lets a tree on a filesystem that can neither refuse an
+// existing name on rename nor hard-link (an SMB mount on macOS) publish by
+// checking then renaming, holding verifiedcopy.LockName in its root while
+// the server runs. Only dgs writes a tree, so the remaining risk, another
+// program writing the same name in between, is accepted for usability.
+// Without the lock, as when another host holds it, publication is refused
+// as before.
+func allowCheckRename(root string) {
+	if err := verifiedcopy.CheckPublication(root); !errors.Is(err, verifiedcopy.ErrUnsafePublication) {
+		return
+	}
+	if _, err := verifiedcopy.AllowCheckRename(root); err != nil {
+		log.Printf("doc: %s: check-then-rename unavailable: %v", root, err)
+	}
+}
 
 func (s server) requireTree() error {
 	if s.treeError != nil {
@@ -48,6 +67,7 @@ func (s server) apiWhenReady(cacheDir string) http.Handler {
 		opening.Lock()
 		if s.documents == nil {
 			if store, err := tree.Open(s.root); err == nil {
+				allowCheckRename(s.root)
 				s.documents, s.treeError = store, nil
 				s.items = itemcache.New(store, cacheDir)
 				store.UseForChecks(s.items.Items)
