@@ -39,12 +39,8 @@ github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEX
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
-github.com/d0u9/rhumb v0.1.4-0.20261003095112-25f69fc9fa14 h1:RIO+DZlHJBvRovB0wsUaxgNCeQH2mgCQualVQjTfnIs=
-github.com/d0u9/rhumb v0.1.4-0.20261003095112-25f69fc9fa14/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
-github.com/d0u9/rhumb v0.1.4-0.20261003134744-91ed62b85ee5 h1:IwcLFjPmO0H4HdJf/Xor36/Pta6UWfXVNInItISbu7s=
-github.com/d0u9/rhumb v0.1.4-0.20261003134744-91ed62b85ee5/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
-github.com/d0u9/rhumb v0.1.4-0.20261003143551-6ae3f4dc9cda h1:5gYnQLQJmX+u1+EVSwkd6rWpg+/vmzMFEaXVNZkw2Rc=
-github.com/d0u9/rhumb v0.1.4-0.20261003143551-6ae3f4dc9cda/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
+github.com/d0u9/rhumb v0.1.4-0.20261015135929-039fe9e6e1e3 h1:t5YqlLWZuksMTQblopAo01QC3i9EGv/Yq5NmgzQo3Wo=
+github.com/d0u9/rhumb v0.1.4-0.20261015135929-039fe9e6e1e3/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
