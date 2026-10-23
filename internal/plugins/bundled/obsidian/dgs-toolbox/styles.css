@@ -355,3 +355,13 @@
 .dgs-settings-link {
 	cursor: pointer;
 }
+
+/* 条目里的照片：缩略图大小，点开看原图。照片是回忆的提示，不是正文，
+ * 一张铺满整栏会把前后的条目挤出屏幕。阅读视图和实时预览都要：实时预览
+ * 里没有 li，每行是 .cm-line，所以选择器不能写 li。cssclasses 加在两种视图
+ * 的容器上，`.dgs-timeline img` 两边都中；日志的那两个选择器只在阅读视图里有。 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) img {
+  max-width: min(100%, 200px);
+  height: auto;
+  border-radius: 4px;
+}

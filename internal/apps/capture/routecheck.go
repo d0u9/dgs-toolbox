@@ -32,6 +32,14 @@ func (m routeModel) positionInUse() (organizer.Position, bool) {
 	if !ok || !organizer.UsesPosition(recipe, selection.EnabledActions(recipe)) {
 		return organizer.Position{}, false
 	}
+	return m.capturePosition()
+}
+
+// capturePosition is the selected Capture's resolved position, whatever Recipe
+// is chosen for it, if any. Where a Capture was taken is often what recalls
+// what it was, so `o` opens it from the first look rather than only once a
+// Recipe that writes it is chosen.
+func (m routeModel) capturePosition() (organizer.Position, bool) {
 	ctx, ok := m.context()
 	if !ok {
 		return organizer.Position{}, false
@@ -39,20 +47,20 @@ func (m routeModel) positionInUse() (organizer.Position, bool) {
 	return ctx.Position()
 }
 
-// mapHint offers the map key only when there is a position in use to open.
+// mapHint offers the map key only when the Capture has a position to open.
 func (m routeModel) mapHint() string {
-	if _, ok := m.positionInUse(); ok {
+	if _, ok := m.capturePosition(); ok {
 		return "  o Map"
 	}
 	return ""
 }
 
-// openMap opens the position in use in Apple Maps, which is the map this
+// openMap opens the Capture's position in Apple Maps, which is the map this
 // machine opens without a browser.
 func (m routeModel) openMap() routeModel {
-	position, ok := m.positionInUse()
+	position, ok := m.capturePosition()
 	if !ok {
-		m.notice = failed("No position in use — choose a recipe that writes one")
+		m.notice = failed("This Capture has no position")
 		return m
 	}
 	links := mapLinks(position, m.placeLabel(), "Apple")
@@ -116,9 +124,9 @@ func (m routeModel) toggleFlag() routeModel {
 		}
 	}
 	if flagged {
-		m.notice = moveNotice{text: "⚑ " + entry.name + " flagged — Archive will reject, not archive, it"}
+		m.notice = moveNotice{text: "✕ " + entry.name + " marked to discard — Archive will reject, not archive, it"}
 	} else {
-		m.notice = moveNotice{text: entry.name + " unflagged"}
+		m.notice = moveNotice{text: entry.name + " no longer marked to discard"}
 	}
 	m.refresh()
 	return m

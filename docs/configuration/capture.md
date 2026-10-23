@@ -364,10 +364,14 @@ places.
 How `obsidian.daily.append` writes a Capture's pictures. The Action is
 described in
 [`apps/capture/actions.md`](../apps/capture/actions.md#obsidiandailyappend).
+Every `obsidian.timeline.<name>` Action writes its pictures by the same three
+keys, beside the timeline's note rather than the daily note: `{{.Note}}` is
+then the timeline note's filename, so the default puts a location's pictures in
+`88 Inbox/assets/06 Locations/` for a note at `88 Inbox/06 Locations.md`.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `obsidian.daily.images.folder` | Where a daily note's pictures go, relative to the note's own folder, as a template over the note: `{{.Note}}` is its filename without `.md`, and `{{.Date}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}` its day. A folder that leaves the vault is refused. The default is the layout the Custom Attachment Location plugin writes as `./assets/${noteFileName}`. | `assets/{{.Note}}` |
+| `obsidian.daily.images.folder` | Where a daily note's — and a timeline's — pictures go, relative to the note's own folder, as a template over the note: `{{.Note}}` is its filename without `.md`, and `{{.Date}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}` its day. A folder that leaves the vault is refused. The default is the layout the Custom Attachment Location plugin writes as `./assets/${noteFileName}`. | `assets/{{.Note}}` |
 | `obsidian.daily.images.max_side` | The longest side, in pixels, a picture is shrunk to. A smaller picture is not enlarged. | `2048` |
 | `obsidian.daily.images.quality` | The JPEG quality a picture is re-encoded at, 1 to 100. | `80` |
 

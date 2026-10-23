@@ -78,6 +78,7 @@ func TestValidateAcceptsCapturesWithoutLocation(t *testing.T) {
 		"neither":       base + `}`,
 		"position only": base + `,"coordinates":{"altitude":12,"longitude":151.2093,"latitude":-33.8688}}`,
 		"place only":    base + `,"place":{"city":"Sydney","country":"Australia"}}`,
+		"place unknown": base + `,"place":{"locality":"","city":"","region":"","country":""}}`,
 		"both":          base + `,"coordinates":{"altitude":12,"longitude":151.2093,"latitude":-33.8688},"place":{"city":"Sydney","region":"NSW","country":"Australia"}}`,
 	}
 	for name, index := range cases {
@@ -103,6 +104,7 @@ func TestValidateRejectsSchemaViolations(t *testing.T) {
 		{name: "descriptive field inside coordinates", old: `"latitude": -33.76910836568016`, new: `"latitude": -33.76910836568016, "city": "Sydney"`},
 		{name: "source without workflow", old: `"workflow": "photo_note",`, new: ``},
 		{name: "device with the old systemVesion spelling", old: `"systemVersion": "26.4.2"`, new: `"systemVesion": "26.4.2"`},
+		{name: "place field not a string", old: `"city": "Sydney"`, new: `"city": 3`},
 		{name: "unknown place field", old: `"city": "Sydney"`, new: `"suburb": "Sydney"`},
 		{name: "coordinates without latitude", old: `"latitude": -33.76910836568016`, new: `"elevation": -33.76910836568016`},
 		{name: "attachment missing kind", old: `{"kind": "null"}`, new: `{}`},

@@ -53,7 +53,8 @@ func timelineAction(name string) ActionDefinition {
 		UsesPosition: true,
 		Effects: []string{
 			fmt.Sprintf("Adds the Capture to the %s timeline, under its day, with its place when it has one", name),
-			"Moves any year that has rolled over into the archive as it goes",
+			"Re-encodes the Capture's JPEG pictures, shrunk as the daily note's are, into the folder beside the note the entry goes into",
+			"Moves any year that has rolled over into the archive as it goes, its pictures along with it",
 			"Writes nothing the second time: an entry carries the Capture's id and is added once",
 		},
 		Required: []FieldRequirement{
@@ -130,7 +131,8 @@ func readDefinitions(path string) ([]timeline.Definition, error) {
 // Capture's. A Capture being organized says when it was taken, which is exactly
 // the thing that must not decide what counts as this year — organizing one from
 // two years ago would otherwise archive everything since.
-func currentYear() string { return time.Now().Format(timeline.YearLayout) }
+// It is a variable so a test can name the year it is written for.
+var currentYear = func() string { return time.Now().Format(timeline.YearLayout) }
 
 // insertOnTimeline puts one Capture into the running note, under its day's
 // marker, and moves any year that is no longer the current one into the
@@ -141,13 +143,6 @@ func insertOnTimeline(ctx Context, name string) (skipped string, err error) {
 		return "", err
 	}
 	note, archive := definition.Note, definition.Archive
-	entry, err := timelineEntry(ctx, definition)
-	if err != nil {
-		return "", err
-	}
-	if len(entry) == 0 {
-		return "", errors.New("nothing to record")
-	}
 	day, err := captureDay(ctx)
 	if err != nil {
 		return "", err
@@ -181,6 +176,23 @@ func insertOnTimeline(ctx Context, name string) (skipped string, err error) {
 	if containsMark(existing, captureMark(ctx.Capture)) {
 		return fmt.Sprintf("this capture is already in %s, as %s", target, captureMark(ctx.Capture)), nil
 	}
+	// The template is tried before any picture is written, so one that does
+	// not render leaves no pictures behind that no entry shows.
+	if entry, err := timelineEntry(ctx, definition, nil); err != nil {
+		return "", err
+	} else if len(entry) == 0 {
+		return "", errors.New("nothing to record")
+	}
+	// The pictures go beside the note they are written into, before the entry
+	// that links them, as the daily note's do.
+	images, err := writeImages(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	entry, err := timelineEntry(ctx, definition, images)
+	if err != nil {
+		return "", err
+	}
 
 	content := existing
 	if content == "" && !running {
@@ -189,8 +201,8 @@ func insertOnTimeline(ctx Context, name string) (skipped string, err error) {
 	// The whole file is rewritten either way — a list that grows at the top
 	// cannot be appended to — so archiving costs nothing extra here, and reads
 	// the content already in hand.
+	var moved []timeline.Year
 	if running {
-		var moved []timeline.Year
 		content, moved = timeline.Archive(content, currentYear())
 		for _, year := range moved {
 			if err := writeArchive(ctx, archive, header, year); err != nil {
@@ -203,6 +215,14 @@ func insertOnTimeline(ctx Context, name string) (skipped string, err error) {
 	if err := writeNote(path, target, updated); err != nil {
 		return "", err
 	}
+	// The pictures of a year that left move once every note is written, as the
+	// Obsidian plugin moves them: entries embed pictures by name, so a move cut
+	// short leaves every picture showing, and only the place it is kept wrong.
+	for _, year := range moved {
+		if err := moveImages(ctx, year, note, filepath.Join(archive, year.Year+".md")); err != nil {
+			return "", fmt.Errorf("the entry is written, but the pictures of %s did not move into its archive: %w", year.Year, err)
+		}
+	}
 	return "", nil
 }
 
@@ -210,7 +230,7 @@ func insertOnTimeline(ctx Context, name string) (skipped string, err error) {
 // definition names, else the timeline entry template, else the location
 // entry's, so a timeline reads like the list of places until it is given a
 // shape of its own.
-func timelineEntry(ctx Context, definition timeline.Definition) ([]string, error) {
+func timelineEntry(ctx Context, definition timeline.Definition, images []string) ([]string, error) {
 	names := []string{TimelineEntryTemplate, LocationEntryTemplate}
 	if definition.Template != "" {
 		names = append([]string{definition.Template}, names...)
@@ -219,7 +239,9 @@ func timelineEntry(ctx Context, definition timeline.Definition) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	return renderEntry(parsed, entryData(ctx))
+	data := entryData(ctx)
+	data.Images = images
+	return renderEntry(parsed, data)
 }
 
 // firstTemplate is the first of the names the reader has in their template

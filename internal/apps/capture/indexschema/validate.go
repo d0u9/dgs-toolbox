@@ -191,7 +191,10 @@ func validateSource(value any) error {
 }
 
 // validatePlace checks the descriptive location object. Every field is
-// optional, but a present field must be a non-empty string.
+// optional, and a present one must be a string. An empty string is the same as
+// an absent field: a Shortcut whose reverse geocoding found nothing writes ""
+// rather than leaving the field out, and refusing that would hide the whole
+// Capture over a part of it nobody needs.
 func validatePlace(value any) error {
 	place, err := asObject(value, "index.place")
 	if err != nil {
@@ -205,8 +208,8 @@ func validatePlace(value any) error {
 		if _, exists := place[field]; !exists {
 			continue
 		}
-		if _, err := nonEmptyString(place, field, "index.place"); err != nil {
-			return err
+		if _, ok := place[field].(string); !ok {
+			return fmt.Errorf("index.place.%s must be a string", field)
 		}
 	}
 	return nil

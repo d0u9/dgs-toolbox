@@ -47,6 +47,15 @@ A detail wider than the room left ends in `…` rather than mid-word, and one
 with fewer than four cells to be drawn in is left out: a cut word such as
 `1 creden` reads as a mistake, and the detail pane still says it in full.
 
+### Kept selection
+
+An unfocused list draws no cursor. `KeepSelection(true)` keeps marking the
+cursor row while the list is unfocused: a full-row grey band under the bold
+accent, without the `›` marker, so it reads as where the list stands rather
+than where the keys go, which the focused list's teal band says. Use it for a list whose selection decides what
+the panes beside it show. In Capture Route the Capture list keeps its
+selection, and the Recipe list marks the Recipe chosen for that Capture.
+
 ## Divider
 
 `SetDivider(index, label)` draws the shared anchored divider above the item at

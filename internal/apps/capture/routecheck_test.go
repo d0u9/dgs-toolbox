@@ -75,15 +75,26 @@ func TestRouteOffersTheMapWhenThePositionIsWritten(t *testing.T) {
 	}
 }
 
-func TestRouteOffersNoMapForAPositionNothingWrites(t *testing.T) {
+// FIELDS keeps the map row for a position that will be written, but `o` opens
+// the Capture's position whatever Recipe is chosen, and before one is.
+func TestRouteOpensTheMapBeforeARecipeWritesThePosition(t *testing.T) {
 	opened := recordOpens(t)
-	m := chooseRecipe(t, loadedRoute(t, routeTestRoot(t, "alpha")), "Daily")
+	m := loadedRoute(t, routeTestRoot(t, "alpha"))
+	if !strings.Contains(m.Status().Right, "o Map") {
+		t.Errorf("status hints = %q, want o Map", m.Status().Right)
+	}
+	m = routeKey(t, m, "o")
+	if len(*opened) != 1 || m.notice.bad {
+		t.Fatalf("no recipe: opened %v, notice %+v", *opened, m.notice)
+	}
+
+	m = chooseRecipe(t, m, "Daily")
 	if _, ok := mapRow(m); ok {
 		t.Error("a map row for a recipe that writes no position")
 	}
 	m = routeKey(t, m, "o")
-	if len(*opened) != 0 || !m.notice.bad {
-		t.Errorf("opened %v, notice %+v", *opened, m.notice)
+	if len(*opened) != 2 || m.notice.bad {
+		t.Errorf("daily: opened %v, notice %+v", *opened, m.notice)
 	}
 }
 
@@ -98,7 +109,7 @@ func TestRouteMapFailureIsReported(t *testing.T) {
 	}
 }
 
-// `f` marks the Capture wrong in its record, at once, and takes the mark back.
+// `d` marks the Capture to discard in its record, at once, and takes the mark back.
 func TestRouteFlagsACapture(t *testing.T) {
 	previous := flagNow
 	flagNow = func() time.Time { return time.Date(2026, 9, 14, 21, 0, 0, 0, time.UTC) }
@@ -106,7 +117,7 @@ func TestRouteFlagsACapture(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	m := loadedRoute(t, root)
 
-	m = routeKey(t, m, "f")
+	m = routeKey(t, m, "d")
 	record, _, err := organizer.ReadRecord(filepath.Join(root, "alpha"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,10 +125,10 @@ func TestRouteFlagsACapture(t *testing.T) {
 	if !record.Flagged() || record.Flag.FlaggedAt != "2026-09-14T21:00:00Z" {
 		t.Fatalf("record = %+v", record)
 	}
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "⚑ ") || !strings.Contains(view, "FLAGGED") {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "✕ ") || !strings.Contains(view, "DISCARD") {
 		t.Errorf("the flagged row is not marked:\n%s", view)
 	}
-	if !strings.Contains(m.Status().Center, "flagged") {
+	if !strings.Contains(m.Status().Center, "marked to discard") {
 		t.Errorf("status = %q", m.Status().Center)
 	}
 	// The notice answers one keystroke.
@@ -126,11 +137,11 @@ func TestRouteFlagsACapture(t *testing.T) {
 		t.Errorf("notice outlived its keystroke: %q", m.notice.text)
 	}
 
-	m = routeKey(t, m, "f")
+	m = routeKey(t, m, "d")
 	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); !os.IsNotExist(err) {
 		t.Errorf("unflagging a capture nobody organized left a record: %v", err)
 	}
-	if view := ansi.Strip(m.View()); strings.Contains(view, "⚑ ") || strings.Contains(view, "FLAGGED") {
+	if view := ansi.Strip(m.View()); strings.Contains(view, "✕ ") || strings.Contains(view, "DISCARD") {
 		t.Errorf("the mark stayed after unflagging:\n%s", view)
 	}
 }
@@ -146,22 +157,22 @@ func TestArchiveRejectsWhatRouteFlagged(t *testing.T) {
 	m := loadedArchive(t, root, archiveRoot, rejectRoot)
 
 	m.captures.First()
-	if first, ok := m.captures.Selected(); !ok || !strings.HasPrefix(ansi.Strip(first.Label), "⚑ ") || !strings.HasSuffix(first.Detail, "FLAGGED") || !strings.HasSuffix(first.ID, "wrong") {
+	if first, ok := m.captures.Selected(); !ok || !strings.HasPrefix(ansi.Strip(first.Label), "✕ ") || !strings.HasSuffix(first.Detail, "DISCARD") || !strings.HasSuffix(first.ID, "wrong") {
 		t.Fatalf("first = %+v, want the flagged capture first and marked", first)
 	}
 
 	m = selectCapture(t, m, destinationCaptures, "wrong")
-	if detail := ansi.Strip(m.detail(60)); !strings.Contains(detail, "⚑ Flagged") {
+	if detail := ansi.Strip(m.detail(60)); !strings.Contains(detail, "✕ Marked to discard") {
 		t.Errorf("detail does not say it was flagged:\n%s", detail)
 	}
-	if buttons := m.buttons(); buttons[0].primary || buttons[0].subtitle != "Flagged" {
+	if buttons := m.buttons(); buttons[0].primary || buttons[0].subtitle != "Discard" {
 		t.Errorf("archive button = %+v", buttons[0])
 	}
 	m = press(t, m, "a")
 	if _, err := os.Stat(filepath.Join(archiveRoot, "wrong")); !os.IsNotExist(err) {
 		t.Fatalf("a flagged capture was archived: %v", err)
 	}
-	if !m.notice.bad || !strings.Contains(m.notice.text, "Flagged") {
+	if !m.notice.bad || !strings.Contains(m.notice.text, "Marked to discard") {
 		t.Errorf("notice = %+v", m.notice)
 	}
 	m = press(t, m, "backspace")

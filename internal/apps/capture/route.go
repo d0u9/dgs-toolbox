@@ -123,6 +123,7 @@ type routeModel struct {
 	attachmentLoaded uint64
 	fields           datafield.Navigator
 	loadError        string
+	invalid          []invalidCapture
 	// notice is what became of the last flag or map, said in the status bar
 	// where it was asked for and cleared by the next keystroke.
 	notice    moveNotice
@@ -204,6 +205,9 @@ func newRouteModelWithSettings(root, indexFile string, set organizer.Set, settin
 			datafield.Field{ID: routeAttachmentsField, Row: 1, Col: 2},
 		),
 	}
+	// The Capture under the cursor decides what every other pane shows, so it
+	// stays marked when the keys are elsewhere.
+	m.captures.KeepSelection(true)
 	m.fields.Set(routeCapturesField)
 	m.refresh()
 	return m
@@ -235,7 +239,7 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case capturesLoadedMsg:
 		m.root = msg.root
-		m.loadError = ""
+		m.loadError, m.invalid = "", msg.invalid
 		if msg.err != nil {
 			m.loadError = msg.err.Error()
 			m.entries = nil
@@ -245,6 +249,8 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildCaptureItems()
 		m.refresh()
+		// The invalid folders take rows from the list; see Scan.
+		m.resizeComponents()
 		return m, m.loadAttachment()
 	}
 
@@ -763,7 +769,7 @@ func (m routeModel) Status() tui.Status {
 	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  f Flag" + m.mapHint() + "  u Clear  v View  R Refresh"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  d Discard" + m.mapHint() + "  u Clear  v View  R Refresh"}
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
@@ -795,10 +801,12 @@ func (m routeModel) statusValue() string {
 		return m.root
 	}
 	if entry, ok := m.selectedCapture(); ok {
+		// The folder name alone: the root is in its own field, and the full
+		// path is too long for one bar row.
 		if recipe, ok := m.selectedRecipe(); ok {
-			return entry.path + " → " + recipe.Name
+			return filepath.Base(entry.path) + " → " + recipe.Name
 		}
-		return entry.path
+		return filepath.Base(entry.path)
 	}
 	ready, blocked := m.readyCount()
 	return fmt.Sprintf("%d/%d READY · %d BLOCKED", ready, len(m.entries), blocked)
@@ -841,7 +849,7 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "o" {
 		return m.openMap(), nil
 	}
-	if key == "f" {
+	if key == "d" {
 		return m.toggleFlag(), nil
 	}
 	if key == "v" {
@@ -1243,8 +1251,10 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	ordered, boundary := orderByOrganized(m.entries)
 	pending := ordered[:boundary]
 
+	// A Capture marked to discard is decided already: it waits for Archive,
+	// not for a Recipe, so the cursor never lands on one.
 	for _, entry := range pending {
-		if entry.path == organized.path {
+		if entry.path == organized.path || entry.record.Flagged() {
 			continue
 		}
 		if len(m.recipeSet.Find(captureFor(entry), m.settings)) == 0 {
@@ -1256,7 +1266,7 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	// Everything left is unorganizable, so land on it anyway rather than
 	// leaving the cursor on a Capture that has just moved below the rule.
 	for _, entry := range pending {
-		if entry.path != organized.path {
+		if entry.path != organized.path && !entry.record.Flagged() {
 			m.captures.SelectID("capture:" + entry.path)
 			return
 		}
@@ -1899,7 +1909,7 @@ func (m *routeModel) resizeComponents() {
 		return
 	}
 	widths := m.columnWidths()
-	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2))
+	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2-invalidCaptureRows(m.invalid)))
 	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.recipeListHeight()))
 	m.actions.SetSize(max(1, widths[2]-4), max(1, m.actionListHeight()))
 	m.attachments.SetSize(max(1, widths[2]-4), routeAttachmentListHeight)
@@ -2031,12 +2041,10 @@ func (m *routeModel) loadAttachment() tea.Cmd {
 
 func (m routeModel) leftColumn(width int) string {
 	listHeight := m.captureListHeight()
-	captures := m.captures
-	captures.SetSize(max(1, width-4), max(1, listHeight-2))
-	content := fitHeight(captures.View(m.fields.Current() == routeCapturesField, scanTitleStyle, scanMutedStyle), listHeight-2, width-4)
+	content := capturesWithInvalid(m.captures, m.fields.Current() == routeCapturesField, m.invalid, listHeight-2, width-4)
 	if m.loadError != "" {
 		content = fitHeight(scanMutedStyle.Render("! "+m.loadError), listHeight-2, width-4)
-	} else if len(m.entries) == 0 {
+	} else if len(m.entries) == 0 && len(m.invalid) == 0 {
 		content = fitHeight(scanMutedStyle.Render("· No captures found"), listHeight-2, width-4)
 	}
 	list := fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == routeCapturesField)
@@ -2052,6 +2060,11 @@ func (m routeModel) recipesColumn(width int) string {
 	inner := max(1, width-4)
 	recipes := m.recipes
 	recipes.SetSize(inner, max(1, m.recipeListHeight()))
+	// Unfocused, the list marks the Recipe chosen for this Capture — the one
+	// ACTIONS and FIELDS are about — rather than wherever the cursor was left.
+	if selection, _, ok := m.currentSelection(); ok && !focused {
+		recipes.KeepSelection(recipes.SelectID("recipe:" + string(selection.Recipe)))
+	}
 	content := recipes.View(focused, scanTitleStyle, scanMutedStyle)
 	if _, ok := m.selectedCapture(); !ok {
 		content = scanMutedStyle.Render("· Select a capture")

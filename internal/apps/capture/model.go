@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,6 +78,7 @@ func rootChanged(root string) tea.Cmd {
 type capturesLoadedMsg struct {
 	root     string
 	captures []captureEntry
+	invalid  []invalidCapture
 	err      error
 }
 
@@ -132,6 +134,7 @@ type model struct {
 	captureCount int
 	fields       datafield.Navigator
 	loadError    string
+	invalid      []invalidCapture
 	pendingGG    bool
 	// lastClick remembers the previous press so a second one on the same row
 	// reads as a double click, the way it does in Route.
@@ -257,7 +260,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.root != m.root {
 			return m, nil
 		}
-		m.loadError = ""
+		m.loadError, m.invalid = "", msg.invalid
 		if msg.err != nil {
 			m.loadError = msg.err.Error()
 			m.captureCount = 0
@@ -268,6 +271,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.captureCount = len(msg.captures)
 			m.rebuildCaptureItems()
 		}
+		// The invalid folders take rows from the list, so its height is
+		// worked out again: a list taller than it is drawn lets the cursor
+		// walk under the foot.
+		m.resizeComponents()
 		m.refreshDetails(true)
 		return m, m.loadSelectedPreview()
 	case previewLoadedMsg:
@@ -671,7 +678,7 @@ func (m *model) resizeComponents() {
 		return
 	}
 	left, center, right := m.columnWidths()
-	m.captures.SetSize(max(1, left-4), max(1, m.captureListHeight()-2))
+	m.captures.SetSize(max(1, left-4), max(1, m.captureListHeight()-2-invalidCaptureRows(m.invalid)))
 	m.preview.Width = max(1, center-4)
 	m.preview.Height = max(1, m.height-2)
 	top := m.rightTopHeight()
@@ -701,9 +708,7 @@ func (m *model) setFieldBounds() {
 func (m model) leftColumn(width int) string {
 	root := m.rootControl.Fieldset(width, m.fields.Current() == rootField)
 	listHeight := m.captureListHeight()
-	captures := m.captures
-	captures.SetSize(max(1, width-4), max(1, listHeight-2))
-	content := fitHeight(captures.View(m.fields.Current() == capturesField, scanTitleStyle, scanMutedStyle), listHeight-2, width-4)
+	content := capturesWithInvalid(m.captures, m.fields.Current() == capturesField, m.invalid, listHeight-2, width-4)
 	if m.loadError != "" {
 		content = fitHeight(scanMutedStyle.Render("! "+m.loadError), listHeight-2, width-4)
 	}
@@ -1340,8 +1345,8 @@ func (m *model) rebuildCaptureItems() {
 
 func loadCaptures(root, indexFile string) tea.Cmd {
 	return func() tea.Msg {
-		captures, err := scanCaptures(root, indexFile)
-		return capturesLoadedMsg{root: root, captures: captures, err: err}
+		captures, invalid, err := scanCaptures(root, indexFile)
+		return capturesLoadedMsg{root: root, captures: captures, invalid: invalid, err: err}
 	}
 }
 
@@ -1349,29 +1354,51 @@ func loadCaptures(root, indexFile string) tea.Cmd {
 // folder a Capture — an index file that validates — and it is shared rather
 // than repeated, because Archive reads the folders it files into with the same
 // rule the Capture root is read by: a Capture is a Capture wherever it sits.
-func scanCaptures(root, indexFile string) ([]captureEntry, error) {
+//
+// A folder that is not a Capture — no index file, or one that does not
+// validate — is returned as invalid, with why, rather than left out unsaid: a
+// Capture that vanishes from the list is one nobody knows to fix.
+func scanCaptures(root, indexFile string) ([]captureEntry, []invalidCapture, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	captures := make([]captureEntry, 0)
+	var invalid []invalidCapture
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
+		// A hidden folder is the system's or a sync client's, not a Capture
+		// someone lost, so it is never reported.
+		report := func(reason string) {
+			if !strings.HasPrefix(entry.Name(), ".") {
+				invalid = append(invalid, invalidCapture{name: entry.Name(), reason: reason})
+			}
+		}
 		manifest := filepath.Join(root, entry.Name(), indexFile)
 		info, err := os.Lstat(manifest)
-		if err != nil || !info.Mode().IsRegular() {
+		if errors.Is(err, os.ErrNotExist) {
+			report("no " + indexFile)
+			continue
+		}
+		if err != nil {
+			report(err.Error())
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			report(indexFile + " is not a regular file")
 			continue
 		}
 		index, err := indexschema.ReadFile(manifest)
 		if err != nil {
+			report(strings.TrimPrefix(err.Error(), "validate index: "))
 			continue
 		}
 		capturePath := filepath.Join(root, entry.Name())
 		record, _, err := organizer.ReadRecord(capturePath)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", entry.Name(), err)
+			return nil, nil, fmt.Errorf("%s: %w", entry.Name(), err)
 		}
 		captures = append(captures, captureEntry{
 			path: capturePath, name: entry.Name(), files: captureFiles(capturePath, indexFile, index.Attachments), index: index,
@@ -1379,7 +1406,53 @@ func scanCaptures(root, indexFile string) ([]captureEntry, error) {
 		})
 	}
 	sort.Slice(captures, func(i, j int) bool { return strings.ToLower(captures[i].name) < strings.ToLower(captures[j].name) })
-	return captures, nil
+	return captures, invalid, nil
+}
+
+// invalidCapture is a folder in the Capture root that could not be read as a
+// Capture, and why.
+type invalidCapture struct {
+	name, reason string
+}
+
+// invalidCaptureShown is how many invalid folders the foot of CAPTURES names;
+// the rule above them counts them all.
+const invalidCaptureShown = 2
+
+// invalidCaptureLines is the foot of CAPTURES: a rule counting the folders
+// that are not Captures, then each of the first few, its name and below it why.
+func invalidCaptureLines(invalid []invalidCapture, width int) []string {
+	if len(invalid) == 0 {
+		return nil
+	}
+	lines := []string{divider.Labelled(fmt.Sprintf("%d INVALID", len(invalid)), width)}
+	for _, capture := range invalid[:min(len(invalid), invalidCaptureShown)] {
+		lines = append(lines,
+			runFailedStyle.Render(truncate("! "+capture.name, width)),
+			scanMutedStyle.Render(truncate("  "+capture.reason, width)))
+	}
+	return lines
+}
+
+// invalidCaptureRows is the height invalidCaptureLines takes from the list.
+func invalidCaptureRows(invalid []invalidCapture) int {
+	if len(invalid) == 0 {
+		return 0
+	}
+	return 1 + 2*min(len(invalid), invalidCaptureShown)
+}
+
+// capturesWithInvalid draws a Capture list with the invalid folders at its
+// foot, the list taking whatever height they leave.
+func capturesWithInvalid(list scrolllist.Model, focused bool, invalid []invalidCapture, height, width int) string {
+	foot := invalidCaptureLines(invalid, width)
+	listHeight := max(1, height-len(foot))
+	list.SetSize(max(1, width), listHeight)
+	content := fitHeight(list.View(focused, scanTitleStyle, scanMutedStyle), listHeight, width)
+	if len(foot) == 0 {
+		return content
+	}
+	return content + "\n" + strings.Join(foot, "\n")
 }
 
 func captureFiles(capturePath, indexFile string, attachments []indexschema.Attachment) []string {

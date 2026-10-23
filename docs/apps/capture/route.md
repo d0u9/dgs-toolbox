@@ -107,7 +107,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   `Z`, and a `createdAt` that is not valid RFC 3339 is shown verbatim so a
   malformed index stays visible. Absent parts are omitted, and a Capture with
   no `createdAt` falls back to its folder name with a trailing path separator.
-  The directory itself stays available in the status bar.
+  The folder name stays available in the status bar.
 - `RECIPES` lists the candidates `FindRecipes` returns for the selected
   Capture, so the list changes as the Capture cursor moves; a `been_here`
   Capture and a `quick_marker` Capture do not offer the same Recipes. Nothing is
@@ -193,8 +193,11 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   高德`, each linked to the position the Actions will write, which is the
   payload's when the workflow sources it. A pair of numbers says nothing about
   whether it is the right street, and this is the last look before it is
-  written somewhere. `Enter` on the row, or `o` anywhere in the session, opens
-  it in Apple Maps; with no position in use `o` says so instead.
+  written somewhere. `Enter` on the row opens it in Apple Maps.
+- `o` opens the selected Capture's position in Apple Maps from any column,
+  before a Recipe is chosen and whatever Recipe is: where a Capture was taken
+  is often what recalls what it was. A Capture with no position says so
+  instead.
 - Below both, a pinned `PARAMETERS` group says how the enabled Actions behave
   rather than what they need: `daily.append · Section`, and whatever a later
   Action declares. Every parameter is listed whether or not it has been changed
@@ -336,7 +339,8 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 - Confirming a ready plan carries the Actions out, appends what happened to the
   organizer's record in the Capture directory, moves that Capture below the
   `ORGANIZED` rule, and puts the cursor
-  on the next Capture still to handle. Focus returns to `CAPTURES`, so a run
+  on the next Capture still to handle, passing over one marked to discard —
+  that one waits for Archive, not for a Recipe. Focus returns to `CAPTURES`, so a run
   of Captures is worked through without walking back up the columns. A blocked
   plan records nothing: a Capture counts as handled only once its plan could
   actually run.
@@ -349,13 +353,14 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   names the Action that stopped it, and leaves the Capture above the rule. Each
   Action's marker becomes its outcome: `✓` ran, `·` had nothing left to do, `✗`
   failed.
-- `f` flags the selected Capture as wrong, from any DataField, and `f` again
-  takes the flag back. It is a mark rather than a move: the reader is in the
+- `d` marks the selected Capture to discard — a duplicate, a position
+  somewhere it never was — from any DataField, and `d` again takes the mark
+  back. It is a mark rather than a move: the reader is in the
   middle of organizing, and where a Capture goes is Archive's decision. The
-  mark is written into the Capture's `organize.json` at once — a flag is not a
+  mark is written into the Capture's `organize.json` at once — a mark is not a
   run, so it does not count as organized — so Archive sees it in this session
-  or a later one. A flagged row carries `⚑` in place of its readiness marker.
-  Taking the flag back from a Capture nobody organized removes the record it
+  or a later one. A marked row carries `✕` in place of its readiness marker.
+  Taking the mark back from a Capture nobody organized removes the record it
   was the only thing in.
 - `R` refreshes the Capture list from any DataField.
 - Every column is reachable with the pointer as well as the keyboard. A primary
@@ -382,7 +387,12 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   stopping there teaches the reader only that they are somewhere useless. The
   spatial keys are not gated this way — `Alt+Arrow` means "the field to the
   right", and that field is where it is whether or not it is ready.
-- The status bar center shows the selected Capture path, plus ` → <recipe>`
+- While the keys are in another column, `CAPTURES` still marks the selected
+  Capture and `RECIPES` marks the Recipe chosen for it, quieter than a focused
+  cursor ([kept selection](../../scroll-lists.md#kept-selection)): every other
+  pane is about that pair, and the reader should not have to remember it.
+- The status bar center shows the selected Capture's folder name, not its
+  full path, plus ` → <recipe>`
   once one is chosen; with nothing selected it summarizes
   `<ready>/<total> READY · <n> BLOCKED`. An already organized Capture counts as
   ready whether or not this session chose its Recipe, so the summary matches

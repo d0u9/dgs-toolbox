@@ -352,12 +352,17 @@ class TimelineService {
 		const { remaining, moved } = engine.call('archive', { content: existing, current });
 		const result = engine.call('insert', { content: remaining, date, marker, entry: block });
 		if (!result.inserted) return { kind: 'duplicate', path };
+		/** @type {{path: string, text: string}[]} */
+		const archived = [];
 		for (const leaving of moved) {
 			const target = archivePath(leaving.year);
 			const before = await this.readOrEmpty(target);
-			await this.write(target, before, engine.call('merge', { archive: before, header, year: leaving }));
+			const text = engine.call('merge', { archive: before, header, year: leaving });
+			await this.write(target, before, text);
+			archived.push({ path: target, text });
 		}
 		await this.write(path, existing, result.content);
+		await this.settlePictures(engine, [path, ...archived.map((file) => file.path)], archived);
 		return { kind: 'inserted', path, archived: moved.map((/** @type {{year: string}} */ leaving) => leaving.year) };
 	}
 
@@ -415,7 +420,84 @@ class TimelineService {
 			changed.push(notePath);
 			if (write) await this.write(notePath, note, result.note);
 		}
+		// Every file is settled, not only the ones that changed: a tidy is the
+		// repair, so pictures an earlier archive left behind are put right too.
+		if (write) {
+			const files = [
+				{ path: notePath, text: result.note },
+				...(result.archives ?? []).map((/** @type {{year: string, text: string}} */ archive) => ({ path: normalizePath(`${archiveFolder}/${archive.year}.md`), text: archive.text })),
+			];
+			const paths = [...new Set([...files.map((file) => file.path), ...[...before.keys()].map((year) => normalizePath(`${archiveFolder}/${year}.md`))])];
+			await this.settlePictures(engine, paths, files);
+		}
 		return { stats: result.stats, changed };
+	}
+
+	/**
+	 * Keeps each picture a timeline file shows beside that file: in the folder
+	 * the vault's attachment setting gives it, which for the Custom Attachment
+	 * Location layout is assets/<note> beside the note — the folder dgs capture
+	 * writes a Capture's pictures into. A year moving into its archive takes
+	 * its pictures along, and one moving back brings them back.
+	 *
+	 * A picture is looked for only in the folders of this timeline's other
+	 * files, never anywhere in the vault: the daily log keeps its own copy under
+	 * the same name, and that one stays where it is. One already in place, or
+	 * found nowhere, is left alone; nothing is overwritten. The notes are
+	 * written before their pictures move, and the entries embed pictures by
+	 * name, so a move cut short still shows every picture: a picture that
+	 * cannot move is said in a notice, not thrown, since the entry it belongs
+	 * to is already written.
+	 *
+	 * The file is moved with vault.rename, not fileManager.renameFile: its name
+	 * stays the same, so no link needs rewriting, and the link updater would
+	 * otherwise spell out a folder wherever the daily log's copy makes the name
+	 * ambiguous. A folder is asked for only once a picture needs it, since an
+	 * attachment plugin may create the folder it is asked about.
+	 *
+	 * @param {{call: (op: string, args: unknown) => any}} engine
+	 * @param {string[]} paths every file of the timeline taking part
+	 * @param {{path: string, text: string}[]} written the files just written, as written
+	 */
+	async settlePictures(engine, paths, written) {
+		/** @type {Map<string, Promise<string>>} */
+		const folders = new Map();
+		/** @param {string} path */
+		const folderOf = (path) => {
+			if (!folders.has(path)) folders.set(path, this.attachmentFolder(path));
+			return /** @type {Promise<string>} */ (folders.get(path));
+		};
+		for (const { path, text } of written) {
+			/** @type {string[]} */
+			const names = engine.call('pictures', { content: text });
+			if (names.length === 0) continue;
+			const home = await folderOf(path);
+			for (const name of names) {
+				const target = normalizePath(`${home}/${name}`);
+				if (this.app.vault.getAbstractFileByPath(target)) continue;
+				try {
+					for (const other of paths) {
+						if (other === path) continue;
+						const found = this.app.vault.getAbstractFileByPath(normalizePath(`${await folderOf(other)}/${name}`));
+						if (!(found instanceof TFile)) continue;
+						if (home && !this.app.vault.getAbstractFileByPath(home)) await this.app.vault.createFolder(home);
+						await this.app.vault.rename(found, target);
+						break;
+					}
+				} catch (error) {
+					new Notice(`${name} stays where it is: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		}
+	}
+
+	/**
+	 * The folder the vault puts a note's attachments in, by its own setting.
+	 *
+	 * @param {string} path
+	 */
+	async attachmentFolder(path) {
+		return parentFolder(normalizePath(await this.app.fileManager.getAvailablePathForAttachment('picture.jpg', path)));
 	}
 
 	/** @param {string} path */

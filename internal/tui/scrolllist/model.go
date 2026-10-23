@@ -47,11 +47,23 @@ type Model struct {
 	// tree is on screen, while the colour already tells it from the label.
 	// See docs/scroll-lists.md#inline-details.
 	inlineDetail bool
+	// keepSelection still marks the row under the cursor while the list is
+	// not focused, more quietly than the focused cursor. See
+	// docs/scroll-lists.md#kept-selection.
+	keepSelection bool
 }
 
 var selectedRowStyle = lipgloss.NewStyle().Bold(true).
 	Foreground(lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}).
 	Background(lipgloss.AdaptiveColor{Light: "#DDF3F0", Dark: "#173F3B"})
+
+// keptRowStyle marks the cursor row of an unfocused list that keeps its
+// selection: a full-row grey band under the accent, without the `›` marker, so
+// it is plain at a glance but reads as where this list stands rather than where
+// the keys go, which the teal band of the focused list says.
+var keptRowStyle = lipgloss.NewStyle().Bold(true).
+	Foreground(lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}).
+	Background(lipgloss.AdaptiveColor{Light: "#E5E7EB", Dark: "#3F4458"})
 
 // SelectedRowStyle is how a list marks the row under the cursor. It is exported
 // so a hand-rendered list elsewhere marks its selection the same way: one
@@ -170,6 +182,11 @@ func (m Model) rowsPerItem() int {
 // and only a short qualifier reads well in a column beside the label.
 func (m *Model) InlineDetail(inline bool) { m.inlineDetail = inline }
 
+// KeepSelection marks the cursor row even while the list is not focused. It is
+// off by default; a list whose selection decides what the panes beside it show
+// turns it on, so the reader can tell which item those panes are about.
+func (m *Model) KeepSelection(keep bool) { m.keepSelection = keep }
+
 // minInlineDetail is the fewest cells an inline detail is drawn in.
 const minInlineDetail = 4
 
@@ -276,6 +293,7 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		}
 		marker := "  "
 		selected := focused && index == m.cursor
+		kept := !focused && m.keepSelection && index == m.cursor
 		if selected {
 			marker = "› "
 		}
@@ -314,6 +332,8 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		}
 		if selected {
 			row = selectedRowStyle.Width(m.width).Render(row)
+		} else if kept {
+			row = keptRowStyle.Width(m.width).Render(ansi.Strip(row))
 		}
 		lines = append(lines, row)
 		if m.rowsPerItem() == 1 {
@@ -327,6 +347,8 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		}
 		if selected {
 			detail = selectedRowStyle.Width(m.width).Render(detail)
+		} else if kept {
+			detail = keptRowStyle.Width(m.width).Render(ansi.Strip(detail))
 		} else {
 			detail = muted.Render(detail)
 		}

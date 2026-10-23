@@ -1285,6 +1285,28 @@ func TestRouteAdvancesPastCapturesNoRecipeMatches(t *testing.T) {
 	}
 }
 
+// A Capture marked to discard waits for Archive, not for a Recipe, so the
+// cursor passes over it too.
+func TestRouteAdvancesPastCapturesMarkedToDiscard(t *testing.T) {
+	root := routeTestRoot(t, "a", "b", "c")
+	if _, err := organizer.SetFlag(filepath.Join(root, "a"), true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedRoute(t, root)
+
+	m.captures.SelectID("capture:" + filepath.Join(root, "b"))
+	m.refresh()
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "note")
+	m.refresh()
+	m = runAndConfirm(t, m)
+
+	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "c") {
+		t.Fatalf("cursor = %q, want the capture not marked to discard", item.ID)
+	}
+}
+
 // A parameter says how an Action behaves rather than what it needs. It is
 // listed whether or not it has been changed — one nobody can see is one nobody
 // knows to change — and editing it overrides that Action for this Capture only.
@@ -1847,7 +1869,7 @@ func TestFailedRunRemainsPendingBeforeAndAfterReload(t *testing.T) {
 	if !ok || entry.organized || entry.record.Organized() || len(entry.record.Runs) != 1 {
 		t.Fatalf("failed run marked complete: %+v", entry)
 	}
-	entries, err := scanCaptures(root, "index.json")
+	entries, _, err := scanCaptures(root, "index.json")
 	if err != nil || len(entries) != 1 || entries[0].organized || entries[0].record.Organized() {
 		t.Fatalf("reload marked failure complete: %+v %v", entries, err)
 	}
@@ -1876,7 +1898,66 @@ func TestUnreadableRecordStopsActionsBeforeWritingNotes(t *testing.T) {
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatal("invalid history was changed")
 	}
-	if _, err := scanCaptures(root, "index.json"); err == nil {
+	if _, _, err := scanCaptures(root, "index.json"); err == nil {
 		t.Fatal("scan ignored invalid history")
+	}
+}
+
+// A folder that is not a Capture is named at the foot of CAPTURES with why,
+// rather than left out of the list unsaid.
+func TestRouteNamesFoldersThatAreNotCaptures(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	if err := os.Mkdir(filepath.Join(root, "no-index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "bad-index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bad-index", "index.json"), []byte(`{"schema":"v1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedRoute(t, root)
+	if len(m.entries) != 1 {
+		t.Fatalf("entries = %d, want the one valid capture", len(m.entries))
+	}
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"2 INVALID", "! bad-index", "! no-index", "no index.json"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view is missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// The foot takes its rows from the list, so the cursor never walks under it.
+func TestRouteCursorStaysAboveTheInvalidFoot(t *testing.T) {
+	names := []string{"c01", "c02", "c03", "c04", "c05", "c06", "c07", "c08", "c09", "c10", "c11", "c12", "c13", "c14"}
+	root := routeTestRoot(t, names...)
+	for _, name := range []string{"x-1", "x-2"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := loadedRoute(t, root)
+	for range names {
+		m = routeKey(t, m, "j")
+	}
+	if item, _ := m.captures.Selected(); !strings.HasSuffix(item.ID, "c14") {
+		t.Fatalf("cursor = %q, want the last capture", item.ID)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "› 14 ") {
+		t.Fatalf("the cursor row is hidden under the foot:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// The status bar names the selected Capture by its folder, not its full path.
+func TestRouteStatusNamesTheFolderOnly(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := loadedRoute(t, root)
+	if center := m.Status().Center; center != "alpha" {
+		t.Errorf("status = %q, want the folder name", center)
+	}
+	m = chooseRecipe(t, m, "Daily")
+	if center := m.Status().Center; center != "alpha → Daily" {
+		t.Errorf("status = %q", center)
 	}
 }
