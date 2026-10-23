@@ -8,8 +8,10 @@ import (
 
 // APIVersion names the shape of Call: its operations, their arguments and
 // their results. A caller built against another version must not use this
-// one, so any change to that shape bumps it.
-const APIVersion = 3
+// one, so a change to an operation that is there, or its removal, bumps it.
+// A new operation does not: a caller that does not know it never calls it,
+// and a plugin and the module it reads are installed together.
+const APIVersion = 1
 
 // Call runs one operation by name, with its arguments and result as JSON. It
 // is the whole surface the WebAssembly build exposes, and what the shared test
