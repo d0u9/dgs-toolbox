@@ -124,7 +124,7 @@ type routeModel struct {
 	fields           datafield.Navigator
 	loadError        string
 	invalid          []invalidCapture
-	// notice is what became of the last flag or map, said in the status bar
+	// notice is what became of the last discard mark or map, said in the status bar
 	// where it was asked for and cleared by the next keystroke.
 	notice    moveNotice
 	pendingGG bool
@@ -850,7 +850,7 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openMap(), nil
 	}
 	if key == "d" {
-		return m.toggleFlag(), nil
+		return m.toggleDiscard(), nil
 	}
 	if key == "v" {
 		m.view.Toggle()
@@ -1254,7 +1254,7 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	// A Capture marked to discard is decided already: it waits for Archive,
 	// not for a Recipe, so the cursor never lands on one.
 	for _, entry := range pending {
-		if entry.path == organized.path || entry.record.Flagged() {
+		if entry.path == organized.path || entry.record.Discarded() {
 			continue
 		}
 		if len(m.recipeSet.Find(captureFor(entry), m.settings)) == 0 {
@@ -1266,7 +1266,7 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	// Everything left is unorganizable, so land on it anyway rather than
 	// leaving the cursor on a Capture that has just moved below the rule.
 	for _, entry := range pending {
-		if entry.path != organized.path && !entry.record.Flagged() {
+		if entry.path != organized.path && !entry.record.Discarded() {
 			m.captures.SelectID("capture:" + entry.path)
 			return
 		}
@@ -1453,8 +1453,8 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 func (m routeModel) captureMarker(entry captureEntry) string {
 	// A Capture marked wrong says so before anything else about it: whatever
 	// its plan, it is on its way to being rejected.
-	if entry.record.Flagged() {
-		return flagMarker
+	if entry.record.Discarded() {
+		return discardMarker
 	}
 	if entry.organized {
 		return "● "
@@ -1495,8 +1495,8 @@ func (m *routeModel) rebuildCaptureItems() {
 				detail += "  → " + recipe.Name
 			}
 		}
-		if entry.record.Flagged() {
-			detail += flagDetail
+		if entry.record.Discarded() {
+			detail += discardDetail
 		}
 		label := m.captureMarker(entry) + m.view.Label(entry)
 		items = append(items, scrolllist.Item{

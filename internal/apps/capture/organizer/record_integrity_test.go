@@ -13,7 +13,7 @@ func TestRecordStateAndHistoryStaySeparate(t *testing.T) {
 	if record, found, err := ReadRecord(dir); err != nil || found || record.Organized() {
 		t.Fatalf("missing record: %+v %v %v", record, found, err)
 	}
-	if _, err := SetFlag(dir, true, time.Now()); err != nil {
+	if _, err := SetDiscard(dir, true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	failed := Run{Recipe: "daily", Actions: []RecordedAction{{Action: ActionDailyAppend, Error: "write failed"}}}
@@ -21,7 +21,7 @@ func TestRecordStateAndHistoryStaySeparate(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, found, err := ReadRecord(dir)
-	if err != nil || !found || record.Organized() || !record.Flagged() || len(record.Runs) != 1 {
+	if err != nil || !found || record.Organized() || !record.Discarded() || len(record.Runs) != 1 {
 		t.Fatalf("failed run lost state: %+v %v %v", record, found, err)
 	}
 	complete := Run{Recipe: "daily", Actions: []RecordedAction{{Action: ActionDailyAppend, Executed: true}}}
@@ -29,14 +29,14 @@ func TestRecordStateAndHistoryStaySeparate(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, found, err = ReadRecord(dir)
-	if err != nil || !found || !record.Organized() || !record.Flagged() || len(record.Runs) != 2 {
+	if err != nil || !found || !record.Organized() || !record.Discarded() || len(record.Runs) != 2 {
 		t.Fatalf("completed run lost history: %+v %v %v", record, found, err)
 	}
 }
 
 func TestInvalidRecordCannotBeChangedOrDeleted(t *testing.T) {
 	for _, body := range []string{`{"schema":"v1","runs":[`, `{"schema":"v2","runs":[]}`, `null`} {
-		for _, action := range []string{"flag", "unflag", "append"} {
+		for _, action := range []string{"discard", "keep", "append"} {
 			t.Run(action+"/"+body, func(t *testing.T) {
 				dir := t.TempDir()
 				path := filepath.Join(dir, RecordFilename)
@@ -48,7 +48,7 @@ func TestInvalidRecordCannotBeChangedOrDeleted(t *testing.T) {
 				if action == "append" {
 					_, err = AppendRun(dir, Run{Recipe: "daily"})
 				} else {
-					_, err = SetFlag(dir, action == "flag", time.Now())
+					_, err = SetDiscard(dir, action == "discard", time.Now())
 				}
 				if err == nil {
 					t.Fatal("invalid record accepted")

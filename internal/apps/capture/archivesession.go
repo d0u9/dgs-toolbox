@@ -365,10 +365,10 @@ func (m archiveModel) move(from, to archiveDestination) (tea.Model, tea.Cmd) {
 		m.notice = failed("Not organized — it can be rejected, not archived")
 		return m, nil
 	}
-	// A Capture flagged in Route was found wrong: keeping it would file a
-	// mistake with the Captures that were handled. Unflagging it in Route is
+	// A Capture marked to discard in Route is a duplicate or a mistake: keeping it would file a
+	// mistake with the Captures that were handled. Taking the mark back in Route is
 	// how it is archived after all.
-	if to == destinationArchive && entry.record.Flagged() {
+	if to == destinationArchive && entry.record.Discarded() {
 		m.notice = failed("Marked to discard in Route — it can be rejected, not archived")
 		return m, nil
 	}
@@ -644,7 +644,7 @@ func (m *archiveModel) rebuildItems() {
 			entries, boundary = orderByOrganized(entries)
 			// A Capture marked wrong in Route leads its group: it is the one
 			// decision already made, waiting on a keystroke.
-			entries = append(flaggedFirst(entries[:boundary]), flaggedFirst(entries[boundary:])...)
+			entries = append(discardedFirst(entries[:boundary]), discardedFirst(entries[boundary:])...)
 		}
 		for _, entry := range entries {
 			// Only the Capture root carries the Recipe that handled a Capture:
@@ -656,9 +656,9 @@ func (m *archiveModel) rebuildItems() {
 				detail += "  → " + latest.RecipeName
 			}
 			label := m.view.Label(entry)
-			if entry.record.Flagged() {
-				label = flagMarker + label
-				detail += flagDetail
+			if entry.record.Discarded() {
+				label = discardMarker + label
+				detail += discardDetail
 			}
 			items = append(items, scrolllist.Item{
 				ID:     archiveItemID(destination, entry.path),
@@ -815,8 +815,8 @@ func (m archiveModel) detail(width int) string {
 			lines = append(lines, scanMutedStyle.Render("Position")+"  "+ansi.SetHyperlink(links[0].URL)+label+ansi.ResetHyperlink())
 		}
 	}
-	if flag := entry.record.Flag; flag != nil {
-		lines = append(lines, runFailedStyle.Render(truncate("✕ Marked to discard "+organizer.FormatTimestamp(flag.FlaggedAt)+" — reject it", width)))
+	if mark := entry.record.Discard; mark != nil {
+		lines = append(lines, runFailedStyle.Render(truncate("✕ Marked to discard "+organizer.FormatTimestamp(mark.DiscardedAt)+" — reject it", width)))
 	}
 	lines = append(lines, "", divider.Labelled("PAYLOAD", width))
 	if len(entry.index.Payload) == 0 {
@@ -951,11 +951,11 @@ func (m archiveModel) buttons() []archiveButton {
 	// that says "Archive" without its key is still a control, while one drawn
 	// past the edge of its column is not.
 	width := max(9, min(archiveButtonWidth, (widths[2]-1)/2))
-	archiveSubtitle, archiveReady := "Keep it", has && entry.organized && !entry.record.Flagged() && m.archiveRoot != ""
+	archiveSubtitle, archiveReady := "Keep it", has && entry.organized && !entry.record.Discarded() && m.archiveRoot != ""
 	switch {
 	case !has:
 		archiveSubtitle = "· none"
-	case entry.record.Flagged():
+	case entry.record.Discarded():
 		archiveSubtitle = "Discard"
 	case !entry.organized:
 		archiveSubtitle = "Not organized"
