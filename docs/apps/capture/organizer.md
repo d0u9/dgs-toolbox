@@ -444,16 +444,17 @@ marks a Capture handled is the most recent run completing every Action, not
 the presence of a run or the file. Callers with room for one line show the
 most recent run; a failed run stays pending both immediately and after reload.
 
-The record also carries a `flag` when Route marked the Capture to discard
+The record also carries a `discard` when Route marked the Capture to discard
 (`d`: a duplicate, or a Capture found wrong) —
-`"flag": {"flaggedAt": "2026-09-14T21:00:00+10:00"}` — which Archive reads to
-reject it rather than keep it. A flag is not a run, so a Capture flagged before
-anyone organized it has a record and is still not organized; taking the flag
-back removes a record that held nothing else. A first run preserves an existing flag.
+`"discard": {"discardedAt": "2026-09-14T21:00:00+10:00"}` — which Archive
+reads to reject it rather than keep it. A discard mark is not a run, so a
+Capture marked before anyone organized it has a record and is still not
+organized; taking the mark back removes a record that held nothing else. A
+first run preserves an existing mark.
 
 An unreadable or malformed record, or one with an unsupported schema, reports
 an error rather than being treated as absent. Scanning stops with that error;
-flag changes and organizing refuse to overwrite or remove the record. A run
+discard marks and organizing refuse to overwrite or remove the record. A run
 also rechecks the record before executing its Actions.
 
 Daily notes, Timeline notes and organize records use same-directory temporary

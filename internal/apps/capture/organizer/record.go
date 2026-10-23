@@ -27,20 +27,20 @@ const RecordFilename = "organize.json"
 type Record struct {
 	Schema string `json:"schema"`
 	Runs   []Run  `json:"runs"`
-	// Flag marks a Capture found to be wrong while organizing it — a position
-	// on the map somewhere it never was — so Archive sets it aside rather than
-	// keeping it. It is a mark rather than a move: the reader is in the middle
+	// Discard marks a Capture to be set aside while organizing it — a
+	// duplicate, a position on the map somewhere it never was — so Archive
+	// rejects it rather than keeping it. It is a mark rather than a move: the reader is in the middle
 	// of organizing, and deciding where a Capture goes is Archive's job.
-	Flag *Flag `json:"flag,omitempty"`
+	Discard *Discard `json:"discard,omitempty"`
 }
 
-// Flag is when a Capture was marked wrong.
-type Flag struct {
-	FlaggedAt string `json:"flaggedAt"`
+// Discard is when a Capture was marked to discard.
+type Discard struct {
+	DiscardedAt string `json:"discardedAt"`
 }
 
-// Flagged reports whether the Capture has been marked wrong.
-func (r Record) Flagged() bool { return r.Flag != nil }
+// Discarded reports whether the Capture has been marked to discard.
+func (r Record) Discarded() bool { return r.Discard != nil }
 
 // Run is one pass over the Capture: what was decided, and what it would have
 // done, at that moment.
@@ -154,21 +154,21 @@ func AppendRun(dir string, run Run) (Record, error) {
 	return record, writeRecord(dir, record)
 }
 
-// SetFlag marks the Capture wrong, or takes the mark away, and returns the
+// SetDiscard marks the Capture to discard, or takes the mark away, and returns the
 // record as it now stands. A record that held only the mark is removed with
 // it, so taking a mark back leaves a Capture nobody organized as it was.
-func SetFlag(dir string, flagged bool, at time.Time) (Record, error) {
+func SetDiscard(dir string, discarded bool, at time.Time) (Record, error) {
 	record, _, err := ReadRecord(dir)
 	if err != nil {
 		return Record{}, err
 	}
 	record.Schema = "v1"
-	if flagged {
-		record.Flag = &Flag{FlaggedAt: at.Format(time.RFC3339)}
+	if discarded {
+		record.Discard = &Discard{DiscardedAt: at.Format(time.RFC3339)}
 	} else {
-		record.Flag = nil
+		record.Discard = nil
 	}
-	if !flagged && len(record.Runs) == 0 {
+	if !discarded && len(record.Runs) == 0 {
 		err := os.Remove(filepath.Join(dir, RecordFilename))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return record, fmt.Errorf("remove record: %w", err)

@@ -18,8 +18,8 @@ import (
 // records what would have opened instead of opening it.
 var openURL = desktop.Open
 
-// flagNow is when a mark is made, a variable so a test can name it.
-var flagNow = time.Now
+// discardNow is when a mark is made, a variable so a test can name it.
+var discardNow = time.Now
 
 // routeMapServices are the links the map row carries, in the order written.
 const routeMapServices = "Apple, Google, 高德"
@@ -104,16 +104,16 @@ func mapLinksText(position organizer.Position, label string) string {
 	return strings.Join(parts, " · ")
 }
 
-// toggleFlag marks the selected Capture wrong, or takes the mark away. The
+// toggleDiscard marks the selected Capture wrong, or takes the mark away. The
 // mark is written into the Capture's record at once, so it is there when
 // Archive is opened, in this session or a later one.
-func (m routeModel) toggleFlag() routeModel {
+func (m routeModel) toggleDiscard() routeModel {
 	entry, ok := m.selectedCapture()
 	if !ok {
 		return m
 	}
-	flagged := !entry.record.Flagged()
-	record, err := organizer.SetFlag(entry.path, flagged, flagNow())
+	discarded := !entry.record.Discarded()
+	record, err := organizer.SetDiscard(entry.path, discarded, discardNow())
 	if err != nil {
 		m.notice = failed(entry.name + ": " + err.Error())
 		return m
@@ -123,7 +123,7 @@ func (m routeModel) toggleFlag() routeModel {
 			m.entries[index].record = record
 		}
 	}
-	if flagged {
+	if discarded {
 		m.notice = moveNotice{text: "✕ " + entry.name + " marked to discard — Archive will reject, not archive, it"}
 	} else {
 		m.notice = moveNotice{text: entry.name + " no longer marked to discard"}

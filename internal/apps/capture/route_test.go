@@ -1289,7 +1289,7 @@ func TestRouteAdvancesPastCapturesNoRecipeMatches(t *testing.T) {
 // cursor passes over it too.
 func TestRouteAdvancesPastCapturesMarkedToDiscard(t *testing.T) {
 	root := routeTestRoot(t, "a", "b", "c")
-	if _, err := organizer.SetFlag(filepath.Join(root, "a"), true, time.Now()); err != nil {
+	if _, err := organizer.SetDiscard(filepath.Join(root, "a"), true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	m := loadedRoute(t, root)

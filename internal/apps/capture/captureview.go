@@ -86,14 +86,14 @@ func routeCaptureDetail(entry captureEntry) string {
 
 // indentDetail starts a row's second line where the first line's text starts,
 // past whatever marker sits in front of it — Route's readiness marker, or the
-// flag — so the source lines up under the timestamp rather than stepping in
+// discard mark — so the source lines up under the timestamp rather than stepping in
 // from it. The list itself already indents past the number.
 func indentDetail(detail, label string) string {
 	return indentDetailBy(detail, markerWidth(label))
 }
 
 // markerWidth is how many cells of a label come before its text: a readiness
-// or flag marker and the space after it, or nothing.
+// or discard marker and the space after it, or nothing.
 func markerWidth(label string) int {
 	plain := ansi.Strip(label)
 	for _, marker := range []string{"○ ", "◐ ", "● ", "✕ "} {
@@ -278,29 +278,29 @@ func reloadAfterMove(root, indexFile string, destination archiveDestination, fol
 	return tea.Batch(loadCaptures(root, indexFile), loadArchiveFolder(destination, folder, indexFile))
 }
 
-// flaggedFirst moves the Captures marked wrong to the front, keeping the order
+// discardedFirst moves the Captures marked to discard to the front, keeping the order
 // within each half.
-func flaggedFirst(entries []captureEntry) []captureEntry {
+func discardedFirst(entries []captureEntry) []captureEntry {
 	ordered := make([]captureEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.record.Flagged() {
+		if entry.record.Discarded() {
 			ordered = append(ordered, entry)
 		}
 	}
 	for _, entry := range entries {
-		if !entry.record.Flagged() {
+		if !entry.record.Discarded() {
 			ordered = append(ordered, entry)
 		}
 	}
 	return ordered
 }
 
-// flagMarker is how a Capture marked to discard in Route is marked in a list:
+// discardMarker is how a Capture marked to discard in Route is marked in a list:
 // a cross in bold red, where the other markers are quiet. It resets only what it set —
 // weight and colour — rather than every attribute, so a selected row keeps its
 // background past the icon.
-const flagMarker = "\x1b[1;31m✕\x1b[22;39m "
+const discardMarker = "\x1b[1;31m✕\x1b[22;39m "
 
-// flagDetail is the word said beside it on the row's second line, so the mark
+// discardDetail is the word said beside it on the row's second line, so the mark
 // still reads where a terminal's font has no cross to draw.
-const flagDetail = "  · DISCARD"
+const discardDetail = "  · DISCARD"

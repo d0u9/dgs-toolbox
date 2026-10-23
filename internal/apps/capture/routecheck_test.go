@@ -110,10 +110,10 @@ func TestRouteMapFailureIsReported(t *testing.T) {
 }
 
 // `d` marks the Capture to discard in its record, at once, and takes the mark back.
-func TestRouteFlagsACapture(t *testing.T) {
-	previous := flagNow
-	flagNow = func() time.Time { return time.Date(2026, 9, 14, 21, 0, 0, 0, time.UTC) }
-	t.Cleanup(func() { flagNow = previous })
+func TestRouteMarksACaptureToDiscard(t *testing.T) {
+	previous := discardNow
+	discardNow = func() time.Time { return time.Date(2026, 9, 14, 21, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { discardNow = previous })
 	root := routeTestRoot(t, "alpha")
 	m := loadedRoute(t, root)
 
@@ -122,11 +122,11 @@ func TestRouteFlagsACapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !record.Flagged() || record.Flag.FlaggedAt != "2026-09-14T21:00:00Z" {
+	if !record.Discarded() || record.Discard.DiscardedAt != "2026-09-14T21:00:00Z" {
 		t.Fatalf("record = %+v", record)
 	}
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "✕ ") || !strings.Contains(view, "DISCARD") {
-		t.Errorf("the flagged row is not marked:\n%s", view)
+		t.Errorf("the discarded row is not marked:\n%s", view)
 	}
 	if !strings.Contains(m.Status().Center, "marked to discard") {
 		t.Errorf("status = %q", m.Status().Center)
@@ -139,18 +139,18 @@ func TestRouteFlagsACapture(t *testing.T) {
 
 	m = routeKey(t, m, "d")
 	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); !os.IsNotExist(err) {
-		t.Errorf("unflagging a capture nobody organized left a record: %v", err)
+		t.Errorf("taking the mark back from a capture nobody organized left a record: %v", err)
 	}
 	if view := ansi.Strip(m.View()); strings.Contains(view, "✕ ") || strings.Contains(view, "DISCARD") {
-		t.Errorf("the mark stayed after unflagging:\n%s", view)
+		t.Errorf("the mark stayed after taking it back:\n%s", view)
 	}
 }
 
 // Archive reads the mark: the row leads its group, says why, and is rejected
 // rather than kept.
-func TestArchiveRejectsWhatRouteFlagged(t *testing.T) {
+func TestArchiveRejectsWhatRouteMarkedToDiscard(t *testing.T) {
 	root := organizedRoot(t, []string{"good", "wrong"}, nil)
-	if _, err := organizer.SetFlag(filepath.Join(root, "wrong"), true, time.Now()); err != nil {
+	if _, err := organizer.SetDiscard(filepath.Join(root, "wrong"), true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	archiveRoot, rejectRoot := filepath.Join(t.TempDir(), "Archive"), filepath.Join(t.TempDir(), "Reject")
@@ -158,29 +158,29 @@ func TestArchiveRejectsWhatRouteFlagged(t *testing.T) {
 
 	m.captures.First()
 	if first, ok := m.captures.Selected(); !ok || !strings.HasPrefix(ansi.Strip(first.Label), "✕ ") || !strings.HasSuffix(first.Detail, "DISCARD") || !strings.HasSuffix(first.ID, "wrong") {
-		t.Fatalf("first = %+v, want the flagged capture first and marked", first)
+		t.Fatalf("first = %+v, want the discarded capture first and marked", first)
 	}
 
 	m = selectCapture(t, m, destinationCaptures, "wrong")
 	if detail := ansi.Strip(m.detail(60)); !strings.Contains(detail, "✕ Marked to discard") {
-		t.Errorf("detail does not say it was flagged:\n%s", detail)
+		t.Errorf("detail does not say it was discarded:\n%s", detail)
 	}
 	if buttons := m.buttons(); buttons[0].primary || buttons[0].subtitle != "Discard" {
 		t.Errorf("archive button = %+v", buttons[0])
 	}
 	m = press(t, m, "a")
 	if _, err := os.Stat(filepath.Join(archiveRoot, "wrong")); !os.IsNotExist(err) {
-		t.Fatalf("a flagged capture was archived: %v", err)
+		t.Fatalf("a discarded capture was archived: %v", err)
 	}
 	if !m.notice.bad || !strings.Contains(m.notice.text, "Marked to discard") {
 		t.Errorf("notice = %+v", m.notice)
 	}
 	m = press(t, m, "backspace")
 	if _, err := os.Stat(filepath.Join(rejectRoot, "wrong")); err != nil {
-		t.Fatalf("the flagged capture was not rejected: %v", err)
+		t.Fatalf("the discarded capture was not rejected: %v", err)
 	}
 
-	// The unflagged one is kept as before.
+	// The one not marked is kept as before.
 	m = selectCapture(t, m, destinationCaptures, "good")
 	m = press(t, m, "a")
 	if _, err := os.Stat(filepath.Join(archiveRoot, "good")); err != nil {

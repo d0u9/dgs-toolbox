@@ -46,7 +46,7 @@ func TestFailedWritesPreserveNotesAndRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	capture := t.TempDir()
-	if _, err := SetFlag(capture, true, time.Now()); err != nil {
+	if _, err := SetDiscard(capture, true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	recordPath := filepath.Join(capture, RecordFilename)
