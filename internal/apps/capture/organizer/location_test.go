@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func locationSettings(t *testing.T, vault string) Settings {
@@ -289,7 +288,7 @@ func TestLocationBackfillGoesStraightToItsYear(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	running := "- *" + time.Now().Format("2006-01-02") + " 周一*\n- `10:00:00 +10` · 今年的 ^dgs-now\n"
+	running := "- *" + testYear + "-01-05 周一*\n- `10:00:00 +10` · 今年的 ^dgs-now\n"
 	if err := os.WriteFile(path, []byte(running), 0o644); err != nil {
 		t.Fatal(err)
 	}

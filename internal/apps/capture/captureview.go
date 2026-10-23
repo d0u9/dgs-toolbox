@@ -96,7 +96,7 @@ func indentDetail(detail, label string) string {
 // or flag marker and the space after it, or nothing.
 func markerWidth(label string) int {
 	plain := ansi.Strip(label)
-	for _, marker := range []string{"○ ", "◐ ", "● ", "⚑ "} {
+	for _, marker := range []string{"○ ", "◐ ", "● ", "✕ "} {
 		if strings.HasPrefix(plain, marker) {
 			return lipgloss.Width(marker)
 		}
@@ -295,12 +295,12 @@ func flaggedFirst(entries []captureEntry) []captureEntry {
 	return ordered
 }
 
-// flagMarker is how a Capture flagged in Route is marked in a list: the flag in
-// bold red, where the other markers are quiet. It resets only what it set —
+// flagMarker is how a Capture marked to discard in Route is marked in a list:
+// a cross in bold red, where the other markers are quiet. It resets only what it set —
 // weight and colour — rather than every attribute, so a selected row keeps its
 // background past the icon.
-const flagMarker = "\x1b[1;31m⚑\x1b[22;39m "
+const flagMarker = "\x1b[1;31m✕\x1b[22;39m "
 
 // flagDetail is the word said beside it on the row's second line, so the mark
-// still reads where a terminal's font has no flag to draw.
-const flagDetail = "  · FLAGGED"
+// still reads where a terminal's font has no cross to draw.
+const flagDetail = "  · DISCARD"

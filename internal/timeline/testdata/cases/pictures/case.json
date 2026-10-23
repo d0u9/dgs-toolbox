@@ -1,0 +1,7 @@
+{
+  "op": "pictures",
+  "args": {
+    "content": "- `16:02:33 +11` · 水库 ^dgs-a\n    - ![[file-20261018160233652-1.jpg]]\n    - ![[IMG_0001.PNG|200]]\n    - ![[file-20261018160233652-1.jpg]]\n    - ![[assets/elsewhere.jpg]]\n    - ![[A note]]\n    - [[file-20261018160233652-2.jpg]]\n"
+  },
+  "want": ["file-20261018160233652-1.jpg", "IMG_0001.PNG"]
+}

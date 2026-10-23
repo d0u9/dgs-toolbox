@@ -21,7 +21,12 @@
 - `CAPTURES` includes only immediate child directories containing a regular
   file whose name matches the configured index filename and whose contents
   validate against the declared Capture index schema. Invalid JSON, unsupported
-  schemas, and schema violations are omitted. Folder labels retain a trailing
+  schemas, and schema violations are left out of the list but not unsaid: a
+  `N INVALID` rule at the foot of `CAPTURES`, in Scan and Route alike, counts
+  every child directory that is not a Capture — no index file, or one that does
+  not validate — and names the first two, each with why below it. A Capture
+  that vanishes from the list is one nobody knows to fix. Hidden directories are
+  not counted, and Archive does not report its own folders. Folder labels retain a trailing
   path separator so they read as directories rather than files.
 - Capture rows use `▸` when collapsed and `▾` when expanded. Pressing `o` on a
   Capture row toggles it. An expanded Capture shows the configured index file,
@@ -158,7 +163,8 @@ deeper containers start collapsed, so a file opens as an outline rather than as
 everything at once.
 
 `place` may provide `locality`, `city`, `region`, and `country` as optional
-non-empty strings. Capture Info presents available values as four separate rows
+strings; an empty string means the same as a field left out, since a Shortcut
+whose reverse geocoding found nothing writes `""`. Capture Info presents available values as four separate rows
 inside an indented `Location` group after GPS. There is no free-form `address`
 field: a place is described by its structured parts, and anything that reads as
 one name is composed from them. Descriptive fields are accepted only inside

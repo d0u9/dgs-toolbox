@@ -149,7 +149,9 @@ part of the list stops the tidy, naming it, rather than being dropped.
 
 Obsidian loads a single script, so the installed `main.js` is `wasm_exec.js`,
 `engine.js` and `main.js` one after another. `make test-timeline` loads the
-first two the same way and runs the shared timeline cases through them.
+first two the same way and runs the shared timeline cases through them, and
+runs `main.js`'s picture moving against a vault held in memory, with the
+real engine and the part of Obsidian's API it calls stood in for.
 
 `styles.css` styles the form, and draws every note with `cssclasses: dgs-timeline`
 and the daily log's places section as a timeline, in reading view: the blocks under
@@ -157,7 +159,19 @@ the heading set as Log heading, which the plugin marks `.dgs-daily-places` as
 they render, with 去过哪里 also found by name for a vault where the plugin is
 off. Coordinates and map links are found by their links, not by their place
 under the entry, so a timeline whose entries carry only a line of text is not
-drawn as a place. It used to
+drawn as a place. After writing a timeline's files — an insert that archives a
+year, or a tidy — the plugin keeps each picture an entry embeds beside the file
+that shows it, in the folder the vault's attachment setting gives that file
+(`assets/<note>` beside it with Custom Attachment Location, the folder `dgs
+capture` writes pictures into). It looks for a picture only in the folders of
+the same timeline's other files, so the daily log's copy under the same name
+stays put, and it overwrites nothing. A tidy settles every file of the
+timeline, not only those it changed, so it also puts right pictures an earlier
+archive left behind. A picture is moved by name, without rewriting any link,
+and one that cannot move is said in a notice: its entry is already written and
+still shows it. A photo in an entry is drawn as a thumbnail, at most 200px
+wide, in reading view and live preview alike: it is a cue to the memory, not the
+entry. It used to
 be a CSS snippet each vault kept; as part of the plugin it is on whenever the
 plugin is, and updated with it. Notes with `cssclasses: captures`
 (the ideas inbox) get only its quieter timestamps.

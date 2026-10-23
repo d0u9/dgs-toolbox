@@ -7,11 +7,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
 
 	"dgs-toolbox/internal/imaging"
+	"dgs-toolbox/internal/timeline"
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
@@ -67,9 +69,21 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped string, err error)
 	if existing, err := os.ReadFile(notePath); err == nil && containsMark(string(existing), captureMark(ctx.Capture)) {
 		return fmt.Sprintf("this capture is already in %s, as %s", note, captureMark(ctx.Capture)), nil
 	}
-	images, err := dailyImages(ctx, note)
+	names, err := writeImages(ctx, note)
 	if err != nil {
 		return "", err
+	}
+	return appendEntry(ctx, names)
+}
+
+// writeImages writes the Capture's pictures into the folder beside note that
+// the image folder template names, and returns the names an entry links them
+// by. The daily note and every timeline share it, so a picture reads the same
+// wherever its Capture is written.
+func writeImages(ctx Context, note string) ([]string, error) {
+	images, err := dailyImages(ctx, note)
+	if err != nil {
+		return nil, err
 	}
 	// Every picture is read before any is written, so a Capture holding one
 	// that is not a JPEG is refused whole rather than half written.
@@ -77,25 +91,25 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped string, err error)
 	for index, picture := range images {
 		data, err := os.ReadFile(picture.source)
 		if err != nil {
-			return "", fmt.Errorf("read %s: %w", filepath.Base(picture.source), err)
+			return nil, fmt.Errorf("read %s: %w", filepath.Base(picture.source), err)
 		}
 		encoded[index], err = imaging.TranscodeJPEG(data, imaging.JPEGOptions{
 			MaxSide: ctx.Settings.ImageMaxSide,
 			Quality: ctx.Settings.ImageQuality,
 		})
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", filepath.Base(picture.source), err)
+			return nil, fmt.Errorf("%s: %w", filepath.Base(picture.source), err)
 		}
 	}
 	names := make([]string, len(images))
 	for index, picture := range images {
 		destination, _ := ctx.Settings.vaultPath(picture.target)
 		if err := publishImage(encoded[index], destination); err != nil {
-			return "", fmt.Errorf("write %s: %w", picture.target, err)
+			return nil, fmt.Errorf("write %s: %w", picture.target, err)
 		}
 		names[index] = picture.name
 	}
-	return appendEntry(ctx, names)
+	return names, nil
 }
 
 // publishImage writes a re-encoded picture to its place in the vault, verified
@@ -195,4 +209,65 @@ func imageFolder(ctx Context, note string, day time.Time) (string, error) {
 		return "", fmt.Errorf("image folder %q leaves the vault", folder)
 	}
 	return folder, nil
+}
+
+// imageDay is the day in the name this toolbox and Obsidian's attachment
+// plugins give a picture, file-<yyyymmdd>…, which the image folder template
+// may name.
+var imageDay = regexp.MustCompile(`^file-(\d{8})`)
+
+// moveImages moves the pictures one year's entries embed from the folder
+// beside one note into the folder beside another: a year leaving a timeline
+// for its archive takes its pictures along, so they sit where a Capture from
+// that year organized later puts its own.
+//
+// The pictures are the ones timeline.Pictures finds — every picture embedded
+// by filename, pasted ones too — as the Obsidian plugin moves them. The folder
+// is the image folder template's, for the day the name carries, or for the
+// first of the year for a name with none: a template naming only the note, as
+// the default does, puts every picture of a note in one folder either way.
+// Only pictures from where the source note keeps them are moved. One already
+// gone has been moved or was never there; one already at its destination is
+// kept, and the source copy left, rather than overwritten. The entries embed
+// by filename, so a picture in either place still shows.
+func moveImages(ctx Context, year timeline.Year, from, to string) error {
+	for _, name := range timeline.Pictures(year.Text) {
+		day, err := time.Parse("2006", year.Year)
+		if match := imageDay.FindStringSubmatch(name); match != nil {
+			if named, parseErr := time.Parse("20060102", match[1]); parseErr == nil {
+				day, err = named, nil
+			}
+		}
+		if err != nil {
+			continue
+		}
+		source, err := imageFolder(ctx, from, day)
+		if err != nil {
+			return err
+		}
+		destination, err := imageFolder(ctx, to, day)
+		if err != nil {
+			return err
+		}
+		if source == destination {
+			continue
+		}
+		sourcePath, _ := ctx.Settings.vaultPath(path.Join(source, name))
+		destinationPath, _ := ctx.Settings.vaultPath(path.Join(destination, name))
+		if _, err := os.Lstat(sourcePath); err != nil {
+			continue
+		}
+		// ponytail: check then rename, so a file appearing at the destination
+		// in between is replaced; nothing else writes these names.
+		if _, err := os.Lstat(destinationPath); err == nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", destination, err)
+		}
+		if err := os.Rename(sourcePath, destinationPath); err != nil {
+			return fmt.Errorf("move %s to %s: %w", name, destination, err)
+		}
+	}
+	return nil
 }

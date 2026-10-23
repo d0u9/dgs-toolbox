@@ -16,7 +16,7 @@ authority on what it will actually do.
 | Action | Writes | Needs |
 | --- | --- | --- |
 | [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault, and its pictures beside it | `createdAt`; `content` optional |
-| [`obsidian.timeline.<name>`](#obsidiantimelinename) | the timeline the timelines file names, and its archive | `createdAt`; `content` when the timeline requires it |
+| [`obsidian.timeline.<name>`](#obsidiantimelinename) | the timeline the timelines file names, its archive, and its pictures beside it | `createdAt`; `content` when the timeline requires it |
 | [`gpx.daily.append`](#gpxdailyappend) | a daily GPX in the configured directory | `createdAt`, `coordinates`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
 | [`apple.reminders.at_place`](#appleremindersat_place) | a reminder, at a place | `title`, `coordinates` |
@@ -88,6 +88,23 @@ Puts the Capture under its day on the timeline's running note.
 - Writes nothing the second time, on the same terms as the daily entry.
 - Carries the place — address, coordinate, map links — when the Capture has a
   position, and is the one line otherwise.
+- Writes the Capture's pictures beside the note it is written into, shrunk
+  and named as the daily note's are
+  ([pictures](../../configuration/capture.md#pictures-in-the-daily-note)),
+  before the entry that shows them; the template shows them where it names
+  `Images`.
+- A year moving into the archive takes its pictures along, from beside the
+  running note to beside the year's file — `<archive>/assets/<year>/` by
+  default — where a Capture from that year organized later puts its own. The
+  notes are written first, then the pictures move; a picture that cannot move
+  fails the Action with the entry already written, and still shows, since the
+  entries embed pictures by filename. Every picture the moved entries embed by
+  filename is moved, pasted ones too; its folder is the image folder template's
+  for the day in its name, or for the first of the year when the name has
+  none. One already at its destination is kept: nothing is overwritten. The
+  Obsidian plugin keeps pictures beside the file that shows them by the same
+  rule when it archives or tidies a timeline ([plugins](../plugins/index.md));
+  both find the pictures with `internal/timeline`'s `Pictures`.
 
 Needs `createdAt`; `content` too when the timeline sets `contentRequired`,
 and is optional otherwise. Shaped by the template the timeline names, else

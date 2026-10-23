@@ -444,7 +444,8 @@ marks a Capture handled is the most recent run completing every Action, not
 the presence of a run or the file. Callers with room for one line show the
 most recent run; a failed run stays pending both immediately and after reload.
 
-The record also carries a `flag` when Route marked the Capture wrong —
+The record also carries a `flag` when Route marked the Capture to discard
+(`d`: a duplicate, or a Capture found wrong) —
 `"flag": {"flaggedAt": "2026-09-14T21:00:00+10:00"}` — which Archive reads to
 reject it rather than keep it. A flag is not a run, so a Capture flagged before
 anyone organized it has a record and is still not organized; taking the flag

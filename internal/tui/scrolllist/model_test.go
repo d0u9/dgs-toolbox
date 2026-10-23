@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestNumberedViewportNavigationAndMouseSelection(t *testing.T) {
@@ -252,5 +253,25 @@ func TestInlineLongLabelsStayWithinWidth(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestKeepSelectionMarksTheCursorRowWhileUnfocused(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	m := New()
+	m.SetSize(20, 2)
+	m.SetItems([]Item{{ID: "a", Label: "alpha"}, {ID: "b", Label: "beta"}})
+	m.SelectID("b")
+	plain := m.View(false, lipgloss.NewStyle(), lipgloss.NewStyle())
+	m.KeepSelection(true)
+	kept := m.View(false, lipgloss.NewStyle(), lipgloss.NewStyle())
+	plainRows, keptRows := strings.Split(plain, "\n"), strings.Split(kept, "\n")
+	if plainRows[0] != keptRows[0] {
+		t.Errorf("a row off the cursor changed: %q", keptRows[0])
+	}
+	if plainRows[1] == keptRows[1] || strings.TrimRight(ansi.Strip(keptRows[1]), " ") != strings.TrimRight(ansi.Strip(plainRows[1]), " ") {
+		t.Errorf("cursor row = %q, want the same text marked", keptRows[1])
 	}
 }

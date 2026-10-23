@@ -162,7 +162,9 @@ func loadArchiveFolder(destination archiveDestination, root, indexFile string) t
 		return nil
 	}
 	return func() tea.Msg {
-		captures, err := scanCaptures(root, indexFile)
+		// Archive's folders hold Captures it filed itself; anything else in
+		// them is not its to report.
+		captures, _, err := scanCaptures(root, indexFile)
 		return archiveFolderLoadedMsg{destination: destination, root: root, captures: captures, err: err}
 	}
 }
@@ -367,7 +369,7 @@ func (m archiveModel) move(from, to archiveDestination) (tea.Model, tea.Cmd) {
 	// mistake with the Captures that were handled. Unflagging it in Route is
 	// how it is archived after all.
 	if to == destinationArchive && entry.record.Flagged() {
-		m.notice = failed("Flagged in Route — it can be rejected, not archived")
+		m.notice = failed("Marked to discard in Route — it can be rejected, not archived")
 		return m, nil
 	}
 	target := m.folderFor(to)
@@ -814,7 +816,7 @@ func (m archiveModel) detail(width int) string {
 		}
 	}
 	if flag := entry.record.Flag; flag != nil {
-		lines = append(lines, runFailedStyle.Render(truncate("⚑ Flagged "+organizer.FormatTimestamp(flag.FlaggedAt)+" — reject it", width)))
+		lines = append(lines, runFailedStyle.Render(truncate("✕ Marked to discard "+organizer.FormatTimestamp(flag.FlaggedAt)+" — reject it", width)))
 	}
 	lines = append(lines, "", divider.Labelled("PAYLOAD", width))
 	if len(entry.index.Payload) == 0 {
@@ -954,7 +956,7 @@ func (m archiveModel) buttons() []archiveButton {
 	case !has:
 		archiveSubtitle = "· none"
 	case entry.record.Flagged():
-		archiveSubtitle = "Flagged"
+		archiveSubtitle = "Discard"
 	case !entry.organized:
 		archiveSubtitle = "Not organized"
 	case m.archiveRoot == "":
@@ -1052,7 +1054,7 @@ func (m archiveModel) statusValue() string {
 		return m.notice.status()
 	}
 	if entry, ok := m.selected(); ok {
-		return entry.path
+		return filepath.Base(entry.path)
 	}
 	return fmt.Sprintf("%d CAPTURES · %d ARCHIVED · %d REJECTED",
 		len(m.entries), len(m.archived), len(m.rejected))

@@ -77,10 +77,11 @@ plugins:
 
 # The timeline cases natively, in the WebAssembly build under Node, and
 # through the Obsidian plugin's engine.js: all three must give the same answers.
+# Then the plugin's picture moving, against a vault held in memory.
 test-timeline: plugins
 	go test ./internal/timeline
 	GOOS=js GOARCH=wasm go test -exec="$(GOWASM_EXEC)" ./internal/timeline
-	node --test internal/plugins/bundled/engine.test.mjs
+	node --test internal/plugins/bundled/engine.test.mjs internal/plugins/bundled/pictures.test.mjs
 
 # GPX interaction rules and filesystem-backed segment addition contracts.
 test-gpx-web:

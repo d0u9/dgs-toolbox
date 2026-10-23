@@ -182,3 +182,69 @@ func TestImageFolderFollowsItsTemplateAndStaysInTheVault(t *testing.T) {
 		t.Fatal("a folder outside the vault was accepted")
 	}
 }
+
+// A timeline shows the Capture's pictures too, written beside its own note the
+// way the daily note's are.
+func TestTimelineImagesAreWrittenBesideTheNoteAndShown(t *testing.T) {
+	vault := t.TempDir()
+	capture := photoCapture(t, map[string][]byte{"a.jpg": encodedPicture(t, 50, 40, false)})
+	settings := locationSettings(t, vault)
+	writeLocationTemplate(t, settings.TemplateDir, "- {{.Content}} {{.ID}}\n{{- range .Images}}\n    - ![[{{.}}]]\n{{- end}}")
+	ctx := NewContext(capture, map[FieldID]any{FieldContent: "沙滩"}).WithSettings(settings)
+	plan := locationPlan(t, ctx)
+	if results := Execute(ctx, []ActionPlan{plan}); !Executed(results) {
+		t.Fatalf("results = %+v", results)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "88 Inbox", "assets", "06 Locations", "file-20260909213122900-1.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	note, err := os.ReadFile(filepath.Join(vault, plan.Target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(note), "    - ![[file-20260909213122900-1.jpg]]") {
+		t.Fatalf("note does not show the picture:\n%s", note)
+	}
+}
+
+// A year leaving a timeline for its archive takes its pictures along, into the
+// folder beside the archive, where a Capture from that year organized later
+// puts its own.
+func TestTimelineArchiveMovesTheYearsPictures(t *testing.T) {
+	vault := t.TempDir()
+	settings := locationSettings(t, vault)
+	note := filepath.Join(vault, "88 Inbox/06 Locations.md")
+	old := filepath.Join(vault, "88 Inbox/assets/06 Locations/file-20251231230000000-1.jpg")
+	kept := filepath.Join(vault, "88 Inbox/assets/06 Locations/file-20260102100000000-1.jpg")
+	pasted := filepath.Join(vault, "88 Inbox/assets/06 Locations/Pasted image.png")
+	for _, file := range []string{old, kept, pasted} {
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("jpeg"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	existing := "- *2026-01-02 周五*\n- `10:00:00 +10` · 今年 ^dgs-a\n    - ![[file-20260102100000000-1.jpg]]\n" +
+		"- *2025-12-31 周三*\n- `23:00:00 +10` · 去年 ^dgs-b\n    - ![[file-20251231230000000-1.jpg|200]]\n    - ![[Pasted image.png]]\n"
+	if err := os.WriteFile(note, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "今天"}).WithSettings(settings)
+	if results := Execute(ctx, []ActionPlan{locationPlan(t, ctx)}); !Executed(results) {
+		t.Fatalf("results = %+v", results)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "88 Inbox/06 Locations/assets/2025/file-20251231230000000-1.jpg")); err != nil {
+		t.Fatalf("the year's picture did not move beside its archive: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("the year's picture is still beside the running note")
+	}
+	// A pasted picture, with no day in its name, goes along with its year.
+	if _, err := os.Stat(filepath.Join(vault, "88 Inbox/06 Locations/assets/2025/Pasted image.png")); err != nil {
+		t.Fatalf("a pasted picture did not move with its year: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("a picture of the current year moved: %v", err)
+	}
+}

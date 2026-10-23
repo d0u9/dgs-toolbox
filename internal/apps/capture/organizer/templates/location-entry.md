@@ -2,3 +2,6 @@
     - {{.Address}}
     - {{.CopyLink}}
     - {{.MapLinks}}
+{{- range .Images}}
+    - ![[{{.}}]]
+{{- end}}
