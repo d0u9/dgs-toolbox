@@ -87,7 +87,9 @@ func TestInstallSSHKeyFromVault(t *testing.T) {
 		t.Fatalf("form did not open editing the host name: %+v", m.action.form.FocusedID())
 	}
 	// Continuing without a host name is refused.
-	m = keys(t, m, "enter", "enter", "enter", "down", "enter")
+	m = keys(t, m, "enter", "esc") // commit, then leave the next field untouched
+	m.action.form.SetFocusID(fieldRun)
+	m = keys(t, m, "enter")
 	if m.action.stage != actionForm || !strings.Contains(m.action.err, "host name is required") {
 		t.Fatalf("empty host name: stage %d err %q", m.action.stage, m.action.err)
 	}
@@ -98,7 +100,11 @@ func TestInstallSSHKeyFromVault(t *testing.T) {
 	for _, r := range "root" {
 		m = keys(t, m, string(r))
 	}
-	m = keys(t, m, "enter", "enter", "down", "enter")
+	m = keys(t, m, "enter", "esc")
+	m.action.form.SetFocusID(fieldMux)
+	m = keys(t, m, " ")
+	m.action.form.SetFocusID(fieldRun)
+	m = keys(t, m, "enter")
 	if m.action.stage != actionConfirm {
 		t.Fatalf("stage %d err %q", m.action.stage, m.action.err)
 	}
@@ -115,6 +121,9 @@ func TestInstallSSHKeyFromVault(t *testing.T) {
 	conf, err := os.ReadFile(filepath.Join(home, ".ssh", "config.d", "server1.conf"))
 	if err != nil || !strings.Contains(string(conf), "HostName 203.0.113.10") || !strings.Contains(string(conf), "User root") {
 		t.Errorf("conf %q %v", conf, err)
+	}
+	if !strings.Contains(string(conf), "ControlMaster auto") || strings.Contains(string(conf), "ControlMaster no") || strings.Contains(string(conf), "ServerAlive") {
+		t.Errorf("checked Multiplex alone not written: %q", conf)
 	}
 	if config, _ := os.ReadFile(filepath.Join(home, ".ssh", "config")); !strings.HasPrefix(string(config), "Include ~/.ssh/config.d/*") {
 		t.Errorf("config %q", config)
@@ -234,7 +243,9 @@ func TestInstallSSHKeyElsewhere(t *testing.T) {
 	m.action.form.SetFocusID(fieldHostName)
 	m = keys(t, m, "enter")
 	m = paste(t, m, "example.com")
-	m = keys(t, m, "enter", "enter", "enter", "down", "enter", "tab", "enter")
+	m = keys(t, m, "enter", "esc") // commit, then leave the next field untouched
+	m.action.form.SetFocusID(fieldRun)
+	m = keys(t, m, "enter", "tab", "enter")
 	if _, err := os.Stat(filepath.Join(home, "Secrets", "ssh", "server1")); err != nil {
 		t.Errorf("key not in the chosen folder: %v; notice %q action %+v", err, m.notice, m.action)
 	}

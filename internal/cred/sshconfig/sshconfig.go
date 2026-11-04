@@ -25,7 +25,36 @@ type Host struct {
 	User         string
 	Port         string
 	IdentityFile string
+	// ProxyJump reaches the server through another host, such as bastion or
+	// alice@jump.example.com:2222.
+	ProxyJump string
+	// Multiplex shares one connection among sessions to the server; it stays
+	// open for MultiplexPersist after the last session closes. Without it the
+	// block turns multiplexing off, overriding any wider configuration.
+	Multiplex bool
+	// KeepAlive asks the server every KeepAliveInterval and drops a
+	// connection that misses KeepAliveCountMax replies.
+	KeepAlive bool
+	// ForwardAgent lets the server use the local ssh-agent.
+	ForwardAgent bool
+	// Compression compresses traffic, useful on slow links.
+	Compression bool
+	// TrueColor sends COLORTERM=truecolor; the server applies it only when its
+	// sshd_config has AcceptEnv COLORTERM.
+	TrueColor bool
 }
+
+// Named defaults for the optional settings.
+const (
+	MultiplexPath     = "~/.ssh/cm-%C"
+	MultiplexPersist  = "10m"
+	KeepAliveInterval = 60
+	KeepAliveCountMax = 3
+)
+
+// unsafeChars may not appear in a value: whitespace would end it early and a
+// line break would start a directive of its own.
+const unsafeChars = " \t\r\n\"'"
 
 var aliasPattern = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
 
@@ -36,10 +65,12 @@ func (h Host) Check() error {
 		return fmt.Errorf("alias %q may use only letters, digits, -, _ and ., and not start with .", h.Alias)
 	case h.HostName == "":
 		return errors.New("host name is required: the server's IP address or domain")
-	case strings.ContainsAny(h.HostName, " \t\"'"):
-		return fmt.Errorf("host name %q has spaces or quotes", h.HostName)
-	case strings.ContainsAny(h.User, " \t\"'"):
-		return fmt.Errorf("user %q has spaces or quotes", h.User)
+	case strings.ContainsAny(h.HostName, unsafeChars):
+		return fmt.Errorf("host name %q has spaces, line breaks or quotes", h.HostName)
+	case strings.ContainsAny(h.User, unsafeChars):
+		return fmt.Errorf("user %q has spaces, line breaks or quotes", h.User)
+	case strings.ContainsAny(h.ProxyJump, unsafeChars):
+		return fmt.Errorf("jump host %q has spaces, line breaks or quotes", h.ProxyJump)
 	}
 	if h.Port != "" {
 		if port, err := strconv.Atoi(h.Port); err != nil || port < 1 || port > 65535 {
@@ -61,6 +92,26 @@ func (h Host) Block() string {
 		fmt.Fprintf(&b, "    Port %s\n", h.Port)
 	}
 	fmt.Fprintf(&b, "    IdentityFile %s\n    IdentitiesOnly yes\n", h.IdentityFile)
+	if h.ProxyJump != "" {
+		fmt.Fprintf(&b, "    ProxyJump %s\n", h.ProxyJump)
+	}
+	if h.Multiplex {
+		fmt.Fprintf(&b, "    ControlMaster auto\n    ControlPath %s\n    ControlPersist %s\n", MultiplexPath, MultiplexPersist)
+	} else {
+		b.WriteString("    ControlMaster no\n    ControlPath none\n")
+	}
+	if h.KeepAlive {
+		fmt.Fprintf(&b, "    ServerAliveInterval %d\n    ServerAliveCountMax %d\n", KeepAliveInterval, KeepAliveCountMax)
+	}
+	if h.ForwardAgent {
+		b.WriteString("    ForwardAgent yes\n")
+	}
+	if h.Compression {
+		b.WriteString("    Compression yes\n")
+	}
+	if h.TrueColor {
+		b.WriteString("    SetEnv COLORTERM=truecolor\n")
+	}
 	return b.String()
 }
 
