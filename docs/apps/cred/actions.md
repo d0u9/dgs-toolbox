@@ -45,6 +45,12 @@ Installs an SSH private key, by default for logging in to one server.
 | Host name | — | Required with a Host entry: the server's IP address or domain. |
 | User | empty | Written as `User` when given. |
 | Port | empty | Written as `Port` when given; 1–65535. |
+| Jump host | empty | Written as `ProxyJump` when given, such as `bastion` or `alice@jump.example.com:2222`. |
+| Multiplex connections | unchecked | `ControlMaster auto`, `ControlPath ~/.ssh/cm-%C`, `ControlPersist 10m`: sessions share one connection, kept 10 minutes after the last closes. Unchecked writes `ControlMaster no` and `ControlPath none`, so a wider configuration cannot turn it on. |
+| Keep alive | unchecked | `ServerAliveInterval 60`, `ServerAliveCountMax 3`: drops a connection after about 3 minutes without replies. |
+| Forward agent | unchecked | `ForwardAgent yes`: the server can use the local ssh-agent. Use only for trusted servers. |
+| Compression | unchecked | `Compression yes`. |
+| True color | unchecked | `SetEnv COLORTERM=truecolor`. Applies only when the server's `sshd_config` has `AcceptEnv COLORTERM`. |
 | Add Include | checked | Shown only when `~/.ssh/config` does not already include `~/.ssh/config.d/*`. |
 
 `~/.ssh/keys` is the default because SSH tries keys with default names in
@@ -66,7 +72,13 @@ Writes:
       Port <port>
       IdentityFile <location>/<name>
       IdentitiesOnly yes
+      ControlMaster no
+      ControlPath none
   ```
+
+  plus the lines of each chosen option above; **Multiplex connections**
+  replaces the two `Control` lines. Host name, User and Jump host may not
+  contain spaces, line breaks or quotes.
 
   `IdentitiesOnly yes` makes SSH offer only this key, so many keys in the agent
   or in `~/.ssh` do not use up a server's authentication attempts.

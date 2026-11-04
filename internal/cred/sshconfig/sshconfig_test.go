@@ -12,7 +12,7 @@ func TestBlock(t *testing.T) {
 	if err := h.Check(); err != nil {
 		t.Fatal(err)
 	}
-	want := "Host server1\n    HostName 203.0.113.10\n    User root\n    Port 2222\n    IdentityFile ~/.ssh/keys/server1\n    IdentitiesOnly yes\n"
+	want := "Host server1\n    HostName 203.0.113.10\n    User root\n    Port 2222\n    IdentityFile ~/.ssh/keys/server1\n    IdentitiesOnly yes\n    ControlMaster no\n    ControlPath none\n"
 	if got := h.Block(); got != want {
 		t.Errorf("block:\n%s", got)
 	}
@@ -20,7 +20,22 @@ func TestBlock(t *testing.T) {
 	if strings.Contains(short, "User") || strings.Contains(short, "Port") {
 		t.Errorf("empty fields written:\n%s", short)
 	}
+	all := Host{Alias: "app", HostName: "h", IdentityFile: "/k", ProxyJump: "bastion", Multiplex: true, KeepAlive: true, ForwardAgent: true, Compression: true, TrueColor: true}.Block()
+	for _, line := range []string{"ProxyJump bastion", "ControlMaster auto", "ControlPath ~/.ssh/cm-%C", "ControlPersist 10m", "ServerAliveInterval 60", "ServerAliveCountMax 3", "ForwardAgent yes", "Compression yes", "SetEnv COLORTERM=truecolor"} {
+		if !strings.Contains(all, "    "+line+"\n") {
+			t.Errorf("missing %q:\n%s", line, all)
+		}
+	}
+	for _, opt := range []string{"ProxyJump", "ControlMaster auto", "ControlPersist", "ServerAlive", "ForwardAgent", "Compression", "SetEnv"} {
+		if strings.Contains(short, opt) {
+			t.Errorf("unchosen %s written:\n%s", opt, short)
+		}
+	}
 	for name, bad := range map[string]Host{
+		"jump":     {Alias: "a", HostName: "h", ProxyJump: "a b"},
+		"newline":  {Alias: "a", HostName: "h", ProxyJump: "j\n    ProxyCommand x"},
+		"return":   {Alias: "a", HostName: "h\rx"},
+		"userline": {Alias: "a", HostName: "h", User: "u\nx"},
 		"alias":    {Alias: ".hidden", HostName: "h"},
 		"spaces":   {Alias: "a b", HostName: "h"},
 		"hostname": {Alias: "a"},

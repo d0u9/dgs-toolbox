@@ -38,6 +38,12 @@ const (
 	fieldHostName = "hostname"
 	fieldUser     = "user"
 	fieldPort     = "port"
+	fieldJump     = "proxyjump"
+	fieldMux      = "multiplex"
+	fieldAlive    = "keepalive"
+	fieldFwdAgent = "forward_agent"
+	fieldCompress = "compression"
+	fieldColor    = "truecolor"
 	fieldInclude  = "include"
 	fieldLifetime = "lifetime"
 	fieldConfirm  = "confirm"
@@ -88,7 +94,7 @@ func (m vaultModel) visibleIDs() []string {
 			if flow.form.Value(fieldLocation) != otherLocation {
 				continue
 			}
-		case fieldHostName, fieldUser, fieldPort, fieldInclude:
+		case fieldHostName, fieldUser, fieldPort, fieldJump, fieldMux, fieldAlive, fieldFwdAgent, fieldCompress, fieldColor, fieldInclude:
 			if !flow.form.Checked(fieldHostOn) {
 				continue
 			}
@@ -152,6 +158,12 @@ func (m *vaultModel) chooseAction(action actions.Action) tea.Cmd {
 			{ID: fieldHostName, Kind: form.Text, Label: "Host name"},
 			{ID: fieldUser, Kind: form.Text, Label: "User"},
 			{ID: fieldPort, Kind: form.Text, Label: "Port"},
+			{ID: fieldJump, Kind: form.Text, Label: "Jump host (ProxyJump)"},
+			{ID: fieldMux, Kind: form.Checkbox, Label: "Multiplex connections (ControlMaster)"},
+			{ID: fieldAlive, Kind: form.Checkbox, Label: "Keep alive (ServerAliveInterval 60)"},
+			{ID: fieldFwdAgent, Kind: form.Checkbox, Label: "Forward agent"},
+			{ID: fieldCompress, Kind: form.Checkbox, Label: "Compression"},
+			{ID: fieldColor, Kind: form.Checkbox, Label: "True color (SetEnv COLORTERM=truecolor)"},
 		}
 		if actions.NeedsInclude(actionEnv(*m)) {
 			fields = append(fields, form.Field{ID: fieldInclude, Kind: form.Checkbox, Label: "Add Include ~/.ssh/config.d/* to ~/.ssh/config", Checked: true})
@@ -310,7 +322,7 @@ func (m vaultModel) focusedActionField() (form.Kind, bool) {
 	switch id {
 	case fieldRun:
 		return form.Button, true
-	case fieldInclude, fieldConfirm, fieldHostOn:
+	case fieldInclude, fieldConfirm, fieldHostOn, fieldMux, fieldAlive, fieldFwdAgent, fieldCompress, fieldColor:
 		return form.Checkbox, true
 	case fieldFolder:
 		return form.Path, true
@@ -342,10 +354,20 @@ func (m vaultModel) planAction() (tea.Model, tea.Cmd) {
 			break
 		}
 		plan, err = actions.PlanSSHInstall(flow.entry, actions.SSHInstallOptions{
-			Name:       m.value(fieldAlias),
-			KeyDir:     keyDir,
-			WriteHost:  flow.form.Checked(fieldHostOn),
-			Host:       sshconfig.Host{HostName: m.value(fieldHostName), User: m.value(fieldUser), Port: m.value(fieldPort)},
+			Name:      m.value(fieldAlias),
+			KeyDir:    keyDir,
+			WriteHost: flow.form.Checked(fieldHostOn),
+			Host: sshconfig.Host{
+				HostName:     m.value(fieldHostName),
+				User:         m.value(fieldUser),
+				Port:         m.value(fieldPort),
+				ProxyJump:    m.value(fieldJump),
+				Multiplex:    flow.form.Checked(fieldMux),
+				KeepAlive:    flow.form.Checked(fieldAlive),
+				ForwardAgent: flow.form.Checked(fieldFwdAgent),
+				Compression:  flow.form.Checked(fieldCompress),
+				TrueColor:    flow.form.Checked(fieldColor),
+			},
 			AddInclude: flow.form.Checked(fieldInclude),
 		}, env)
 	case actions.SSHConfig:
