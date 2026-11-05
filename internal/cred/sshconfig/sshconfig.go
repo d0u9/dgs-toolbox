@@ -28,6 +28,10 @@ type Host struct {
 	// ProxyJump reaches the server through another host, such as bastion or
 	// alice@jump.example.com:2222.
 	ProxyJump string
+	// ProxyCommand is a command line that connects to the server, for routes
+	// ProxyJump cannot take, such as through a SOCKS proxy. ssh expands %h and
+	// %p in it. It excludes ProxyJump: ssh would use only the first it reads.
+	ProxyCommand string
 	// Multiplex shares one connection among sessions to the server; it stays
 	// open for MultiplexPersist after the last session closes. Without it the
 	// block turns multiplexing off, overriding any wider configuration.
@@ -71,6 +75,10 @@ func (h Host) Check() error {
 		return fmt.Errorf("user %q has spaces, line breaks or quotes", h.User)
 	case strings.ContainsAny(h.ProxyJump, unsafeChars):
 		return fmt.Errorf("jump host %q has spaces, line breaks or quotes", h.ProxyJump)
+	case strings.ContainsAny(h.ProxyCommand, "\r\n"):
+		return fmt.Errorf("proxy command %q has line breaks", h.ProxyCommand)
+	case h.ProxyJump != "" && h.ProxyCommand != "":
+		return errors.New("give a jump host or a proxy command, not both")
 	}
 	if h.Port != "" {
 		if port, err := strconv.Atoi(h.Port); err != nil || port < 1 || port > 65535 {
@@ -94,6 +102,9 @@ func (h Host) Block() string {
 	fmt.Fprintf(&b, "    IdentityFile %s\n    IdentitiesOnly yes\n", h.IdentityFile)
 	if h.ProxyJump != "" {
 		fmt.Fprintf(&b, "    ProxyJump %s\n", h.ProxyJump)
+	}
+	if h.ProxyCommand != "" {
+		fmt.Fprintf(&b, "    ProxyCommand %s\n", h.ProxyCommand)
 	}
 	if h.Multiplex {
 		fmt.Fprintf(&b, "    ControlMaster auto\n    ControlPath %s\n    ControlPersist %s\n", MultiplexPath, MultiplexPersist)

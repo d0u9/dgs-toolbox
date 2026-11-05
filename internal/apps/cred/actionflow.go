@@ -39,6 +39,7 @@ const (
 	fieldUser     = "user"
 	fieldPort     = "port"
 	fieldJump     = "proxyjump"
+	fieldProxy    = "proxycommand"
 	fieldMux      = "multiplex"
 	fieldAlive    = "keepalive"
 	fieldFwdAgent = "forward_agent"
@@ -94,7 +95,7 @@ func (m vaultModel) visibleIDs() []string {
 			if flow.form.Value(fieldLocation) != otherLocation {
 				continue
 			}
-		case fieldHostName, fieldUser, fieldPort, fieldJump, fieldMux, fieldAlive, fieldFwdAgent, fieldCompress, fieldColor, fieldInclude:
+		case fieldHostName, fieldUser, fieldPort, fieldJump, fieldProxy, fieldMux, fieldAlive, fieldFwdAgent, fieldCompress, fieldColor, fieldInclude:
 			if !flow.form.Checked(fieldHostOn) {
 				continue
 			}
@@ -159,6 +160,7 @@ func (m *vaultModel) chooseAction(action actions.Action) tea.Cmd {
 			{ID: fieldUser, Kind: form.Text, Label: "User"},
 			{ID: fieldPort, Kind: form.Text, Label: "Port"},
 			{ID: fieldJump, Kind: form.Text, Label: "Jump host (ProxyJump)"},
+			{ID: fieldProxy, Kind: form.Text, Label: "Proxy command (ProxyCommand)"},
 			{ID: fieldMux, Kind: form.Checkbox, Label: "Multiplex connections (ControlMaster)"},
 			{ID: fieldAlive, Kind: form.Checkbox, Label: "Keep alive (ServerAliveInterval 60)"},
 			{ID: fieldFwdAgent, Kind: form.Checkbox, Label: "Forward agent"},
@@ -362,6 +364,7 @@ func (m vaultModel) planAction() (tea.Model, tea.Cmd) {
 				User:         m.value(fieldUser),
 				Port:         m.value(fieldPort),
 				ProxyJump:    m.value(fieldJump),
+				ProxyCommand: m.value(fieldProxy),
 				Multiplex:    flow.form.Checked(fieldMux),
 				KeepAlive:    flow.form.Checked(fieldAlive),
 				ForwardAgent: flow.form.Checked(fieldFwdAgent),
