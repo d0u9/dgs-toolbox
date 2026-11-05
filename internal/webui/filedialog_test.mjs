@@ -18,7 +18,7 @@ test('Open and Save expose the folder path through a keyboard-accessible button'
     const context=vm.createContext({document,URLSearchParams,
       localStorage:{getItem:()=> 'off'},
       ResizeObserver:class{observe(){}},
-      listTable:()=>({draw(){}}),iconSvg:()=>'',closeMenu(){},
+      listTable:()=>({draw(){}}),iconSvg:()=>'',closeMenu(){},textInput:()=>document.createElement('input'),
       fetch:async()=>({ok:true,json:async()=>({path:'/data',parent:'/',dirs:[{path:'/data/folder-a',name:'folder-a'}],files:[]})}),
     });
     const api=vm.runInContext(`(()=>{${code.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')}return {openFile,saveFile};})()`,context);
