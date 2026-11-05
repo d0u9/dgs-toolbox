@@ -422,11 +422,28 @@ func TestInspectExport_BundlePlan(t *testing.T) {
 	}
 }
 
+// exampleDefs is a definitions directory holding one invented service.
+func exampleDefs(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "example-web.yaml"), `binary:
+  name: example-web
+  release:
+    github: example/web
+    version: latest
+    url: web-{version}-{target}.tar.gz
+    targets:
+      linux/amd64: linux-amd64
+command: ["{bin}/example-web"]
+`)
+	return dir
+}
+
 func TestDescribeBundles(t *testing.T) {
-	files := []engine.File{{Path: "n/microbin/i/" + engine.ManifestFile, Bytes: []byte(
-		"schema: 1\nnode: n\ninstance: i\nservice: microbin\nruntime: host\nplatform: linux/amd64\n")}}
-	got, err := describeBundles(files, deploy.Options{Download: deploy.DownloadInstall})
-	if err != nil || got["n/microbin/i"] != "systemd · linux/amd64 · microbin latest release, downloaded on the machine" {
+	files := []engine.File{{Path: "n/example-web/i/" + engine.ManifestFile, Bytes: []byte(
+		"schema: 1\nnode: n\ninstance: i\nservice: example-web\nruntime: host\nplatform: linux/amd64\n")}}
+	got, err := describeBundles(files, deploy.Options{Services: exampleDefs(t), Download: deploy.DownloadInstall})
+	if err != nil || got["n/example-web/i"] != "systemd · linux/amd64 · example-web latest release, downloaded on the machine" {
 		t.Fatalf("describeBundles = %v, %v", got, err)
 	}
 }
@@ -442,10 +459,10 @@ func TestBundleDirs(t *testing.T) {
 }
 
 func TestDescribeBundles_NodeDownload(t *testing.T) {
-	files := []engine.File{{Path: "n/microbin/i/" + engine.ManifestFile, Bytes: []byte(
-		"schema: 1\nnode: n\ninstance: i\nservice: microbin\nruntime: host\nplatform: linux/amd64\ndownload: build\n")}}
-	got, err := describeBundles(files, deploy.Options{})
-	if err != nil || got["n/microbin/i"] != "systemd · linux/amd64 · microbin latest release, downloaded now" {
+	files := []engine.File{{Path: "n/example-web/i/" + engine.ManifestFile, Bytes: []byte(
+		"schema: 1\nnode: n\ninstance: i\nservice: example-web\nruntime: host\nplatform: linux/amd64\ndownload: build\n")}}
+	got, err := describeBundles(files, deploy.Options{Services: exampleDefs(t)})
+	if err != nil || got["n/example-web/i"] != "systemd · linux/amd64 · example-web latest release, downloaded now" {
 		t.Fatalf("describeBundles = %v, %v", got, err)
 	}
 }

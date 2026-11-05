@@ -27,7 +27,7 @@ Use dgs conf --targets to discover targets and configure conf.root/secrets.
 --bundle builds, under --to, one deploy bundle per matched instance with a
 manifest: ctl, compose.yaml and the rendered files. --download build fetches
 releases into the bundle now; install leaves it to ctl on the machine.
---services (default conf.services) names deploy definitions to prefer.
+--services (default conf.services) names the directory of deploy definitions.
 --install-root and --label-prefix (default conf.install_root, conf.label_prefix)
 set a Linux bundle's install root and the unit/launchd label prefix.
 Existing outputs require overwrite confirmation; scripts must use --overwrite.
@@ -46,8 +46,8 @@ Reads only the export, not conf.root or conf.secrets.
 --platform defaults to the manifest's, else this machine's os/arch.
 --bin bundles a local program instead of downloading a release.
 --download build fetches the release now; install leaves it to ctl install.
---services (default conf.services) names deploy definitions consulted before
-the built-in ones. --install-root (default conf.install_root, else /srv/rhumb)
+--services (default conf.services) names the directory of deploy definitions;
+a service without one there is refused. --install-root (default conf.install_root, else /srv/rhumb)
 is where a Linux bundle with no deploy.dir installs, as <root>/<service>.
 --label-prefix (default conf.label_prefix, else rhumb) begins the unit and
 launchd label. A bundle of the same instance built under another prefix is

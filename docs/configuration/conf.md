@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | `root` | The directory holding `services/` and the inventory files. | empty — the TUI page opens with no root and asks for one |
 | `secrets` | The root of the secrets tree, one file per credential. | empty — an instance needing a secret refuses to render |
-| `services` | A directory of deploy service definitions, one `<service>.yaml` each, consulted before the built-in ones when a bundle is built. The same as `rhumb deploy build --services`. | empty — only the built-in definitions |
+| `services` | A directory of deploy service definitions, one `<service>.yaml` each, that a bundle of a host instance is built from; none is built in. The same as `rhumb deploy build --services`. | empty — a host instance has no definition and its bundle is refused |
 | `install_root` | Where a Linux host bundle is installed when its instance writes no `deploy.dir`: `<install_root>/<service>`. A macOS bundle with no `deploy.dir` stays where it was unpacked. The same as `rhumb deploy build --install-root`. | empty — `/srv/rhumb` |
 | `label_prefix` | The start of the name the service manager knows an instance by, `<label_prefix>.<node>.<instance>`: the systemd unit and the launchd label and plist. Letters, digits, `-` and `_`. The same as `rhumb deploy build --label-prefix`. | empty — `rhumb` |
 | `tool` | Tool name in ctl comments, shim ownership markers and the capitalized `<Tool>Bundle` plist key. Letters, digits, `-` and `_`. Use the same name for build and bundle-gc. | empty — `dgs` |
