@@ -31,16 +31,28 @@ func TestBlock(t *testing.T) {
 			t.Errorf("unchosen %s written:\n%s", opt, short)
 		}
 	}
+	proxied := Host{Alias: "app", HostName: "h", IdentityFile: "/k", ProxyCommand: `ssh gateway nc -X 5 -x 127.0.0.1:1080 "%h" %p`}
+	if err := proxied.Check(); err != nil {
+		t.Errorf("proxy command refused: %v", err)
+	}
+	if got := proxied.Block(); !strings.Contains(got, "    ProxyCommand ssh gateway nc -X 5 -x 127.0.0.1:1080 \"%h\" %p\n") {
+		t.Errorf("proxy command not written as given:\n%s", got)
+	}
+	if strings.Contains(short, "ProxyCommand") {
+		t.Errorf("unchosen ProxyCommand written:\n%s", short)
+	}
 	for name, bad := range map[string]Host{
-		"jump":     {Alias: "a", HostName: "h", ProxyJump: "a b"},
-		"newline":  {Alias: "a", HostName: "h", ProxyJump: "j\n    ProxyCommand x"},
-		"return":   {Alias: "a", HostName: "h\rx"},
-		"userline": {Alias: "a", HostName: "h", User: "u\nx"},
-		"alias":    {Alias: ".hidden", HostName: "h"},
-		"spaces":   {Alias: "a b", HostName: "h"},
-		"hostname": {Alias: "a"},
-		"quote":    {Alias: "a", HostName: `h"x`},
-		"port":     {Alias: "a", HostName: "h", Port: "70000"},
+		"proxyline": {Alias: "a", HostName: "h", ProxyCommand: "nc %h %p\n    User x"},
+		"proxyboth": {Alias: "a", HostName: "h", ProxyJump: "j", ProxyCommand: "nc %h %p"},
+		"jump":      {Alias: "a", HostName: "h", ProxyJump: "a b"},
+		"newline":   {Alias: "a", HostName: "h", ProxyJump: "j\n    ProxyCommand x"},
+		"return":    {Alias: "a", HostName: "h\rx"},
+		"userline":  {Alias: "a", HostName: "h", User: "u\nx"},
+		"alias":     {Alias: ".hidden", HostName: "h"},
+		"spaces":    {Alias: "a b", HostName: "h"},
+		"hostname":  {Alias: "a"},
+		"quote":     {Alias: "a", HostName: `h"x`},
+		"port":      {Alias: "a", HostName: "h", Port: "70000"},
 	} {
 		if bad.Check() == nil {
 			t.Errorf("%s accepted", name)

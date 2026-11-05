@@ -101,6 +101,7 @@ func TestInstallSSHKeyFromVault(t *testing.T) {
 		m = keys(t, m, string(r))
 	}
 	m = keys(t, m, "enter", "esc")
+	m.action.form.SetValue(fieldProxy, "ssh gateway nc -X 5 -x 127.0.0.1:1080 %h %p")
 	m.action.form.SetFocusID(fieldMux)
 	m = keys(t, m, " ")
 	m.action.form.SetFocusID(fieldRun)
@@ -124,6 +125,9 @@ func TestInstallSSHKeyFromVault(t *testing.T) {
 	}
 	if !strings.Contains(string(conf), "ControlMaster auto") || strings.Contains(string(conf), "ControlMaster no") || strings.Contains(string(conf), "ServerAlive") {
 		t.Errorf("checked Multiplex alone not written: %q", conf)
+	}
+	if !strings.Contains(string(conf), "    ProxyCommand ssh gateway nc -X 5 -x 127.0.0.1:1080 %h %p\n") {
+		t.Errorf("proxy command not written: %q", conf)
 	}
 	if config, _ := os.ReadFile(filepath.Join(home, ".ssh", "config")); !strings.HasPrefix(string(config), "Include ~/.ssh/config.d/*") {
 		t.Errorf("config %q", config)
