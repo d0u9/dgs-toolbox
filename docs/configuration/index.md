@@ -155,7 +155,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [geo](geo.md) | `gpx.dem.max_zoom` | `15` |
 | [conf](conf.md) | `root` | empty — the TUI page opens with no root and asks for one |
 | [conf](conf.md) | `secrets` | empty — an instance needing a secret refuses to render |
-| [conf](conf.md) | `services` | empty — only the built-in definitions |
+| [conf](conf.md) | `services` | empty — no definitions; a host instance's bundle is refused |
 | [conf](conf.md) | `install_root` | empty — `/srv/rhumb` |
 | [conf](conf.md) | `label_prefix` | empty — `rhumb` |
 | [conf](conf.md) | `tool` | empty — `dgs` |

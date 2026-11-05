@@ -248,9 +248,8 @@ type Conf struct {
 	// Secrets is the directory a manifest's secrets file is named relative
 	// to. Empty means a service naming a secrets file refuses to render.
 	Secrets string `json:"secrets"`
-	// Services is a directory of deploy service definitions, consulted
-	// before the ones built into dgs when a bundle is built. Empty means
-	// only the built-in ones.
+	// Services is the directory of deploy service definitions a bundle is
+	// built from. Empty means no bundle of a host instance can be built.
 	Services string `json:"services"`
 	// InstallRoot is where a Linux host bundle whose instance names no
 	// deploy.dir is installed, as <install_root>/<service>. Empty means
