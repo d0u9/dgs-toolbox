@@ -14,7 +14,7 @@ Creates starting files without overwriting existing files.`,
 
 Examples:
   dgs conf export node:host-a --to /path/to/export
-  dgs conf export service:caddy --zip /path/to/export.zip
+  dgs conf export service:example-web --zip /path/to/export.zip
   dgs conf export user:alice export:link --to - --format yaml
   dgs conf export node:host-a --bundle --to /path/to/bundles
 
@@ -37,8 +37,8 @@ This renders configuration; it does not copy bundles or run deployment scripts.`
 	"bundle": `Build the deploy bundle for one exported instance, as rhumb deploy build does.
 
 Examples:
-  dgs conf bundle /path/to/export/node-1/microbin/node-1-microbin --to /path/to/bundle
-  dgs conf bundle /path/to/export/node-1/samba/node-1-samba --to /path/to/bundle --platform linux/arm64
+  dgs conf bundle /path/to/export/node-1/example-web/node-1-example-web --to /path/to/bundle
+  dgs conf bundle /path/to/export/node-1/example-share/node-1-example-share --to /path/to/bundle --platform linux/arm64
 
 The argument is one instance's export directory, holding its manifest.
 Reads only the export, not conf.root or conf.secrets.
