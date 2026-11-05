@@ -25,6 +25,19 @@ data in this repository, even temporarily or in an untracked or ignored file.**
   alternative. If private data is found, stop propagating it and report without
   quoting it. Deleting it in a later commit does not undo disclosure.
 
+## No concrete services — mandatory
+
+**`dgs` is a general tool. It does not know what its users deploy. Never add a
+concrete service to this repository: no deploy definition, shipped script,
+embedded asset or special case for a named program.**
+
+- The only exceptions are `examples/` and tests. Both stay synthetic, and
+  nothing in them is embedded in the binary.
+- Tests exercise `dgs` behavior, never the deployment of a specific service.
+  A test needing a service uses an invented definition.
+- Definitions a user deploys live in that user's configuration, read through
+  `conf.services`. Nothing falls back to a definition inside `dgs`.
+
 ## Project and scope
 
 - Go, Cobra, Bubble Tea; Bubbles and Lip Gloss when useful. `dgs` is the only
