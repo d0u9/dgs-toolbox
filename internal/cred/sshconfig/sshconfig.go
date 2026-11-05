@@ -34,7 +34,8 @@ type Host struct {
 	ProxyCommand string
 	// Multiplex shares one connection among sessions to the server; it stays
 	// open for MultiplexPersist after the last session closes. Without it the
-	// block turns multiplexing off, overriding any wider configuration.
+	// block turns multiplexing off, unless ssh has already read another value:
+	// the first value read wins.
 	Multiplex bool
 	// KeepAlive asks the server every KeepAliveInterval and drops a
 	// connection that misses KeepAliveCountMax replies.

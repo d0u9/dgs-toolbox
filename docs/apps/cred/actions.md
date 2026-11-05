@@ -47,7 +47,7 @@ Installs an SSH private key, by default for logging in to one server.
 | Port | empty | Written as `Port` when given; 1–65535. |
 | Jump host | empty | Written as `ProxyJump` when given, such as `bastion` or `alice@jump.example.com:2222`. |
 | Proxy command | empty | Written as `ProxyCommand` when given, for routes a jump host cannot take, such as `ssh gateway nc -X 5 -x 127.0.0.1:1080 %h %p` through a SOCKS proxy. Written as it is, apart from refusing line breaks; `dgs` does not run it. Give a jump host or a proxy command, not both. |
-| Multiplex connections | unchecked | `ControlMaster auto`, `ControlPath ~/.ssh/cm-%C`, `ControlPersist 10m`: sessions share one connection, kept 10 minutes after the last closes. Unchecked writes `ControlMaster no` and `ControlPath none`, so a wider configuration cannot turn it on. |
+| Multiplex connections | unchecked | `ControlMaster auto`, `ControlPath ~/.ssh/cm-%C`, `ControlPersist 10m`: sessions share one connection, kept 10 minutes after the last closes. Unchecked writes `ControlMaster no` and `ControlPath none`. SSH keeps the first value it reads and `config.d/*` is read in name order, so these lines lose to a `Host *` that comes earlier, such as one in a file whose name sorts first. |
 | Keep alive | unchecked | `ServerAliveInterval 60`, `ServerAliveCountMax 3`: drops a connection after about 3 minutes without replies. |
 | Forward agent | unchecked | `ForwardAgent yes`: the server can use the local ssh-agent. Use only for trusted servers. |
 | Compression | unchecked | `Compression yes`. |
