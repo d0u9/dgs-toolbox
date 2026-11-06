@@ -145,6 +145,32 @@ counted per participating interface and scope, so several IPs on one interface
 are not duplicate MAC owners. References never create another owner. Subnet,
 reference and DNS conflict checks report the authored sources.
 
+## Conflict checking
+
+`dgs conf --check` and migration previews use rhumb's shared validator. Explicit
+listener IPs are normalized before comparison. A wildcard and a specific bind
+of the same IP family conflict on the same node, port and protocol. Containers
+are checked against their derived host mappings; ports with no host mapping
+claim no host listener. Empty binds retain service-default semantics, including
+the existing duplicate-empty-bind check; no default listener or cross-family
+IPv6 socket behavior is inferred.
+
+Fixed container addresses and gateways compare normalized IPs. Members of one
+declared process share one container address claim and must agree on the fixed
+address, or runtime allocation, on every joined network. Independent containers
+cannot claim the same address on one node's container network. Each runtime
+owner is counted once per normalized address, even when another owner already
+claims it, so additional members do not repeat that conflict in the report.
+
+A container subnet must not overlap another container network on the same node.
+It is not compared with host-interface subnets: the host interface may be the
+gateway interface of that same container bridge. The current model cannot
+distinguish this from an independent conflicting network; checks between those
+scopes remain undecided.
+
+These checks inspect authored and derived values; they do not probe a running
+service, apply network settings or load any bundled deployment definition.
+
 ## DNS layers
 
 The DNS chain is service name → device name → interface name → IP. Interface
@@ -183,6 +209,12 @@ missing internal targets, cycles and chains beyond 8 CNAME hops are errors.
 Explicit domain endpoints can terminate outside the inventory. `flatnames`
 refuses such chains without querying DNS.
 DNS names compare case-insensitively with a final dot ignored.
+
+Identical records requested by different published ports merge into one record;
+repeating a name inside one port is an error. Physical-network aliases and
+interface/device names do not enter container tables. Rule 30 isolates DNS tables
+by network, but rule 18 separately restricts primary published names (the first
+entry) globally, including across nodes whose networks are different.
 
 Templates choose their backend: `names "home"` returns `.Name`, `.Type`, `.Value`
 and `.Source` records (`A`, `AAAA`, `CNAME`); `flatnames "home"` resolves chains to
