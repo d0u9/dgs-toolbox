@@ -65,6 +65,15 @@ existing machine moves continue to work on the current model.
 | One interface with multiple IPs | Valid static addresses; no duplicate-MAC error |
 | One MAC/network reserves two IPs | Rejected before output |
 | Different interfaces duplicate a MAC or address | Owner-specific conflict |
+| Equivalent IPv6 bind/gateway spellings | Same address is recognized before conflict checking |
+| Same-family wildcard and specific listener | Conflict for the same host port/protocol; TCP and UDP remain separate |
+| Process members share a fixed container IP | One runtime owner; no conflict with their derived process instance |
+| Process members disagree on fixed/dynamic container addresses | Rejected as inconsistent process configuration |
+| Host interface records the container bridge gateway | Check and migration preview remain valid; overlapping prefixes alone are not an error |
+| Independent instance conflicts with a process that has several members | One address-conflict report, regardless of member ordering |
+| Node rename with a shared container process and no routes file | Preview, staged validation, apply and export agree; member references use the new node ID |
+| Process member rename, alone or with a node rename | Process, route and dial references follow the renamed member; original snapshots stay unchanged; apply and export succeed |
+| Equivalent endpoint IPs plus a distinct endpoint IP | Exported manifest contains normalized, deduplicated bindings and retains the distinct address |
 | MAC-only interface | No invented IP, DNS record or reservation |
 | IP-only device | Valid without names or reservation |
 | Domain-only endpoint | Optional device name references endpoint; services CNAME to device then external domain; no invented interface or lookup |
