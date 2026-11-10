@@ -22,7 +22,7 @@ var openURL = desktop.Open
 var discardNow = time.Now
 
 // routeMapServices are the links the map row carries, in the order written.
-const routeMapServices = "Apple, Google, 高德"
+const routeMapServices = "Apple, Google, Amap"
 
 // positionInUse is the position a map is offered for: the Capture's resolved
 // position, when the Recipe chosen for it has an enabled Action that writes it.
@@ -93,13 +93,13 @@ func (m routeModel) placeLabel() string {
 	return ctx.String(organizer.FieldPlaceName)
 }
 
-// mapLinksText is the map row's value: each service's short name, linked to
+// mapLinksText is the map row's value: each service's English name, linked to
 // the position, so a terminal that follows links opens it with a click.
 func mapLinksText(position organizer.Position, label string) string {
 	links := mapLinks(position, label, routeMapServices)
 	parts := make([]string, 0, len(links))
 	for _, link := range links {
-		parts = append(parts, ansi.SetHyperlink(link.URL)+link.Short+ansi.ResetHyperlink())
+		parts = append(parts, ansi.SetHyperlink(link.URL)+link.English+ansi.ResetHyperlink())
 	}
 	return strings.Join(parts, " · ")
 }
@@ -113,21 +113,121 @@ func (m routeModel) toggleDiscard() routeModel {
 		return m
 	}
 	discarded := !entry.record.Discarded()
+	_, _, organizedAt := captureGroups(m.entries)
+	row := m.captures.Cursor()
+	previous := entry.record.Discard
 	record, err := organizer.SetDiscard(entry.path, discarded, discardNow())
 	if err != nil {
 		m.notice = failed(entry.name + ": " + err.Error())
 		return m
 	}
-	for index := range m.entries {
-		if m.entries[index].path == entry.path {
-			m.entries[index].record = record
-		}
-	}
+	m.setRecord(entry.path, record)
+	m.history = append(m.history, routeStep{path: entry.path, name: entry.name, marked: true, previous: previous})
 	if discarded {
 		m.notice = moveNotice{text: "✕ " + entry.name + " marked to discard — Archive will reject, not archive, it"}
 	} else {
 		m.notice = moveNotice{text: entry.name + " no longer marked to discard"}
 	}
 	m.refresh()
+	m.settleAfterDiscard(entry, discarded, row-organizedAt)
 	return m
+}
+
+// settleAfterDiscard puts the cursor where the reader goes on from, once a
+// mark has moved the Capture into another group. Marking one takes it out of
+// what the reader is walking through, so the cursor stays there: from the work
+// it moves on as a run does, to the top of what is left; from the organized
+// ones, to the Capture that took its place. Taking a mark back is done to work
+// on the Capture, so the cursor goes with it.
+func (m *routeModel) settleAfterDiscard(entry captureEntry, discarded bool, organizedRow int) {
+	if !discarded {
+		return
+	}
+	if !entry.organized {
+		m.advanceToNextPending(entry)
+		m.refresh()
+		return
+	}
+	ordered, _, organizedAt := captureGroups(m.entries)
+	if organizedAt < len(ordered) {
+		m.captures.SelectID("capture:" + ordered[organizedAt+min(max(0, organizedRow), len(ordered)-organizedAt-1)].path)
+		m.refresh()
+	}
+}
+
+// routeStep is one change `u` takes back: a discard mark set or taken back, or
+// a Selection cleared. A run is not one: what it wrote into notes stays.
+type routeStep struct {
+	path, name string
+	// marked is a discard mark changed; previous is the mark it replaced,
+	// nil when there was none.
+	marked   bool
+	previous *organizer.Discard
+	// cleared is the Selection `c` dropped.
+	cleared *organizer.Selection
+}
+
+func (m *routeModel) setRecord(path string, record organizer.Record) {
+	for index := range m.entries {
+		if m.entries[index].path == path {
+			m.entries[index].record = record
+		}
+	}
+}
+
+// undo takes the last step back and puts the cursor on its Capture, wherever
+// the step moved it: a mark sends a Capture under another rule, and finding it
+// again is what undoing is for. A Capture no longer in the root — filed by
+// Archive since — cannot be stepped back and is named.
+func (m routeModel) undo() routeModel {
+	if len(m.history) == 0 {
+		m.notice = failed("Nothing to undo")
+		return m
+	}
+	step := m.history[len(m.history)-1]
+	m.history = m.history[:len(m.history)-1]
+	present := false
+	for _, entry := range m.entries {
+		present = present || entry.path == step.path
+	}
+	if !present {
+		m.notice = failed(step.name + " is no longer in the Capture root")
+		return m
+	}
+	switch {
+	case step.marked:
+		at := discardNow()
+		if step.previous != nil {
+			if parsed, err := time.Parse(time.RFC3339, step.previous.DiscardedAt); err == nil {
+				at = parsed
+			}
+		}
+		record, err := organizer.SetDiscard(step.path, step.previous != nil, at)
+		if err != nil {
+			m.notice = failed(step.name + ": " + err.Error())
+			return m
+		}
+		m.setRecord(step.path, record)
+		if step.previous != nil {
+			m.notice = moveNotice{text: "↶ " + step.name + " marked to discard again"}
+		} else {
+			m.notice = moveNotice{text: "↶ " + step.name + " no longer marked to discard"}
+		}
+	case step.cleared != nil:
+		m.selections[step.path] = *step.cleared
+		m.notice = moveNotice{text: "↶ " + step.name + " has its Selection back"}
+	}
+	m.refresh()
+	m.captures.SelectID("capture:" + step.path)
+	m.fields.Set(routeCapturesField)
+	m.refresh()
+	return m
+}
+
+// undoHint offers `u` only when there is a step to take back.
+func (m routeModel) undoHint() string {
+	if len(m.history) > 0 {
+		return "  u Undo"
+	}
+	return ""
 }

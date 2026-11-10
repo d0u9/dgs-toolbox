@@ -415,7 +415,9 @@ is left out rather than guessed at. `CopyLink` takes the vault command that
 puts a position on the clipboard; with no argument the position is written
 unlinked.
 
-The services, by name and short name: `Apple 地图` / `Apple`, `高德地图` /
-`高德`, `Google 地图` / `Google`, `百度地图` / `百度`, `OpenStreetMap` / `OSM`.
+The services, by name, short name and English name: `Apple 地图` / `Apple`,
+`高德地图` / `高德` / `Amap`, `Google 地图` / `Google`, `百度地图` / `百度` /
+`Baidu`, `OpenStreetMap` / `OSM`. A note writes the short name; the TUI shows
+the English one.
 Coordinates are handed to every service as WGS-84, which is what a device
 records; the Chinese services are told the source system and convert.

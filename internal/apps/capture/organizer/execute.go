@@ -428,6 +428,17 @@ func FormatTimestamp(value string) string {
 	return created.Format("2006-01-02 15:04:05") + " " + timestampOffset(created)
 }
 
+// FormatTimestampDay is FormatTimestamp with the day of the week after the
+// date, in English as the TUI is: 2026-09-09 Wed 21:31:22 +10. A list of
+// Captures is read by day as much as by date.
+func FormatTimestampDay(value string) string {
+	created, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return FormatTimestamp(value)
+	}
+	return created.Format("2006-01-02 Mon 15:04:05") + " " + timestampOffset(created)
+}
+
 func timestampOffset(created time.Time) string {
 	_, seconds := created.Zone()
 	if seconds == 0 {

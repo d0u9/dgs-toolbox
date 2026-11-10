@@ -110,7 +110,7 @@ func TestRouteWorkspaceShowsTheFourOrganizerColumns(t *testing.T) {
 	m := loadedRoute(t, root)
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"CAPTURES", "RECIPES", "ACTIONS", "FIELDS", "2026-09-09 16:34:35 +10", "Shortcut · been_here", "Location + Daily"} {
+	for _, want := range []string{"CAPTURES", "RECIPES", "ACTIONS", "FIELDS", "2026-09-09 Wed 16:34:35 +10", "Shortcut · been_here", "Location + Daily"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Route workspace is missing %q:\n%s", want, view)
 		}
@@ -439,10 +439,10 @@ func TestRouteClearingACaptureDropsTheWholeSelection(t *testing.T) {
 	m := chooseRecipe(t, loadedRoute(t, root), "Location")
 	m.fields.Set(routeCapturesField)
 
-	updated, _ := m.updateCaptures("u")
+	updated, _ := m.updateCaptures("c")
 	m = updated.(routeModel)
 	if len(m.selections) != 0 {
-		t.Fatalf("u did not clear the selection: %v", m.selections)
+		t.Fatalf("c did not clear the selection: %v", m.selections)
 	}
 	if item, _ := m.captures.Selected(); !strings.HasPrefix(item.Label, "○ ") {
 		t.Fatalf("cleared capture row = %q, want the unchosen marker", item.Label)
@@ -514,6 +514,25 @@ func TestRouteEditsAMultilineFieldInAnOverlay(t *testing.T) {
 	selection, _, ok := m.currentSelection()
 	if !ok || !strings.Contains(fmt.Sprint(selection.Enrichment[organizer.FieldContent]), "second line") {
 		t.Fatalf("multiline enrichment = %v", selection.Enrichment)
+	}
+
+	// Resolved, the note leads the time; ctrl+x empties it in the overlay.
+	var resolved []organizer.FieldID
+	for _, row := range m.fieldRows {
+		if !row.missing && !row.parameter && !row.mapLinks {
+			resolved = append(resolved, row.requirement.Field)
+		}
+	}
+	if len(resolved) < 2 || resolved[0] != organizer.FieldContent {
+		t.Fatalf("resolved rows = %v, want the note first", resolved)
+	}
+	m = focusField(t, m, organizer.FieldContent)
+	updated, _ = m.updateFields("enter")
+	m = updated.(routeModel)
+	updated, _ = m.updateNote(tea.KeyMsg{Type: tea.KeyCtrlX})
+	m = updated.(routeModel)
+	if !m.editingNote || m.note.Value() != "" {
+		t.Fatalf("ctrl+x: editing %v, value %q", m.editingNote, m.note.Value())
 	}
 }
 
@@ -610,7 +629,7 @@ func TestRouteCaptureRowsUseIndexIdentityNotFolderName(t *testing.T) {
 			Source:    indexschema.Source{App: "app1", Workflow: "wf"},
 		},
 	}
-	if got, want := routeCaptureLabel(entry), "2026-10-10 12:23:24 +11"; got != want {
+	if got, want := routeCaptureLabel(entry), "2026-10-10 Sat 12:23:24 +11"; got != want {
 		t.Fatalf("label = %q, want %q", got, want)
 	}
 	if got, want := routeCaptureDetail(entry), "app1 · wf"; got != want {
@@ -618,12 +637,12 @@ func TestRouteCaptureRowsUseIndexIdentityNotFolderName(t *testing.T) {
 	}
 
 	entry.index.CreatedAt = "2026-10-10T12:23:24+05:30"
-	if got, want := routeCaptureLabel(entry), "2026-10-10 12:23:24 +5:30"; got != want {
+	if got, want := routeCaptureLabel(entry), "2026-10-10 Sat 12:23:24 +5:30"; got != want {
 		t.Fatalf("half-hour offset label = %q, want %q", got, want)
 	}
 
 	entry.index.CreatedAt = "2026-10-10T12:23:24Z"
-	if got, want := routeCaptureLabel(entry), "2026-10-10 12:23:24 Z"; got != want {
+	if got, want := routeCaptureLabel(entry), "2026-10-10 Sat 12:23:24 Z"; got != want {
 		t.Fatalf("UTC label = %q, want %q", got, want)
 	}
 
@@ -764,7 +783,7 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 	reloaded, _ := m.Update(loadCaptures(root, "index.json")())
 	m = reloaded.(routeModel)
 
-	ordered, boundary := orderByOrganized(m.entries)
+	ordered, _, boundary := captureGroups(m.entries)
 	if boundary != 1 || ordered[0].name != "beta" || ordered[1].name != "alpha" {
 		t.Fatalf("ordering = %v, boundary = %d, want the organized capture last", ordered, boundary)
 	}
@@ -1337,6 +1356,12 @@ func TestRouteParametersAreListedAndOverridable(t *testing.T) {
 	}
 	updated, _ := m.updateFields("enter")
 	m = updated.(routeModel)
+	// ctrl+x empties the editor and leaves it open.
+	updated, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyCtrlX})
+	m = updated.(routeModel)
+	if !m.editing || m.editor.Value() != "" {
+		t.Fatalf("ctrl+x: editing %v, value %q", m.editing, m.editor.Value())
+	}
 	m.editor.SetValue("今日活动")
 	updated, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(routeModel)
@@ -1527,7 +1552,7 @@ func TestRouteTabFollowsWhatIsSelectable(t *testing.T) {
 	}
 
 	// Clearing it takes them out again, from wherever the focus happens to be.
-	updated, _ := m.updateCaptures("u")
+	updated, _ := m.updateCaptures("c")
 	m = updated.(routeModel)
 	m.fields.Set(routeFieldsField)
 	m.cycleFields(true)
@@ -1959,5 +1984,86 @@ func TestRouteStatusNamesTheFolderOnly(t *testing.T) {
 	m = chooseRecipe(t, m, "Daily")
 	if center := m.Status().Center; center != "alpha → Daily" {
 		t.Errorf("status = %q", center)
+	}
+}
+
+// A Capture marked to discard is decided, so Route keeps it out of the way of
+// the work: under its own rule, after the Captures still to handle.
+func TestRouteListsDiscardedCapturesAfterTheWork(t *testing.T) {
+	root := routeTestRoot(t, "a", "b", "c")
+	if _, err := organizer.SetDiscard(filepath.Join(root, "a"), true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedRoute(t, root)
+	var order []string
+	for index := 0; ; index++ {
+		item, ok := m.captures.ItemAt(index)
+		if !ok {
+			break
+		}
+		order = append(order, filepath.Base(strings.TrimPrefix(item.ID, "capture:")))
+	}
+	if strings.Join(order, ",") != "b,c,a" {
+		t.Fatalf("order = %v, want the work first", order)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "◆ DISCARD") {
+		t.Fatalf("no DISCARD rule:\n%s", view)
+	}
+}
+
+// A mark moves the Capture into another group; the cursor stays with what the
+// reader was walking through. From the work it moves on as a run does, to the
+// top of what is left; from the organized ones, to the one that took its
+// place. Taking a mark back goes with the Capture, and a Capture marked to
+// discard is not run.
+func TestRouteDiscardMovesTheCursorAsARunDoes(t *testing.T) {
+	root := routeTestRoot(t, "a", "b", "c", "d", "e")
+	for _, name := range []string{"d", "e"} {
+		run := organizer.Run{OrganizedAt: "2026-09-09T21:00:00+10:00", Recipe: "quick_note", RecipeName: "Quick Note",
+			Actions: []organizer.RecordedAction{{Action: "obsidian.daily.append", Target: "Daily/2026-09-09.md", Executed: true}}}
+		if _, err := organizer.AppendRun(filepath.Join(root, name), run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := loadedRoute(t, root)
+	selected := func() string {
+		item, _ := m.captures.Selected()
+		return filepath.Base(strings.TrimPrefix(item.ID, "capture:"))
+	}
+	selectName := func(name string) {
+		m.captures.SelectID("capture:" + filepath.Join(root, name))
+		m.refresh()
+	}
+
+	selectName("b")
+	m = routeKey(t, m, "d")
+	if got := selected(); got != "a" {
+		t.Fatalf("after marking from the work, cursor = %s, want the top of what is left", got)
+	}
+	if ready, blocked := m.readyCount(); ready+blocked != 4 {
+		t.Fatalf("ready %d + blocked %d: a capture marked to discard is still counted", ready, blocked)
+	}
+
+	selectName("d")
+	m = routeKey(t, m, "d")
+	if got := selected(); got != "e" {
+		t.Fatalf("after marking an organized one, cursor = %s, want the one that took its place", got)
+	}
+
+	selectName("b")
+	m = routeKey(t, m, "d")
+	if got := selected(); got != "b" {
+		t.Fatalf("after taking the mark back, cursor = %s, want the capture itself", got)
+	}
+
+	selectName("d")
+	m = chooseRecipe(t, m, "Daily")
+	m.fields.Set(routeCapturesField)
+	m = routeKey(t, m, "x")
+	if m.running || !m.notice.bad || !strings.Contains(m.notice.text, "Marked to discard") {
+		t.Fatalf("running a capture marked to discard: running %v, notice %+v", m.running, m.notice)
+	}
+	if subtitle, ready := m.runReadiness(); ready || subtitle != "Marked to discard" {
+		t.Fatalf("run button = %q, %v; want it dark and saying why", subtitle, ready)
 	}
 }

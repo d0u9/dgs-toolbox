@@ -68,8 +68,9 @@ CAPTURES              CAPTURE                             ARCHIVE
   `CAPTURES` list extends down to the same compact `CAPTURE ROOT` control
   pinned to the workspace bottom, opening the same directory-only File Explorer
   overlay. The list is arranged as Route arranges it — the Captures still to
-  organize first, then a labelled `ORGANIZED` rule — because only the run below
-  the rule can be archived.
+  organize, then a `DISCARD` rule and the ones marked to discard, then an
+  `ORGANIZED` rule — so a Capture sits in the same place in both, and only the
+  run below the last rule can be archived.
 - The right column is the two destinations, `ARCHIVE` above and `REJECT` below,
   each naming its folder and then listing what that folder holds. The folder is
   written above the list rather than put in a control: it is configuration, so
@@ -91,8 +92,10 @@ CAPTURES              CAPTURE                             ARCHIVE
   one and arriving in the other. That is the whole state of the session: it
   keeps no marks of its own, because nothing is pending.
 - A Capture marked to discard in Route — see [`route.md`](route.md) — carries
-  `✕` and leads its group in `CAPTURES`, and the centre pane says when it was
-  marked. It is the one decision already made, waiting on a keystroke. It is
+  `✕` and sits under the `DISCARD` rule in `CAPTURES`, and the centre pane
+  says when it was marked. They are the decisions already made, gathered so
+  `Backspace` rejects one after another: the cursor stays where the rejected
+  one was. It is
   refused the archive, as one nobody organized is, and its `Archive` control
   reads `Discard`: keeping it would file a mistake with the Captures that were
   handled. `Backspace` rejects it; taking the mark back in Route is how it is
@@ -125,6 +128,20 @@ CAPTURES              CAPTURE                             ARCHIVE
   else in this session is typed with a modifier, and a Shift that is on by
   accident should not turn the one key that files a Capture into nothing at
   all. `R` refreshes, as it does in every Capture session.
+- `D` rejects every Capture marked to discard at once, from any column. It is
+  the one move that asks first — `REJECT ALL` in the status bar, `Enter` to go
+  on and any other key to leave them — because it moves many Captures with one
+  key. Each is moved as `Backspace` would move it; one that cannot move stays
+  and is named, and the rest still go. The hint offers `D` only while
+  something is marked.
+- `u` takes the last step back, from any column: a Capture archived, rejected
+  or restored goes back where it came from, and every Capture one `D` moved
+  goes back together. `u` again goes a step further back, for as long as the
+  session has steps; undoing is not itself a step. A Capture moved or removed
+  outside the session since stays and is named, and the rest still go back.
+  The hint offers `u` only while there is a step to take back.
+- Every move reads the Capture root back, so Scan and Route stop offering a
+  Capture that has left it, and list one that has come back.
 - `ARCHIVE` and `REJECT`: the same movement keys, and `R` returns the Capture
   under the cursor to the Capture root. A move is taken back where it landed,
   which is the row the reader is looking at when they decide it was wrong. It

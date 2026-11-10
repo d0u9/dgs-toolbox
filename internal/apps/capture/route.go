@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -124,6 +125,8 @@ type routeModel struct {
 	fields           datafield.Navigator
 	loadError        string
 	invalid          []invalidCapture
+	// history is what `u` takes back, most recent last.
+	history []routeStep
 	// notice is what became of the last discard mark or map, said in the status bar
 	// where it was asked for and cleared by the next keystroke.
 	notice    moveNotice
@@ -721,7 +724,7 @@ func (m routeModel) noteOverlay() string {
 	if row, ok := m.focusedFieldRow(); ok {
 		legend = strings.ToUpper(row.requirement.Label)
 	}
-	body := m.note.View() + "\n" + scanMutedStyle.Render("ctrl+s Commit  esc Cancel")
+	body := m.note.View() + "\n" + scanMutedStyle.Render("ctrl+s Commit  ctrl+x Clear  esc Cancel")
 	return fieldset.View(legend, body, m.note.Width()+4)
 }
 
@@ -762,14 +765,14 @@ func (m routeModel) Status() tui.Status {
 		return tui.Status{Left: "RUN", Center: center, Right: "esc Close"}
 	}
 	if m.editingNote {
-		return tui.Status{Left: "EDIT", Center: center, Right: "ctrl+s Commit  esc Cancel"}
+		return tui.Status{Left: "EDIT", Center: center, Right: "ctrl+s Commit  ctrl+x Clear  esc Cancel"}
 	}
 	if m.editing {
-		return tui.Status{Left: "EDIT", Center: center, Right: "↵ Commit  esc Cancel"}
+		return tui.Status{Left: "EDIT", Center: center, Right: "↵ Commit  ctrl+x Clear  esc Cancel"}
 	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  d Discard" + m.mapHint() + "  u Clear  v View  R Refresh"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  d Discard" + m.mapHint() + "  c Clear" + m.undoHint() + "  v View  R Refresh"}
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
@@ -851,6 +854,9 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "d" {
 		return m.toggleDiscard(), nil
+	}
+	if key == "u" {
+		return m.undo(), m.loadAttachment()
 	}
 	if key == "v" {
 		m.view.Toggle()
@@ -951,13 +957,16 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
 		m.fields.Set(routeRecipesField)
-	case "u":
+	case "c":
 		// Clearing drops the whole Selection: recipe, enabled set, and the
 		// values supplied under it. Backspace does not do this: it walks back a
 		// column everywhere else, and one key with two meanings on one screen
-		// is how a Selection gets cleared by accident.
+		// is how a Selection gets cleared by accident. `u` gives it back.
 		if entry, ok := m.selectedCapture(); ok {
-			delete(m.selections, entry.path)
+			if selection, had := m.selections[entry.path]; had {
+				m.history = append(m.history, routeStep{path: entry.path, name: entry.name, cleared: &selection})
+				delete(m.selections, entry.path)
+			}
 		}
 	}
 	m.pendingGG = false
@@ -1092,6 +1101,9 @@ func (m routeModel) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelEdit()
 		m.refresh()
 		return m, nil
+	case "ctrl+x":
+		m.editor.Reset()
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.editor, cmd = m.editor.Update(msg)
@@ -1105,6 +1117,10 @@ func (m routeModel) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.cancelEdit()
 		m.refresh()
+		return m, nil
+	case "ctrl+x":
+		// A note is often rewritten rather than edited: one key empties it.
+		m.note.Reset()
 		return m, nil
 	case "ctrl+s":
 		m.commitEdit(strings.TrimSpace(m.note.Value()))
@@ -1152,6 +1168,12 @@ func (m *routeModel) cancelEdit() {
 func (m routeModel) run() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedCapture()
 	if !ok {
+		return m, nil
+	}
+	// One marked to discard goes to Archive's reject; writing it into notes
+	// first would leave there what is being thrown away.
+	if entry.record.Discarded() {
+		m.notice = failed("Marked to discard — take the mark back with d to run it")
 		return m, nil
 	}
 	selection, recipe, ok := m.currentSelection()
@@ -1248,13 +1270,11 @@ func (m *routeModel) markOrganized(path string, record organizer.Record) {
 // and have to be stepped past every time.
 func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	m.rebuildCaptureItems()
-	ordered, boundary := orderByOrganized(m.entries)
-	pending := ordered[:boundary]
+	ordered, discardAt, _ := captureGroups(m.entries)
+	pending := ordered[:discardAt]
 
-	// A Capture marked to discard is decided already: it waits for Archive,
-	// not for a Recipe, so the cursor never lands on one.
 	for _, entry := range pending {
-		if entry.path == organized.path || entry.record.Discarded() {
+		if entry.path == organized.path {
 			continue
 		}
 		if len(m.recipeSet.Find(captureFor(entry), m.settings)) == 0 {
@@ -1266,7 +1286,7 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	// Everything left is unorganizable, so land on it anyway rather than
 	// leaving the cursor on a Capture that has just moved below the rule.
 	for _, entry := range pending {
-		if entry.path != organized.path && !entry.record.Discarded() {
+		if entry.path != organized.path {
 			m.captures.SelectID("capture:" + entry.path)
 			return
 		}
@@ -1424,6 +1444,11 @@ func (m *routeModel) pruneSelections() {
 // including a Capture with no Recipe yet.
 func (m routeModel) readyCount() (ready int, blocked int) {
 	for _, entry := range m.entries {
+		// A Capture marked to discard is decided: it is neither ready nor
+		// blocked, and running it is refused.
+		if entry.record.Discarded() {
+			continue
+		}
 		if entry.organized {
 			ready++
 			continue
@@ -1479,7 +1504,7 @@ func (m *routeModel) rebuildCaptureItems() {
 	if item, ok := m.captures.Selected(); ok {
 		selected = item.ID
 	}
-	ordered, boundary := orderByOrganized(m.entries)
+	ordered, discardAt, organizedAt := captureGroups(m.entries)
 	items := make([]scrolllist.Item, 0, len(ordered))
 	for _, entry := range ordered {
 		detail := m.view.Detail(entry)
@@ -1506,7 +1531,7 @@ func (m *routeModel) rebuildCaptureItems() {
 		})
 	}
 	m.captures.SetItems(items)
-	m.captures.SetDivider(boundary, "ORGANIZED")
+	m.captures.SetDividers(captureSections(len(ordered), discardAt, organizedAt))
 	if selected != "" {
 		m.captures.SelectID(selected)
 	}
@@ -1605,6 +1630,11 @@ func (m *routeModel) rebuildFieldRows() {
 			missing:     true,
 		})
 	}
+	// The note leads what is resolved: it is what the reader checks and
+	// rewrites, where the time and the place are only confirmed.
+	sort.SliceStable(resolved, func(i, j int) bool {
+		return resolved[i].Requirement.Field == organizer.FieldContent && resolved[j].Requirement.Field != organizer.FieldContent
+	})
 	for _, state := range resolved {
 		m.fieldRows = append(m.fieldRows, routeFieldRow{
 			requirement: state.Requirement,
@@ -1714,6 +1744,9 @@ func (m routeModel) runActions(width int) string {
 // quiet and says what that is, so the button answers "can I run this yet?"
 // without the reader opening the dialog to find out.
 func (m routeModel) runReadiness() (subtitle string, ready bool) {
+	if entry, ok := m.selectedCapture(); ok && entry.record.Discarded() {
+		return "Marked to discard", false
+	}
 	selection, recipe, chosen := m.currentSelection()
 	if !chosen {
 		return "Choose a recipe", false
@@ -2047,7 +2080,7 @@ func (m routeModel) leftColumn(width int) string {
 	} else if len(m.entries) == 0 && len(m.invalid) == 0 {
 		content = fitHeight(scanMutedStyle.Render("· No captures found"), listHeight-2, width-4)
 	}
-	list := fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == routeCapturesField)
+	list := fieldset.ViewFocused(capturesLegend(m.entries, width), content, width, m.fields.Current() == routeCapturesField)
 	return list + "\n" + m.rootControl.Fieldset(width, m.fields.Current() == routeRootField)
 }
 

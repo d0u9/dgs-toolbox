@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -44,7 +45,7 @@ func (v captureView) Label(entry captureEntry) string {
 // questions would send the reader across for every Capture.
 func (v captureView) Detail(entry captureEntry) string {
 	if v.byFolder {
-		if created := organizer.FormatTimestamp(entry.index.CreatedAt); created != "" {
+		if created := organizer.FormatTimestampDay(entry.index.CreatedAt); created != "" {
 			return created
 		}
 		return routeCaptureDetail(entry)
@@ -64,7 +65,7 @@ func (v captureView) Name() string {
 // on—when it was taken—rather than by its directory name, which carries no
 // meaning for the operator. The folder path remains available in the status bar.
 func routeCaptureLabel(entry captureEntry) string {
-	if created := organizer.FormatTimestamp(entry.index.CreatedAt); created != "" {
+	if created := organizer.FormatTimestampDay(entry.index.CreatedAt); created != "" {
 		return created
 	}
 	return entry.name + string(os.PathSeparator)
@@ -111,22 +112,41 @@ func indentDetailBy(detail string, cells int) string {
 	return strings.Repeat(" ", cells) + detail
 }
 
-// orderByOrganized puts the Captures still to organize first and the ones
-// already handled after them, each run keeping the load order. Route and
-// Archive both list the Capture root this way — the rule through the column is
-// the same rule — so a Capture does not sit in one place in one session and
-// somewhere else in the other.
-func orderByOrganized(entries []captureEntry) (ordered []captureEntry, boundary int) {
-	pending := make([]captureEntry, 0, len(entries))
-	done := make([]captureEntry, 0, len(entries))
+// captureGroups is how Route and Archive both list the Capture root: the work —
+// Captures neither organized nor marked to discard — first, then the ones
+// marked to discard, then the organized ones, each keeping the load order. One
+// order for both, so a Capture does not sit in one place in one session and
+// somewhere else in the other. A Capture marked to discard is decided — it
+// waits for Archive's reject, not for a Recipe — so it is kept out of the way
+// of the work, and gathered where Archive's rejects are made one after another.
+// It returns where each of the two later groups starts.
+func captureGroups(entries []captureEntry) (ordered []captureEntry, discardAt, organizedAt int) {
+	var work, discarded, organized []captureEntry
 	for _, entry := range entries {
-		if entry.organized {
-			done = append(done, entry)
-			continue
+		switch {
+		case entry.record.Discarded():
+			discarded = append(discarded, entry)
+		case entry.organized:
+			organized = append(organized, entry)
+		default:
+			work = append(work, entry)
 		}
-		pending = append(pending, entry)
 	}
-	return append(pending, done...), len(pending)
+	ordered = append(append(append(ordered, work...), discarded...), organized...)
+	return ordered, len(work), len(work) + len(discarded)
+}
+
+// captureSections are the rules captureGroups' groups are drawn under: each
+// group that is not empty and does not open the list is named.
+func captureSections(total, discardAt, organizedAt int) map[int]string {
+	sections := map[int]string{}
+	if discardAt < organizedAt && discardAt > 0 {
+		sections[discardAt] = "DISCARD"
+	}
+	if organizedAt < total && organizedAt > 0 {
+		sections[organizedAt] = "ORGANIZED"
+	}
+	return sections
 }
 
 // listMoveKey is the movement every scrolling list in Capture answers: the
@@ -278,23 +298,6 @@ func reloadAfterMove(root, indexFile string, destination archiveDestination, fol
 	return tea.Batch(loadCaptures(root, indexFile), loadArchiveFolder(destination, folder, indexFile))
 }
 
-// discardedFirst moves the Captures marked to discard to the front, keeping the order
-// within each half.
-func discardedFirst(entries []captureEntry) []captureEntry {
-	ordered := make([]captureEntry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.record.Discarded() {
-			ordered = append(ordered, entry)
-		}
-	}
-	for _, entry := range entries {
-		if !entry.record.Discarded() {
-			ordered = append(ordered, entry)
-		}
-	}
-	return ordered
-}
-
 // discardMarker is how a Capture marked to discard in Route is marked in a list:
 // a cross in bold red, where the other markers are quiet. It resets only what it set —
 // weight and colour — rather than every attribute, so a selected row keeps its
@@ -304,3 +307,26 @@ const discardMarker = "\x1b[1;31m✕\x1b[22;39m "
 // discardDetail is the word said beside it on the row's second line, so the mark
 // still reads where a terminal's font has no cross to draw.
 const discardDetail = "  · DISCARD"
+
+// capturesLegend titles a Capture list with how far through it the reader is:
+// how many are handled — processed or marked to discard — out of how many
+// there are, then each of the two. A Capture is counted once: one marked to discard is not processed,
+// even when it was organized before it was marked. Where the words do not fit
+// the column, the marks the rows carry say it: CAPTURES 43/83 ✓35 ✕8.
+func capturesLegend(entries []captureEntry, width int) string {
+	processed, discarded := 0, 0
+	for _, entry := range entries {
+		switch {
+		case entry.record.Discarded():
+			discarded++
+		case entry.organized:
+			processed++
+		}
+	}
+	long := fmt.Sprintf("CAPTURES %d/%d · %d PROCESSED · %d DISCARD", processed+discarded, len(entries), processed, discarded)
+	// The fieldset keeps eight cells of the border and two for the focus cue.
+	if lipgloss.Width(long) <= width-10 {
+		return long
+	}
+	return fmt.Sprintf("CAPTURES %d/%d ✓%d ✕%d", processed+discarded, len(entries), processed, discarded)
+}

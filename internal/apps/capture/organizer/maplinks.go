@@ -5,11 +5,13 @@ import (
 	"strings"
 )
 
-// MapLink is one map service's link to a position.
+// MapLink is one map service's link to a position. Name and Short are what a
+// note writes; English is what the TUI shows, since the TUI is English.
 type MapLink struct {
-	Name  string
-	Short string
-	URL   string
+	Name    string
+	Short   string
+	English string
+	URL     string
 }
 
 // Coordinates are handed to every provider as WGS-84, which is what a device
@@ -17,28 +19,27 @@ type MapLink struct {
 // declared and they convert: without it a position lands a few hundred metres
 // off inside China, and identically everywhere else.
 var mapProviders = []struct {
-	name  string
-	short string
-	build func(latitude, longitude, label string) string
+	name, short, english string
+	build                func(latitude, longitude, label string) string
 }{
 	// The unified Maps URL's /place shows the coordinate as a place card with
 	// a pin; /frame and the older ll parameter only move the map there, which
 	// leaves nothing on it saying where the point is.
-	{"Apple 地图", "Apple", func(latitude, longitude, label string) string {
+	{"Apple 地图", "Apple", "Apple", func(latitude, longitude, label string) string {
 		return "https://maps.apple.com/place?coordinate=" + latitude + "," + longitude + query("name", label)
 	}},
-	{"高德地图", "高德", func(latitude, longitude, label string) string {
+	{"高德地图", "高德", "Amap", func(latitude, longitude, label string) string {
 		return "https://uri.amap.com/marker?position=" + longitude + "," + latitude +
 			"&coordinate=wgs84" + query("name", label)
 	}},
-	{"Google 地图", "Google", func(latitude, longitude, _ string) string {
+	{"Google 地图", "Google", "Google", func(latitude, longitude, _ string) string {
 		return "https://www.google.com/maps/search/?api=1&query=" + latitude + "," + longitude
 	}},
-	{"百度地图", "百度", func(latitude, longitude, label string) string {
+	{"百度地图", "百度", "Baidu", func(latitude, longitude, label string) string {
 		return "https://api.map.baidu.com/marker?location=" + latitude + "," + longitude +
 			"&coord_type=wgs84&output=html" + query("title", label)
 	}},
-	{"OpenStreetMap", "OSM", func(latitude, longitude, _ string) string {
+	{"OpenStreetMap", "OSM", "OSM", func(latitude, longitude, _ string) string {
 		return fmt.Sprintf("https://www.openstreetmap.org/?mlat=%s&mlon=%s#map=17/%s/%s",
 			latitude, longitude, latitude, longitude)
 	}},
@@ -52,7 +53,7 @@ func query(name, label string) string {
 }
 
 // MapLinks builds the links for a position, in the order asked for. wanted is a
-// comma-separated list of names or short names; empty means every provider.
+// comma-separated list of names, short names or English names; empty means every provider.
 // A name nothing matches is left out rather than guessed at.
 func MapLinks(latitude, longitude, label, wanted string) []MapLink {
 	if latitude == "" || longitude == "" {
@@ -62,9 +63,10 @@ func MapLinks(latitude, longitude, label, wanted string) []MapLink {
 	add := func(index int) {
 		provider := mapProviders[index]
 		links = append(links, MapLink{
-			Name:  provider.name,
-			Short: provider.short,
-			URL:   provider.build(latitude, longitude, label),
+			Name:    provider.name,
+			Short:   provider.short,
+			English: provider.english,
+			URL:     provider.build(latitude, longitude, label),
 		})
 	}
 
@@ -78,7 +80,7 @@ func MapLinks(latitude, longitude, label, wanted string) []MapLink {
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		for index, provider := range mapProviders {
-			if provider.name == name || provider.short == name {
+			if provider.name == name || provider.short == name || provider.english == name {
 				add(index)
 				break
 			}

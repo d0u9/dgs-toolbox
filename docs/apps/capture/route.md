@@ -76,9 +76,27 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   expansion and no attachment children, because organizing acts on the Capture
   as a whole. Rows with no Recipe chosen use `○`, rows whose plan is ready use
   `●`, and rows with a Recipe but unmet requirements use `◐`.
-- The Captures still to handle come first, then a labelled `ORGANIZED` rule,
-  then the ones already organized, each run keeping the load order. An
-  organized row is labelled by its most recent pass, with `×n` when it has been
+- The list is three groups, each keeping the load order: the work — Captures
+  neither organized nor marked to discard — then a `DISCARD` rule and the
+  Captures marked to discard, then an `ORGANIZED` rule and the organized ones.
+  A group that opens the list or is empty has no rule. A Capture marked to
+  discard is decided — it waits for Archive's reject, not for a Recipe — so it
+  is out of the way of the work, and counted with neither the ready nor the
+  blocked ones. Archive lists the root in the same three groups, so a Capture
+  sits in the same place in both sessions.
+- When a Capture leaves its group, the cursor stays with what the reader was
+  walking through. A run, or marking one to discard, takes it out of the work:
+  the cursor goes to the top of what is left, past Captures no Recipe matches.
+  Marking an organized one moves the cursor to the organized Capture that took
+  its place. Taking a mark back is done to work on the Capture, so the cursor
+  goes with it.
+- The `CAPTURES` legend counts how far through the list the reader is: the
+  Captures handled — processed or marked to discard — out of all of them, then
+  each of the two: `CAPTURES 43/83 · 35 PROCESSED · 8 DISCARD`, or
+  `CAPTURES 43/83 ✓35 ✕8` where the words do not fit the column. A Capture is counted once: one marked to
+  discard is not processed, even when it was organized before it was marked.
+  Archive's `CAPTURES` carries the same legend.
+- An organized row is labelled by its most recent pass, with `×n` when it has been
   organized more than once. One list
   with a rule through it rather than two fields: the two runs are the same kind
   of thing in different states, and the cursor should walk from the last
@@ -102,6 +120,9 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   folder view leads with the directory name and carries the timestamp
   underneath. One switch in both sessions, so a reader who has moved to folder
   names in one is not made to move back in the other.
+- The timestamp carries the day of the week after the date, in three English
+  letters: `2026-09-09 Wed 21:31:22 +10`. A list is read by day as much as by
+  date.
 - The timestamp keeps the offset written in the index rather than being
   converted to local time: whole-hour offsets drop their minutes, UTC reads as
   `Z`, and a `createdAt` that is not valid RFC 3339 is shown verbatim so a
@@ -177,7 +198,8 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   state: the fields still to supply, then a `RESOLVED` rule, then the ones that
   already have a value. What is still to supply comes first because it is the
   work — the cursor lands on it without being moved there — and what is
-  answered follows as reference. With nothing missing the top reads
+  answered follows as reference; in it the note comes first, since it is what
+  the reader checks and rewrites. With nothing missing the top reads
   `· Nothing missing` in place of that group. A field two Actions both require appears once, so it is
   filled once and satisfies both. Toggling an Action off takes the fields only
   it required out of both halves; toggling it back on brings them back.
@@ -190,7 +212,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   changes.
 - When an enabled Action writes the Capture's position — the location note, a
   reminder at a place — `RESOLVED` ends with a `Map` row: `Apple · Google ·
-  高德`, each linked to the position the Actions will write, which is the
+  Amap`, each linked to the position the Actions will write, which is the
   payload's when the workflow sources it. A pair of numbers says nothing about
   whether it is the right street, and this is the last look before it is
   written somewhere. `Enter` on the row opens it in Apple Maps.
@@ -282,10 +304,19 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   one stray press; `Backspace` and `Delete` are inert there, because a key held
   down while walking back should not fall out of the session.
 - `CAPTURES`: `↑/k` and `↓/j` move, `h/l` pan, `g g`/`G` jump to the first and
-  last Capture, `Enter` moves focus to `RECIPES`, `v` swaps the view, and `u`
-  clears the whole Selection for the current Capture. Clearing is `u` alone: `Backspace` walks
+  last Capture, `Enter` moves focus to `RECIPES`, `v` swaps the view, and `c`
+  clears the whole Selection for the current Capture. Clearing is `c` alone: `Backspace` walks
   back a column everywhere else, and one key with two meanings on one screen is
   how a Selection gets cleared by accident.
+- `u` takes the last step back, from any DataField: a discard mark set or
+  taken back, or a Selection cleared — the mark returns to what it was, its
+  time included, and the Selection comes back whole. The cursor goes to that
+  Capture wherever the step had sent it, so a Capture marked by mistake is
+  found again without paging for it. `u` again goes a step further back, for
+  as long as the session has steps; undoing is not itself a step. A run is not
+  a step: what it wrote into notes stays. A Capture filed away by Archive since
+  is named and cannot be stepped back. It is the same key as Scan's and
+  Archive's undo; the hint offers it only while there is a step to take back.
 - `RECIPES`: `↑/k` and `↓/j` move, `Enter` chooses the Recipe, enables its
   default Action set, and moves focus to `ACTIONS`. Choosing a different Recipe
   replaces the Action set; enrichment already supplied is kept, since it is
@@ -296,7 +327,8 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 - `FIELDS`: `↑/k` and `↓/j` move between rows and `Enter` edits the focused
   editable row. A `text` row is edited in place and committed with `Enter`; a
   `multiline` row opens the overlay, where `Enter` inserts a newline and
-  `ctrl+s` commits. `Esc` abandons an edit; `Backspace` and `Delete` edit the
+  `ctrl+s` commits. `ctrl+x` empties either editor, for a note that is
+  rewritten rather than edited. `Esc` abandons an edit; `Backspace` and `Delete` edit the
   text while an editor is open and only walk back once it is closed. Committing does not move focus away, so a value can be revised
   immediately.
 - The `RUN` dialog is a confirmation, not a report: `x` opens it and nothing has
@@ -339,8 +371,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 - Confirming a ready plan carries the Actions out, appends what happened to the
   organizer's record in the Capture directory, moves that Capture below the
   `ORGANIZED` rule, and puts the cursor
-  on the next Capture still to handle, passing over one marked to discard —
-  that one waits for Archive, not for a Recipe. Focus returns to `CAPTURES`, so a run
+  on the top of what is left of the work. Focus returns to `CAPTURES`, so a run
   of Captures is worked through without walking back up the columns. A blocked
   plan records nothing: a Capture counts as handled only once its plan could
   actually run.
@@ -360,6 +391,9 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   mark is written into the Capture's `organize.json` at once — a mark is not a
   run, so it does not count as organized — so Archive sees it in this session
   or a later one. A marked row carries `✕` in place of its readiness marker.
+  A Capture marked to discard is not run: `x` says so, and the Run control
+  reads `Marked to discard`, since writing it into notes would leave there
+  what Archive is about to throw away.
   Taking the mark back from a Capture nobody organized removes the record it
   was the only thing in.
 - `R` refreshes the Capture list from any DataField.

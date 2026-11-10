@@ -110,6 +110,19 @@ type archiveModel struct {
 	lastClick    routeClick
 	detailOffset int
 	detailSource archiveDestination
+	// confirmingRejectAll holds `D` open on its question: it moves every
+	// Capture marked to discard at once, which is many moves to take back.
+	confirmingRejectAll bool
+	// history is what `u` takes back, most recent last: each step is the
+	// moves one keystroke made, so undoing `D` returns all of them at once.
+	history [][]archiveMove
+}
+
+// archiveMove is one Capture moved: where from, where to, and the Capture as
+// it now stands at its new place.
+type archiveMove struct {
+	from, to archiveDestination
+	entry    captureEntry
 }
 
 func newArchiveModel(root, indexFile, archiveRoot, rejectRoot string) archiveModel {
@@ -234,6 +247,27 @@ func (m archiveModel) applyFolder(msg archiveFolderLoadedMsg) archiveModel {
 
 func (m archiveModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.confirmingRejectAll {
+		m.confirmingRejectAll = false
+		if key == "enter" || key == "y" {
+			m = m.rejectAllDiscarded()
+			return m, m.refresh()
+		}
+		return m, nil
+	}
+	if key == "u" {
+		m = m.undo()
+		return m, m.refresh()
+	}
+	if key == "D" {
+		if m.discardedCount() == 0 {
+			m.notice = failed("Nothing is marked to discard")
+			return m, nil
+		}
+		m.notice = moveNotice{}
+		m.confirmingRejectAll = true
+		return m, nil
+	}
 	if key == "o" {
 		return m.openArchiveMap(), nil
 	}
@@ -348,8 +382,65 @@ func (m archiveModel) moveKey(from archiveDestination, key string) (tea.Model, t
 	return m, nil, false
 }
 
+// rejectAllHint offers `D` only when something is marked to discard.
+func (m archiveModel) rejectAllHint() string {
+	if m.discardedCount() > 0 {
+		return "  D Reject discarded"
+	}
+	return ""
+}
+
+// discardedCount is how many Captures in the root are marked to discard.
+func (m archiveModel) discardedCount() int {
+	count := 0
+	for _, entry := range m.entries {
+		if entry.record.Discarded() {
+			count++
+		}
+	}
+	return count
+}
+
+// rejectAllDiscarded moves every Capture marked to discard into the reject
+// folder, one at a time, as `Backspace` would: each is its own move, and one
+// that cannot move is left where it is rather than stopping the rest. The
+// cursor keeps its row, so it lands on what follows them.
+func (m archiveModel) rejectAllDiscarded() archiveModel {
+	target := m.folderFor(destinationReject)
+	if target == "" {
+		m.notice = unsetFolderNotice(destinationReject)
+		return m
+	}
+	moved, failures := 0, []string{}
+	var step []archiveMove
+	for _, entry := range append([]captureEntry(nil), m.entries...) {
+		if !entry.record.Discarded() {
+			continue
+		}
+		relocated, notice, ok := moveCaptureTo(entry, target, folderName(destinationReject))
+		if !ok {
+			failures = append(failures, notice.text)
+			continue
+		}
+		m.remove(destinationCaptures, entry.path)
+		m.add(destinationReject, relocated)
+		step = append(step, archiveMove{from: destinationCaptures, to: destinationReject, entry: relocated})
+		moved++
+	}
+	if len(step) > 0 {
+		m.history = append(m.history, step)
+	}
+	m.rebuildItems()
+	if len(failures) > 0 {
+		m.notice = failed(fmt.Sprintf("Rejected %d; %d could not move — %s", moved, len(failures), failures[0]))
+		return m
+	}
+	m.notice = moveNotice{text: fmt.Sprintf("✕ Rejected %d marked to discard", moved)}
+	return m
+}
+
 // move carries the selected Capture from one place to another, now, on disk.
-// Nothing is asked first: every move can be taken back with `R`, and a session
+// Nothing is asked first: every move can be taken back with `u`, and a session
 // whose job is going through a list should not charge a confirmation per row.
 // A Capture that has not been organized is refused the archive — the archive is
 // where handled Captures are kept, and one that was never organized would
@@ -384,9 +475,67 @@ func (m archiveModel) move(from, to archiveDestination) (tea.Model, tea.Cmd) {
 	}
 	m.remove(from, entry.path)
 	m.add(to, relocated)
+	m.history = append(m.history, []archiveMove{{from: from, to: to, entry: relocated}})
 	m.rebuildItems()
 	m.listFor(to).SelectID(archiveItemID(to, relocated.path))
-	return m, nil
+	// The lists here are kept as the move left them; the read-back is for
+	// Scan and Route, which list the same root and would otherwise go on
+	// offering a Capture that is no longer there.
+	return m, m.refresh()
+}
+
+// undo takes the last step back: every Capture it moved goes back to where it
+// came from, on disk, as a move of its own would carry it. One that cannot go
+// back — moved or removed outside the session since — stays and is named; the
+// rest still go. Undoing is not itself a step, so `u` again goes further back.
+func (m archiveModel) undo() archiveModel {
+	if len(m.history) == 0 {
+		m.notice = failed("Nothing to undo")
+		return m
+	}
+	step := m.history[len(m.history)-1]
+	m.history = m.history[:len(m.history)-1]
+	back, failures := 0, []string{}
+	var last archiveMove
+	for index := len(step) - 1; index >= 0; index-- {
+		move := step[index]
+		target := m.folderFor(move.from)
+		if target == "" {
+			failures = append(failures, unsetFolderNotice(move.from).text)
+			continue
+		}
+		returned, notice, ok := moveCaptureTo(move.entry, target, folderName(move.from))
+		if !ok {
+			failures = append(failures, notice.text)
+			continue
+		}
+		m.remove(move.to, move.entry.path)
+		m.add(move.from, returned)
+		last = archiveMove{from: move.from, to: move.to, entry: returned}
+		back++
+	}
+	m.rebuildItems()
+	if back > 0 {
+		m.listFor(last.from).SelectID(archiveItemID(last.from, last.entry.path))
+	}
+	if len(failures) > 0 {
+		m.notice = failed(fmt.Sprintf("Undid %d; %d could not go back — %s", back, len(failures), failures[0]))
+		return m
+	}
+	if back == 1 {
+		m.notice = moveNotice{text: "↶ " + last.entry.name + " back to " + folderName(last.from)}
+		return m
+	}
+	m.notice = moveNotice{text: fmt.Sprintf("↶ %d back to %s", back, folderName(last.from))}
+	return m
+}
+
+// undoHint offers `u` only when there is a step to take back.
+func (m archiveModel) undoHint() string {
+	if len(m.history) > 0 {
+		return "  u Undo"
+	}
+	return ""
 }
 
 func (m archiveModel) refresh() tea.Cmd {
@@ -639,12 +788,11 @@ func (m *archiveModel) rebuildItems() {
 		}
 		entries := m.entriesIn(destination)
 		items := make([]scrolllist.Item, 0, len(entries))
-		boundary := 0
+		var sections map[int]string
 		if destination == destinationCaptures {
-			entries, boundary = orderByOrganized(entries)
-			// A Capture marked wrong in Route leads its group: it is the one
-			// decision already made, waiting on a keystroke.
-			entries = append(discardedFirst(entries[:boundary]), discardedFirst(entries[boundary:])...)
+			var discardAt, organizedAt int
+			entries, discardAt, organizedAt = captureGroups(entries)
+			sections = captureSections(len(entries), discardAt, organizedAt)
 		}
 		for _, entry := range entries {
 			// Only the Capture root carries the Recipe that handled a Capture:
@@ -668,7 +816,7 @@ func (m *archiveModel) rebuildItems() {
 		}
 		list.SetItems(items)
 		if destination == destinationCaptures {
-			list.SetDivider(boundary, "ORGANIZED")
+			list.SetDividers(sections)
 		}
 		if selected != "" {
 			list.SelectID(selected)
@@ -732,7 +880,7 @@ func (m archiveModel) leftColumn(width int) string {
 	} else if len(m.entries) == 0 {
 		content = fitHeight(scanMutedStyle.Render("· No captures found"), listHeight-2, width-4)
 	}
-	list := fieldset.ViewFocused("CAPTURES", content, width, focused)
+	list := fieldset.ViewFocused(capturesLegend(m.entries, width), content, width, focused)
 	return list + "\n" + m.rootControl.Fieldset(width, m.fields.Current() == archiveRootField)
 }
 
@@ -816,7 +964,7 @@ func (m archiveModel) detail(width int) string {
 		}
 	}
 	if mark := entry.record.Discard; mark != nil {
-		lines = append(lines, runFailedStyle.Render(truncate("✕ Marked to discard "+organizer.FormatTimestamp(mark.DiscardedAt)+" — reject it", width)))
+		lines = append(lines, runFailedStyle.Render(truncate("✕ Marked to discard "+organizer.FormatTimestampDay(mark.DiscardedAt)+" — reject it", width)))
 	}
 	lines = append(lines, "", divider.Labelled("PAYLOAD", width))
 	if len(entry.index.Payload) == 0 {
@@ -836,7 +984,7 @@ func (m archiveModel) detail(width int) string {
 		// The run is headed by when it happened and what it ran. Both are
 		// longer than a key column, so they head the block rather than sitting
 		// either side of one.
-		lines = append(lines, scanMutedStyle.Render(truncate(organizer.FormatTimestamp(run.OrganizedAt)+"  ·  "+run.RecipeName, width)))
+		lines = append(lines, scanMutedStyle.Render(truncate(organizer.FormatTimestampDay(run.OrganizedAt)+"  ·  "+run.RecipeName, width)))
 		for _, action := range run.Actions {
 			marker := "✓"
 			if !action.Executed {
@@ -1034,15 +1182,18 @@ func (m archiveModel) Status() tui.Status {
 		return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT", Right: m.rootControl.Hint()}
 	}
 	center := m.statusValue()
+	if m.confirmingRejectAll {
+		return tui.Status{Left: "REJECT ALL", Center: fmt.Sprintf("Reject the %d marked to discard?", m.discardedCount()), Right: "↵ Reject  esc Cancel"}
+	}
 	switch m.fields.Current() {
 	case archiveRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: m.root, Right: "↵ Browse  R Refresh  tab Next"}
 	case archiveFolderField:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  R Restore  ⌫ Reject  v View" + m.detailHint() + "  tab Next"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  R Restore  ⌫ Reject" + m.undoHint() + "  v View" + m.detailHint() + "  tab Next"}
 	case rejectFolderField:
-		return tui.Status{Left: "REJECT", Center: center, Right: "↑↓ Move  R Restore  a Archive  v View" + m.detailHint() + "  tab Next"}
+		return tui.Status{Left: "REJECT", Center: center, Right: "↑↓ Move  R Restore  a Archive" + m.undoHint() + "  v View" + m.detailHint() + "  tab Next"}
 	default:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  a Archive  ⌫ Reject  v View  R Refresh" + m.detailHint()}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  a Archive  ⌫ Reject" + m.rejectAllHint() + m.undoHint() + "  v View  R Refresh" + m.detailHint()}
 	}
 }
 

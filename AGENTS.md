@@ -86,6 +86,10 @@ embedded asset or special case for a named program.**
   excluded from pickers. An action may share a leaf's name: positional
   arguments or action flags run the action; otherwise the leaf opens. The two
   must not define a flag of the same name. Esc at a leaf root returns to the picker; there it exits.
+- TUI text is English: labels, hints, statuses, dates and weekday names
+  (`Wed`, not a localized name). Localized names belong in what `dgs` writes
+  for the user — notes, through mapping tables — never in the TUI. Served web
+  pages may carry limited non-English text.
 - Top and status bars are exactly one row each; shorten or omit on narrow
   terminals, never wrap. Top: path/context left, local time right. Status:
   state left, summary center, hints right. Workspace belongs to the active model.
