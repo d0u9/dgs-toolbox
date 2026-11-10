@@ -30,7 +30,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/d0u9/rhumb v0.1.4-0.20261106131631-f911cbd8a6ca
+	github.com/d0u9/rhumb v0.1.4-0.20261110090258-0234f6d8175a
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

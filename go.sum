@@ -41,6 +41,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJ
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/d0u9/rhumb v0.1.4-0.20261106131631-f911cbd8a6ca h1:1RS5bvGivfKBOJAYx2ZQJoUiNKrL0hBRpj/72av5GsA=
 github.com/d0u9/rhumb v0.1.4-0.20261106131631-f911cbd8a6ca/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
+github.com/d0u9/rhumb v0.1.4-0.20261110090258-0234f6d8175a h1:X5Roeo5usMI+yDoMOv5TqEs7CQ2IR9uXjAA0RXz6l6I=
+github.com/d0u9/rhumb v0.1.4-0.20261110090258-0234f6d8175a/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
