@@ -826,7 +826,7 @@ files:
 	// instance: which numbers a machine's accounts have is that machine's
 	// fact, not this service's.
 	writeFile(t, filepath.Join(root, "services", "samba", "templates", "smbpasswd.tmpl"),
-		"{{ range principals \"smb\" }}{{ smbpasswd .Name (index (defaults).uids .User) .Secret }}\n{{ end }}")
+		"{{ range principals \"smb\" }}{{ printf \"%s:%v:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:%s:[U          ]:LCT-5E0BE100:\" .Name (index (defaults).uids .User) (nthash .Secret) }}\n{{ end }}")
 	// The uid is keyed by the person, not by the credential: two of
 	// alex's credentials are two accounts into one POSIX user.
 	writeFile(t, filepath.Join(root, "services", "samba", "defaults.yaml"), "uids:\n  alex: 3001\n")
