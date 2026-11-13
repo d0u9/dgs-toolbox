@@ -37,6 +37,30 @@ const DAILY_TEMPLATE = 'daily-entry.md';
 /** The template a day's log is created from. */
 const DAILY_NOTE_TEMPLATE = 'daily-note.md';
 
+/**
+ * What this plugin and the files dgs installs beside it offer, for a launcher
+ * listing them: each names the command it is — the plugin's own by id, a
+ * Templater template by path, a QuickAdd script by path, which a QuickAdd
+ * choice runs — and says what it does. A template or script only becomes a
+ * command once the vault makes one of it, so a launcher lists what it finds.
+ *
+ * @type {{command?: string, templater?: string, quickaddScript?: string, name: string, description: string}[]}
+ */
+const DESCRIBED = [
+	{ command: 'dgs-toolbox:insert-timeline-entry', name: 'Insert timeline entry', description: 'Write an entry onto timelines and the day\'s log, with where this device is.' },
+	{ command: 'dgs-toolbox:tidy-timeline', name: 'Tidy timeline', description: 'Put a timeline back into shape and move past years into its archive.' },
+	{ templater: '{{dgs:templates}}/00 Default.md', name: 'Default note', description: 'A new note with its date, place and weather filled in.' },
+	{ templater: '{{dgs:templates}}/51 Update Location.md', name: 'Update location', description: 'Set this note\'s place properties from where it was written.' },
+	{ templater: '{{dgs:templates}}/52 Update Weather.md', name: 'Update weather', description: 'Set this note\'s weather properties for its day and place.' },
+	{ templater: '{{dgs:templates}}/53 Update Date.md', name: 'Update date', description: 'Update this note\'s date property.' },
+	{ templater: '{{dgs:templates}}/61 Insert Location.md', name: 'Insert location', description: 'Insert where this device is, with map links.' },
+	{ templater: '{{dgs:templates}}/62 Insert Weather.md', name: 'Insert weather', description: 'Insert the weather here and now.' },
+	{ templater: '{{dgs:templates}}/63 Insert Timestamp.md', name: 'Insert timestamp', description: 'Insert a time with its offset.' },
+	{ quickaddScript: '{{dgs:quickadd}}/quickNote.js', name: 'Quick note', description: 'Add a line under 速记 in today\'s log.' },
+	{ quickaddScript: '{{dgs:quickadd}}/captureIdea.js', name: 'Idea', description: 'Add an idea to the dated list of ideas.' },
+	{ quickaddScript: '{{dgs:quickadd}}/copyCoordinates.js', name: 'Copy coordinates', description: 'Copy a position, as an entry\'s coordinates link does.' },
+];
+
 /** How new a log is that Templater is still filling. */
 const RECENT_MS = 60 * 1000;
 
@@ -91,6 +115,7 @@ class DgsToolboxPlugin extends Plugin {
 		this.api = {
 			appendToDailyLog: (/** @type {DailyEntry} */ options) => this.appendToDailyLog(options),
 			dailyNote: (/** @type {any} */ date) => this.timelines.renderNote(date),
+			describe: () => DESCRIBED.map((entry) => ({ ...entry })),
 		};
 		this.addCommand({
 			id: 'insert-timeline-entry',

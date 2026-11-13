@@ -296,3 +296,15 @@ test('opening a log dgs made fills it once a session, and leaves alone what it s
 	await plugin.backfillDailyLog(Object.assign(new TFile('00 Daily Log/2026/2026-11-10.md'), { stat: { ctime: 0 } }), later, parse);
 	assert.equal(runs.length, 1, 'a log with nothing missing');
 });
+
+test('describe says what the plugin and the files beside it offer, each naming one command', () => {
+	const described = vm.runInNewContext(`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;DESCRIBED`, { require: () => obsidian, module: {}, console });
+	assert.ok(described.length >= 12);
+	for (const entry of described) {
+		assert.equal([entry.command, entry.templater, entry.quickaddScript].filter(Boolean).length, 1, JSON.stringify(entry));
+		assert.ok(entry.name && entry.description, JSON.stringify(entry));
+	}
+	assert.ok(described.some((/** @type {any} */ entry) => entry.command === 'dgs-toolbox:insert-timeline-entry'));
+	assert.ok(described.some((/** @type {any} */ entry) => entry.templater === '{{dgs:templates}}/61 Insert Location.md'));
+	assert.ok(described.some((/** @type {any} */ entry) => entry.quickaddScript === '{{dgs:quickadd}}/quickNote.js'));
+});
