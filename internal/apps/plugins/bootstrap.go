@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/entrytemplate"
 	"dgs-toolbox/internal/plugins/bundled"
 )
 
@@ -212,6 +213,66 @@ func check(vault string, paths bundled.Paths) ([]string, error) {
 	for _, script := range scripts {
 		if _, err := os.Stat(filepath.Join(vault, filepath.FromSlash(script))); errors.Is(err, fs.ErrNotExist) {
 			todos = append(todos, fmt.Sprintf("QuickAdd: a choice runs %s, which is not there", script))
+		}
+	}
+	broken, err := checkEntryTemplates(vault, paths.Entries)
+	if err != nil {
+		return nil, err
+	}
+	return append(todos, broken...), nil
+}
+
+// noteTemplate is the one file in the entry template folder that is not an
+// entry: what dgs capture creates a missing daily note from. It is rendered
+// against other data, so only its syntax is checked here.
+const noteTemplate = "daily-note.md"
+
+// sampleEntry is an entry with every field filled, so a template naming a
+// field that does not exist fails here rather than in a note weeks later.
+var sampleEntry = entrytemplate.Input{
+	CreatedAt: "2026-01-02T03:04:05+10:00",
+	ID:        "^dgs-sample",
+	Content:   "first line\nsecond line",
+	Position:  &entrytemplate.Position{Latitude: -33.86, Longitude: 151.21},
+	Place:     entrytemplate.Place{Country: "Country", Region: "Region", City: "City", Locality: "Locality"},
+	PlaceName: "Locality",
+	Workflow:  "workflow", App: "app", Device: "device", Capture: "capture",
+	Attachments: []entrytemplate.Attachment{{Name: "a.jpg", Kind: "image"}},
+	Images:      []string{"a.jpg"},
+}
+
+// checkEntryTemplates renders every template in the entry template folder,
+// each one a todo when it does not render: both dgs capture and the plugin
+// would refuse to write with it. A folder that is not there is not a todo, as
+// the compiled-in templates stand in for it.
+func checkEntryTemplates(vault, folder string) ([]string, error) {
+	if folder == "" {
+		return nil, nil
+	}
+	dir := filepath.Join(vault, filepath.FromSlash(folder))
+	files, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var todos []string
+	for _, file := range files {
+		if file.IsDir() || path.Ext(file.Name()) != ".md" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, file.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if file.Name() == noteTemplate {
+			_, err = entrytemplate.Parse(file.Name(), string(data), nil)
+		} else {
+			_, err = entrytemplate.Render(file.Name(), string(data), sampleEntry, nil)
+		}
+		if err != nil {
+			todos = append(todos, fmt.Sprintf("fix %s/%s: %v", folder, file.Name(), err))
 		}
 	}
 	return todos, nil

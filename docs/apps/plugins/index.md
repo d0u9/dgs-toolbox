@@ -38,14 +38,19 @@ install ([One binary](../../../AGENTS.md#one-binary)).
 `bootstrap` is everything a vault needs, for someone starting from nothing:
 
 1. It installs every plugin, as `install` does.
-2. It writes the **starting files** the vault lacks: the timelines file, and the
-   dgs-toolbox plugin's settings pointing at it. These are yours from then on —
+2. It writes the **starting files** the vault lacks: the timelines file, the
+   dgs-toolbox plugin's settings pointing at it, and the entry templates
+   `daily-entry.md` and `location-entry.md` in
+   [`obsidian.entries`](../../configuration/plugins.md), the compiled-in ones
+   `dgs capture` and the plugin otherwise fall back to. These are yours from then on —
    `bootstrap` never writes over one, and `update` never touches them.
 3. It lists what is left to do by hand, in `.obsidian/`: Templater and
    QuickAdd installed and switched on, Templater's script files folder set to
    the Public folder and its template folder holding the templates, a folder
    template giving the daily log its template, and a QuickAdd macro choice
-   for each QuickAdd script, none pointing at a script that is gone. dgs does
+   for each QuickAdd script, none pointing at a script that is gone. An entry
+   template that does not render — bad syntax, or a field that does not
+   exist — is listed too, as `fix <path>: <error>`. dgs does
    not install other people's plugins, nor write their settings: Obsidian
    rewrites those from memory while it runs.
 

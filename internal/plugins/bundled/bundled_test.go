@@ -51,3 +51,32 @@ func TestThePluginDefaultsNameTheConfiguredFolders(t *testing.T) {
 		}
 	}
 }
+
+// The entry templates are seeds when a folder is configured for them, and only
+// then: an empty folder names nowhere to put them.
+func TestEntryTemplateSeeds(t *testing.T) {
+	seeds, err := Seeds(testPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]string{}
+	for _, seed := range seeds {
+		found[seed.Name] = seed.Path
+	}
+	for _, name := range EntryTemplates {
+		if found[name] != "Toolkit/Entry Templates/"+name {
+			t.Errorf("seed %s at %q", name, found[name])
+		}
+	}
+	noEntries := testPaths
+	noEntries.Entries = ""
+	seeds, err = Seeds(noEntries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range seeds {
+		if strings.HasSuffix(seed.Name, "-entry.md") {
+			t.Errorf("seed %s without an entry template folder", seed.Name)
+		}
+	}
+}

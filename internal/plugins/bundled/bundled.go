@@ -22,6 +22,7 @@ import (
 	"path"
 	"strings"
 
+	"dgs-toolbox/internal/entrytemplate"
 	"dgs-toolbox/internal/plugins"
 	"dgs-toolbox/internal/plugins/obsidian"
 )
@@ -154,6 +155,12 @@ type Seed struct {
 	Data        []byte
 }
 
+// EntryTemplates are the entry templates a vault starts with: the compiled-in
+// ones, which dgs capture and the plugin fall back to when the vault has none.
+// Planted, they are the reader's to change. There is no timeline-entry.md: a
+// timeline without one reads like the list of places until it is given one.
+var EntryTemplates = []string{"daily-entry.md", "location-entry.md"}
+
 // Seeds are the starting files of an Obsidian vault.
 func Seeds(paths Paths) ([]Seed, error) {
 	timelines, err := fs.ReadFile(sources, "obsidian/seeds/timelines.json")
@@ -161,8 +168,22 @@ func Seeds(paths Paths) ([]Seed, error) {
 		return nil, err
 	}
 	settings := fmt.Sprintf("{\n  \"timelinesFile\": %q\n}\n", paths.Timelines)
-	return []Seed{
+	seeds := []Seed{
 		{Name: "timelines.json", Path: paths.Timelines, Description: "the timelines the plugin and dgs capture write to", Data: timelines},
 		{Name: "dgs-toolbox.json", Path: ".obsidian/plugins/dgs-toolbox/data.json", Description: "the dgs-toolbox plugin's settings", Data: []byte(settings)},
-	}, nil
+	}
+	if paths.Entries == "" {
+		return seeds, nil
+	}
+	for _, name := range EntryTemplates {
+		text, ok := entrytemplate.Builtin(name)
+		if !ok {
+			return nil, fmt.Errorf("no compiled-in entry template %s", name)
+		}
+		seeds = append(seeds, Seed{
+			Name: name, Path: paths.Entries + "/" + name,
+			Description: "an entry template dgs capture and the plugin write with", Data: []byte(text),
+		})
+	}
+	return seeds, nil
 }
