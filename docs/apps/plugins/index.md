@@ -7,7 +7,7 @@ says what is installed where. So far they are all for Obsidian:
 | --- | --- | --- |
 | `obsidian/dgs-toolbox` | The Obsidian plugin that writes timelines with the same code as `dgs capture`, and styles them. | every configuration folder's `plugins/dgs-toolbox/` |
 | `obsidian/public` | The scripts Templater, QuickAdd and the plugin share: location, weather, map links, the daily log. | [`obsidian.folders.public`](../../configuration/plugins.md) |
-| `obsidian/quickadd` | The QuickAdd scripts: quick note, idea, copy coordinates. | `obsidian.folders.quickadd` |
+| `obsidian/quickadd` | The QuickAdd scripts: quick note, idea, copy coordinates. Quick note writes through the dgs-toolbox plugin, so it needs that plugin on. | `obsidian.folders.quickadd` |
 | `obsidian/templates` | The Templater templates: the daily log, inserting and updating location, weather and dates. | `obsidian.folders.templates` |
 
 ```bash
@@ -40,7 +40,7 @@ install ([One binary](../../../AGENTS.md#one-binary)).
 1. It installs every plugin, as `install` does.
 2. It writes the **starting files** the vault lacks: the timelines file, the
    dgs-toolbox plugin's settings pointing at it, and the entry templates
-   `daily-entry.md` and `location-entry.md` in
+   `daily-entry.md`, `location-entry.md` and `quick-note.md` in
    [`obsidian.entries`](../../configuration/plugins.md), the compiled-in ones
    `dgs capture` and the plugin otherwise fall back to. These are yours from then on —
    `bootstrap` never writes over one, and `update` never touches them.

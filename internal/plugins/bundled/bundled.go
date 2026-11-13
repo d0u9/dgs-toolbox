@@ -159,7 +159,8 @@ type Seed struct {
 // ones, which dgs capture and the plugin fall back to when the vault has none.
 // Planted, they are the reader's to change. There is no timeline-entry.md: a
 // timeline without one reads like the list of places until it is given one.
-var EntryTemplates = []string{"daily-entry.md", "location-entry.md"}
+// quick-note.md is what QuickAdd's Quick Note writes through the plugin.
+var EntryTemplates = []string{"daily-entry.md", "location-entry.md", "quick-note.md"}
 
 // Seeds are the starting files of an Obsidian vault.
 func Seeds(paths Paths) ([]Seed, error) {

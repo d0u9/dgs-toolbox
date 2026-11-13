@@ -46,9 +46,9 @@ func TestBootstrapSetsUpAFreshVaultAndSaysWhatIsLeft(t *testing.T) {
 			t.Errorf("%s: %v", path, err)
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(vault, filepath.FromSlash(config.DefaultPluginsObsidianQuickAdd), "quickNote.js"))
+	data, err := os.ReadFile(filepath.Join(vault, filepath.FromSlash(config.DefaultPluginsObsidianQuickAdd), "captureIdea.js"))
 	if err != nil || !strings.Contains(string(data), `"`+config.DefaultPluginsObsidianPublic+`"`) || strings.Contains(string(data), "{{dgs:") {
-		t.Errorf("quickNote.js does not name the Public folder: %v", err)
+		t.Errorf("captureIdea.js does not name the Public folder: %v", err)
 	}
 	for _, todo := range []string{"install Templater", "install QuickAdd", "Script files folder location"} {
 		if !strings.Contains(out.String(), todo) {
@@ -119,7 +119,7 @@ func TestBootstrapPlantsTheEntryTemplates(t *testing.T) {
 	vault := freshVault(t)
 	var out bytes.Buffer
 	_ = bootstrap(&out, vaultFlags(t, vault), config.Default())
-	for _, name := range []string{"daily-entry.md", "location-entry.md"} {
+	for _, name := range []string{"daily-entry.md", "location-entry.md", "quick-note.md"} {
 		data, err := os.ReadFile(filepath.Join(vault, filepath.FromSlash(config.DefaultPluginsObsidianEntries), name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)

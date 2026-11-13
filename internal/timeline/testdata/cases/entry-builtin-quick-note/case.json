@@ -1,0 +1,11 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "quick-note.md",
+    "input": {
+      "createdAt": "2026-11-13T09:05:00+11:00",
+      "content": "  买牛奶  \n\n  还有面包\n"
+    }
+  },
+  "want": "@want.md"
+}

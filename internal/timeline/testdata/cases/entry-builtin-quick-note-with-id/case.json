@@ -1,0 +1,12 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "quick-note.md",
+    "input": {
+      "createdAt": "2026-11-13T09:05:00+05:30",
+      "id": "^dgs-x",
+      "content": "one line"
+    }
+  },
+  "want": "- `09:05:00 +5.5` · one line ^dgs-x"
+}

@@ -36,8 +36,8 @@ const obsidian = {
 	moment: () => ({}),
 	normalizePath: (/** @type {string} */ path) => path.replace(/\/+/g, '/').replace(/^\/|\/$/g, ''),
 };
-const { TimelineService, VaultLib, entryInput, timelineTemplates } = vm.runInNewContext(
-	`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;({ TimelineService, VaultLib, entryInput, timelineTemplates })`,
+const { DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates } = vm.runInNewContext(
+	`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;({ DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates })`,
 	{ require: () => obsidian, module: {}, console },
 );
 
@@ -158,4 +158,67 @@ test('the daily log gets the entry where the engine puts it, under its heading a
 		options.insert('# 速记\n\n## 去过哪里\n\n1. 无\n\n# 今日活动\n'),
 		'# 速记\n\n## 去过哪里\n\n- `11:35:44 +11` · here\n\n# 今日活动\n',
 	);
+});
+
+/**
+ * A VaultLib whose vault scripts are stood in for: appendToDailyLog records
+ * what it was asked and says it wrote.
+ */
+function recordingLib() {
+	/** @type {{options: any}} */
+	const seen = { options: null };
+	const lib = new VaultLib({}, () => ({ dailyFolder: '00 Daily Log', dailyFormat: 'YYYY/YYYY-MM-DD', dailyHeading: '去过哪里' }));
+	lib.tp = async () => ({
+		user: {
+			appendToDailyLog: async (/** @type {unknown} */ _params, /** @type {any} */ options) => {
+				seen.options = options;
+				return true;
+			},
+		},
+	});
+	return { lib, seen };
+}
+
+/** The plugin as onload leaves it, over an in-memory vault. */
+function loadedPlugin(/** @type {Record<string, string>} */ files) {
+	const plugin = Object.create(DgsToolboxPlugin.prototype);
+	const { lib, seen } = recordingLib();
+	plugin.timelines = service(files);
+	plugin.vaultLib = lib;
+	return { plugin, seen };
+}
+
+const day = { format: (/** @type {string} */ layout) => (layout === 'YYYY-MM-DDTHH:mm:ssZ' ? '2026-11-13T09:05:00+11:00' : '2026/2026-11-13') };
+
+test('the plugin’s API writes a quick note under its own heading, with the built-in template', async () => {
+	const { plugin, seen } = loadedPlugin({});
+	const path = await plugin.appendToDailyLog({ template: 'quick-note.md', heading: '速记', text: '买牛奶\n还有面包', when: day });
+	assert.equal(path, '00 Daily Log/2026/2026-11-13.md');
+	assert.equal(seen.options.heading, '速记');
+	assert.equal(seen.options.createIfMissing, true);
+	assert.equal(
+		seen.options.insert('# 速记\n\n- 手写的一条\n\n# 去过哪里\n\n1. 无\n'),
+		'# 速记\n\n- 手写的一条\n- `09:05:00 +11` · 买牛奶\n    - 还有面包\n\n# 去过哪里\n\n1. 无\n',
+	);
+});
+
+test('the vault’s quick-note.md wins over the built-in one', async () => {
+	const { plugin, seen } = loadedPlugin({ [`${folder}/quick-note.md`]: '- {{.Clock}} {{.Content}}' });
+	await plugin.appendToDailyLog({ template: 'quick-note.md', heading: '速记', text: 'x', when: day });
+	assert.equal(seen.options.insert('# 速记\n'), '# 速记\n\n- 09:05:00 x\n');
+});
+
+test('without a heading the entry goes under the Log heading setting, and a missing log can be left alone', async () => {
+	const { plugin, seen } = loadedPlugin({});
+	await plugin.appendToDailyLog({ template: 'quick-note.md', text: 'x', when: day, createIfMissing: false });
+	assert.equal(seen.options.heading, '去过哪里');
+	assert.equal(seen.options.createIfMissing, false);
+	await plugin.appendToDailyLog({ template: 'quick-note.md', heading: '   ', text: 'x', when: day });
+	assert.equal(seen.options.heading, '去过哪里', 'a blank heading is no heading');
+});
+
+test('a log that cannot be found or created is an error the caller sees', async () => {
+	const { plugin } = loadedPlugin({});
+	plugin.vaultLib.tp = async () => ({ user: { appendToDailyLog: async () => false } });
+	await assert.rejects(plugin.appendToDailyLog({ template: 'quick-note.md', text: 'x', when: day }), /could not be found or created/);
 });

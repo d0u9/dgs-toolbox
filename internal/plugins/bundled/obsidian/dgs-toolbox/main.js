@@ -56,6 +56,7 @@ const WHEN = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?)(?:\s*([+-]\d{1,
  * @typedef {{name: string, note: string, archive?: string, split: string, cssclass: string, title: string, template?: string, contentRequired?: boolean}} Definition
  * @typedef {{country?: string, region?: string, city?: string, locality?: string, latitude?: string | number, longitude?: string | number}} Place
  * @typedef {{when: any, text: string, place: Place | null}} NewEntry
+ * @typedef {{template: string, heading?: string, text?: string, when?: any, place?: Place | null, createIfMissing?: boolean}} DailyEntry
  * @typedef {{read: number, files: number, duplicates: number, reformatted: number, guessedOffset: number, untimed: number, undated: number, kept: number, archived: Record<string, number>}} TidyStats
  */
 
@@ -75,6 +76,12 @@ class DgsToolboxPlugin extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 		this.timelines = new TimelineService(this.app, this.manifest.dir ?? '', () => this.settings.timelinesFile, () => this.settings.entriesFolder);
 		this.vaultLib = new VaultLib(this.app, () => this.settings);
+		// What the vault's own scripts call, as
+		// app.plugins.plugins['dgs-toolbox'].api, so an entry they write is
+		// rendered and placed by the engine too.
+		this.api = {
+			appendToDailyLog: (/** @type {DailyEntry} */ options) => this.appendToDailyLog(options),
+		};
 		this.addCommand({
 			id: 'insert-timeline-entry',
 			name: 'Insert timeline entry',
@@ -112,6 +119,19 @@ class DgsToolboxPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Writes one entry into the day's log, under a heading, from an entry
+	 * template, creating the log through Templater's folder template when there
+	 * is none. The heading is the Log heading setting unless one is given.
+	 *
+	 * @param {DailyEntry} options
+	 * @returns {Promise<string>} the log's path
+	 */
+	async appendToDailyLog({ template, heading, text = '', when = moment(), place = null, createIfMissing = true }) {
+		const block = await this.timelines.render([template], { when, text, place });
+		return this.vaultLib.appendToDailyLog(when, block, await this.timelines.engine(), { heading, createIfMissing });
 	}
 
 	/**
@@ -213,15 +233,17 @@ class VaultLib {
 	 * @param {any} when
 	 * @param {string} block
 	 * @param {{call: (op: string, args: unknown) => any}} engine
+	 * @param {{heading?: string, createIfMissing?: boolean}} [where] the Log heading setting, and creating a missing log, unless said otherwise
 	 */
-	async appendToDailyLog(when, block, engine) {
+	async appendToDailyLog(when, block, engine, { heading, createIfMissing = true } = {}) {
 		const tp = await this.tp();
 		const { dailyFolder, dailyFormat, dailyHeading } = this.settings();
+		const section = heading?.trim() || dailyHeading;
 		const written = await tp.user.appendToDailyLog(
 			this.params(),
 			{
-				date: when, logFolder: normalizePath(dailyFolder), logFormat: dailyFormat, heading: dailyHeading, createIfMissing: true,
-				insert: (/** @type {string} */ content) => engine.call('section', { content, section: dailyHeading, entry: block }),
+				date: when, logFolder: normalizePath(dailyFolder), logFormat: dailyFormat, heading: section, createIfMissing,
+				insert: (/** @type {string} */ content) => engine.call('section', { content, section, entry: block }),
 			},
 			() => block,
 		);
@@ -665,8 +687,7 @@ class InsertTimelineEntryModal extends Modal {
 			}
 			if (this.daily) {
 				failed = 'the daily log';
-				const block = await this.plugin.timelines.render([DAILY_TEMPLATE], entry);
-				done.push(`added to ${await this.plugin.vaultLib.appendToDailyLog(when, block, await this.plugin.timelines.engine())}`);
+				done.push(`added to ${await this.plugin.appendToDailyLog({ template: DAILY_TEMPLATE, ...entry })}`);
 			}
 		} catch (error) {
 			console.error('DGS Toolbox: insert failed', error);
