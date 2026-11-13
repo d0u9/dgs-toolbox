@@ -120,7 +120,7 @@ The filenames the folder is read by:
 | `daily-entry.md` | One Capture as it is written into a daily note. | yes |
 | `location-entry.md` | One Capture as it is written into the running list of places. | yes |
 | `timeline-entry.md` | One Capture as it is written onto the timeline. | no — `location-entry.md` is used instead |
-| `daily-note.md` | A day's note, when the day has none yet. | no — a missing one refuses rather than inventing a note |
+| `daily-note.md` | A day's note, when the day has none yet. The Obsidian side creates a log from the same file, through the dgs-toolbox plugin, so a log reads the same whichever side made it; the weather is left for the plugin's backfill. | yes |
 | `quick-note.md` | Not read by `dgs capture`: one line of QuickAdd's Quick Note, which the dgs-toolbox plugin writes under 速记. | yes |
 
 ## Recipes

@@ -119,7 +119,7 @@ func TestBootstrapPlantsTheEntryTemplates(t *testing.T) {
 	vault := freshVault(t)
 	var out bytes.Buffer
 	_ = bootstrap(&out, vaultFlags(t, vault), config.Default())
-	for _, name := range []string{"daily-entry.md", "location-entry.md", "quick-note.md"} {
+	for _, name := range []string{"daily-entry.md", "location-entry.md", "quick-note.md", "daily-note.md"} {
 		data, err := os.ReadFile(filepath.Join(vault, filepath.FromSlash(config.DefaultPluginsObsidianEntries), name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -132,7 +132,7 @@ func TestBootstrapPlantsTheEntryTemplates(t *testing.T) {
 			t.Errorf("bootstrap did not say it wrote %s:\n%s", name, out.String())
 		}
 	}
-	for _, absent := range []string{"timeline-entry.md", "daily-note.md"} {
+	for _, absent := range []string{"timeline-entry.md"} {
 		if _, err := os.Stat(filepath.Join(vault, filepath.FromSlash(config.DefaultPluginsObsidianEntries), absent)); err == nil {
 			t.Errorf("bootstrap invented %s", absent)
 		}

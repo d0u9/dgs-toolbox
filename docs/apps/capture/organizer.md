@@ -560,9 +560,11 @@ daily note for the day it was taken:
   the same question as where this tool should write, and a wrong guess files a
   Capture where nobody is looking. What is not configured is an error.
 - **What a missing note is created from** is `daily-note.md` in the vault's
-  entry template folder, `capture.obsidian.templates`. A note is never created from nothing — an empty note among
-  templated ones is one the reader has to repair later — so a directory without
-  one is an error naming the file it expected, rather than a bare note.
+  entry template folder, `capture.obsidian.templates`, else the compiled-in
+  one. Templater's daily log template renders the same file through the
+  dgs-toolbox plugin, so a log has one shape whoever made it. dgs fills the
+  place from the Capture; the weather, which needs the network, is filled by
+  the plugin's backfill when the log is first opened, and only what is empty.
   Appending to a note that already exists needs no template.
 - **What** comes from a template, below.
 - **Under which heading**: its own section, added at the end of the note when it

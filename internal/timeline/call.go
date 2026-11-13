@@ -31,6 +31,8 @@ const APIVersion = 1
 //	tidy    TidyInput                       → TidyResult
 //	pictures {content}                      → [string], the pictures it embeds
 //	builtin {name}                          → string, a compiled-in template, or ""
+//	note    {name, template, input, mappings} → string, a day's note rendered;
+//	                                          no template is the compiled-in one
 //	entry   {name, template, input, mappings} → string, one entry rendered;
 //	                                          no template is the compiled-in one
 //	section {content, section, entry}       → string, a daily note with the entry
@@ -142,6 +144,31 @@ func Call(op string, args []byte) (result []byte, err error) {
 			return nil, fmt.Errorf("entry: %w", err)
 		}
 		return json.Marshal(strings.Join(lines, "\n"))
+	case "note":
+		var in struct {
+			Name     string
+			Template string
+			Input    entrytemplate.NoteInput
+			Mappings entrytemplate.Mappings
+		}
+		if err := decode(args, &in); err != nil {
+			return nil, err
+		}
+		if in.Name == "" {
+			in.Name = entrytemplate.DailyNote
+		}
+		if strings.TrimSpace(in.Template) == "" {
+			builtin, ok := entrytemplate.Builtin(in.Name)
+			if !ok {
+				return nil, fmt.Errorf("note: no template named %q", in.Name)
+			}
+			in.Template = builtin
+		}
+		rendered, err := entrytemplate.RenderNote(in.Name, in.Template, in.Input, in.Mappings)
+		if err != nil {
+			return nil, fmt.Errorf("note: %w", err)
+		}
+		return json.Marshal(rendered)
 	case "builtin":
 		var in struct{ Name string }
 		if err := decode(args, &in); err != nil {

@@ -5,6 +5,10 @@
  *
  * 所以这里只写空属性，笔记秒建；查到之后由 backfillLocationWeather 回填，
  * 它用 processFrontMatter，只改属性、不碰正文。故意不 await。
+ *
+ * 日志长什么样不在这里写：DGS Toolbox 用 Entry templates 文件夹里的
+ * daily-note.md（没有就用它自带的）经 timeline 引擎渲染，dgs capture 新建日志
+ * 也用同一份，所以不管谁建的日志，属性的顺序和写法都一样。
  */
 
 // 日志文件名就是日期。文件名不是日期时（例如从 Untitled 建的），
@@ -28,6 +32,13 @@ if (!date.isValid()) {
     date = parsed?.date ?? moment();
 }
 
+const api = app.plugins.plugins["dgs-toolbox"]?.api;
+if (!api?.dailyNote) {
+    new tp.obsidian.Notice("日志模板需要 DGS Toolbox：请先安装并打开它", 10000);
+    return;
+}
+tR += await api.dailyNote(date);
+
 // 不 await：让笔记先出现，位置和天气在后台补。
 // 日志是一整天，气温回填的是当天的最高和最低，不是创建那一刻的温度。
 const folder = tp.file.folder(true);
@@ -39,27 +50,3 @@ tp.user.backfillLocationWeather(tp, `${folder}/${tp.file.title}.md`, {
     date
 });
 -%>
----
-date: <% date.format("YYYY-MM-DD") %>
-dayOfTheYear: <% date.format("DDDD") %>
-createdAt: <% tp.date.now("YYYY-MM-DDTHH:mm:ssZ") %>
-coordinates: ""
-country: ""
-region: ""
-city: ""
-locality: ""
-temperature: ""
-weather: ""
-weatherNote: ""
-tags: ["log"]
-people: []
-mood: []
----
-
-# 速记
-
-# 今日活动
-
-# 去过哪里
-
---

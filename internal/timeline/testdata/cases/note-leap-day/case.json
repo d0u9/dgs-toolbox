@@ -1,0 +1,11 @@
+{
+  "op": "note",
+  "args": {
+    "template": "{{.DayOfYear}}",
+    "input": {
+      "date": "2028-12-31",
+      "now": "x"
+    }
+  },
+  "want": "366"
+}

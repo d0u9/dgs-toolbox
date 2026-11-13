@@ -36,8 +36,8 @@ const obsidian = {
 	moment: () => ({}),
 	normalizePath: (/** @type {string} */ path) => path.replace(/\/+/g, '/').replace(/^\/|\/$/g, ''),
 };
-const { DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates } = vm.runInNewContext(
-	`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;({ DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates })`,
+const { DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates, dailyLogDate, needsBackfill } = vm.runInNewContext(
+	`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;({ DgsToolboxPlugin, TimelineService, VaultLib, entryInput, timelineTemplates, dailyLogDate, needsBackfill })`,
 	{ require: () => obsidian, module: {}, console },
 );
 
@@ -221,4 +221,78 @@ test('a log that cannot be found or created is an error the caller sees', async 
 	const { plugin } = loadedPlugin({});
 	plugin.vaultLib.tp = async () => ({ user: { appendToDailyLog: async () => false } });
 	await assert.rejects(plugin.appendToDailyLog({ template: 'quick-note.md', text: 'x', when: day }), /could not be found or created/);
+});
+
+/** A moment for a day, as far as the plugin reads one. */
+function dayOf(/** @type {string} */ iso) {
+	return { format: (/** @type {string} */ layout) => (layout === 'YYYY-MM-DD' ? iso : `${iso}T08:00:00+11:00`), isValid: () => true };
+}
+
+test('a day’s log is the engine’s daily-note.md: the vault’s, else the plugin’s own', async () => {
+	const now = { format: () => '2026-11-13T09:05:00+11:00' };
+	const builtin = await service({}).renderNote(dayOf('2026-01-05'), now);
+	assert.equal(builtin, engine.call('note', { input: { date: '2026-01-05', now: '2026-11-13T09:05:00+11:00' } }));
+	assert.match(builtin, /^---\ndate: 2026-01-05\ndayOfTheYear: 005\ncreatedAt: 2026-11-13T09:05:00\+11:00\ncoordinates: ""\n/);
+	assert.match(builtin, /\n# 速记\n\n# 今日活动\n\n# 去过哪里\n/);
+	const own = await service({ [`${folder}/daily-note.md`]: '---\ndate: {{.Date}}\n---\n' }).renderNote(dayOf('2026-01-05'), now);
+	assert.equal(own, '---\ndate: 2026-01-05\n---\n');
+});
+
+const logSettings = { dailyFolder: '00 Daily Log', dailyFormat: 'YYYY/YYYY-MM-DD' };
+/** A strict parse of the one format the tests use. */
+const parse = (/** @type {string} */ text, /** @type {string} */ format) => {
+	const valid = format === 'YYYY/YYYY-MM-DD' && /^(\d{4})\/\1-\d{2}-\d{2}$/.test(text);
+	// Only 2026-12-xx is after "now" in these tests.
+	return { isValid: () => valid, text, isAfter: () => text.includes('-12-') };
+};
+
+test('a path is a day’s log only inside the Log folder, named by the Log file name format', () => {
+	assert.equal(dailyLogDate('00 Daily Log/2026/2026-11-08.md', logSettings, parse)?.text, '2026/2026-11-08');
+	for (const path of ['00 Daily Log/2026/notes.md', '00 Daily Log/2026/2026-11-08.canvas', 'Elsewhere/2026/2026-11-08.md', '00 Daily Logs/2026/2026-11-08.md']) {
+		assert.equal(dailyLogDate(path, logSettings, parse), null, path);
+	}
+	assert.equal(dailyLogDate('00 Daily Log/2026/2026-11-08.md', { ...logSettings, dailyFolder: '  ' }, parse), null);
+});
+
+test('a log needs the backfill while weather, temperature or the flag tag is missing', () => {
+	const done = { weather: 'Rain', temperature: '1, 2', tags: ['log', '🇦🇺-AU'] };
+	assert.equal(needsBackfill(done), false);
+	assert.equal(needsBackfill({ ...done, weather: '' }), true);
+	assert.equal(needsBackfill({ ...done, temperature: null }), true);
+	assert.equal(needsBackfill({ ...done, tags: ['log'] }), true);
+	assert.equal(needsBackfill({ ...done, tags: 'log 🇦🇺-AU' }), false, 'tags written as one string');
+	assert.equal(needsBackfill(undefined), false, 'a file without properties');
+});
+
+test('opening a log dgs made fills it once a session, and leaves alone what it should', async () => {
+	/** @type {any[]} */
+	const runs = [];
+	const plugin = Object.create(DgsToolboxPlugin.prototype);
+	plugin.settings = logSettings;
+	plugin.backfilled = new Set();
+	/** @type {Record<string, any>} */
+	const frontmatter = { weather: '', temperature: '', tags: ['log'] };
+	plugin.app = { metadataCache: { getFileCache: () => ({ frontmatter }) } };
+	plugin.vaultLib = { tp: async () => ({ user: { backfillLocationWeather: async (/** @type {unknown} */ _tp, /** @type {string} */ path) => runs.push(path) } }) };
+	const log = Object.assign(new TFile('00 Daily Log/2026/2026-11-08.md'), { stat: { ctime: 0 } });
+	const later = 10 * 60 * 1000;
+
+	await plugin.backfillDailyLog(log, later, parse);
+	await plugin.backfillDailyLog(log, later, parse);
+	assert.deepEqual(runs, ['00 Daily Log/2026/2026-11-08.md'], 'not once, or more than once');
+
+	const fresh = Object.assign(new TFile('00 Daily Log/2026/2026-11-09.md'), { stat: { ctime: later - 5000 } });
+	await plugin.backfillDailyLog(fresh, later, parse);
+	await plugin.backfillDailyLog(Object.assign(new TFile('00 Daily Log/2026/2026-12-24.md'), { stat: { ctime: 0 } }), later, parse);
+	assert.equal(runs.length, 1, 'a log Templater is still filling, or a day still to come');
+
+	await plugin.backfillDailyLog(Object.assign(new TFile('Notes/2026-11-08.md'), { stat: { ctime: 0 } }), later, parse);
+	await plugin.backfillDailyLog(null, later, parse);
+	assert.equal(runs.length, 1, 'a file that is not a log');
+
+	frontmatter.weather = 'Rain';
+	frontmatter.temperature = '1, 2';
+	frontmatter.tags = ['log', '🇦🇺-AU'];
+	await plugin.backfillDailyLog(Object.assign(new TFile('00 Daily Log/2026/2026-11-10.md'), { stat: { ctime: 0 } }), later, parse);
+	assert.equal(runs.length, 1, 'a log with nothing missing');
 });

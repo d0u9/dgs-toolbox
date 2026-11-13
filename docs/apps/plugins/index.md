@@ -40,7 +40,7 @@ install ([One binary](../../../AGENTS.md#one-binary)).
 1. It installs every plugin, as `install` does.
 2. It writes the **starting files** the vault lacks: the timelines file, the
    dgs-toolbox plugin's settings pointing at it, and the entry templates
-   `daily-entry.md`, `location-entry.md` and `quick-note.md` in
+   `daily-entry.md`, `location-entry.md`, `quick-note.md` and `daily-note.md` in
    [`obsidian.entries`](../../configuration/plugins.md), the compiled-in ones
    `dgs capture` and the plugin otherwise fall back to. These are yours from then on —
    `bootstrap` never writes over one, and `update` never touches them.

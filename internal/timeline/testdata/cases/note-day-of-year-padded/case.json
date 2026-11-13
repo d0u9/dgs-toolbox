@@ -1,0 +1,11 @@
+{
+  "op": "note",
+  "args": {
+    "template": "{{.DayOfYear}} {{.Weekday}} {{.Year}}/{{.Month}}/{{.Day}}",
+    "input": {
+      "date": "2026-01-05",
+      "now": "x"
+    }
+  },
+  "want": "005 Monday 2026/01/05"
+}

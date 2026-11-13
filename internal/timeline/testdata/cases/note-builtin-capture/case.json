@@ -1,0 +1,20 @@
+{
+  "op": "note",
+  "args": {
+    "input": {
+      "date": "2026-11-08",
+      "now": "2026-11-10T17:36:35+11:00",
+      "place": {
+        "country": "Australia",
+        "region": "NSW",
+        "city": "Sydney",
+        "locality": "The Rocks"
+      },
+      "position": {
+        "latitude": -33.861234,
+        "longitude": 151.212345
+      }
+    }
+  },
+  "want": "@want.md"
+}

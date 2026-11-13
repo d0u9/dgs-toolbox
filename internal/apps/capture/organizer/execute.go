@@ -247,10 +247,6 @@ func blockIDSafe(id string) string {
 // ErrNoDailyNote is returned when nothing says where a day's note lives.
 var ErrNoDailyNote = errors.New("no daily note path is configured")
 
-// ErrNoDailyTemplate is returned when a note has to be created and the template
-// directory holds nothing to create it from.
-var ErrNoDailyTemplate = errors.New("no daily note template")
-
 // dailyNotePath is where the day's note lives, from the configured path
 // template. Configured rather than discovered: a vault's own settings say where
 // the plugin in use puts notes, which is not the same question, and a wrong
@@ -281,10 +277,9 @@ func captureDay(ctx Context) (time.Time, error) {
 	return day, nil
 }
 
-// createDailyNote writes the day's note from the configured template. A note is
-// never created from nothing: an empty note among templated ones is one the
-// reader has to repair by hand later, and this tool has no way to know what it
-// should have held.
+// createDailyNote writes the day's note from the vault's daily note template,
+// else the compiled-in one. A note is never created from nothing: an empty
+// note among templated ones is one the reader has to repair by hand later.
 func createDailyNote(ctx Context, path string) error {
 	text, err := LoadNoteTemplate(ctx.Settings.TemplateDir)
 	if err != nil {

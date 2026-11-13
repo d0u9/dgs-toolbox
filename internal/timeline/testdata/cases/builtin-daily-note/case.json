@@ -1,0 +1,7 @@
+{
+  "op": "builtin",
+  "args": {
+    "name": "daily-note.md"
+  },
+  "want": "@want.md"
+}

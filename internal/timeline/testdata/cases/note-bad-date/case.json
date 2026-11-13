@@ -1,0 +1,10 @@
+{
+  "op": "note",
+  "args": {
+    "input": {
+      "date": "2026-13-40",
+      "now": "x"
+    }
+  },
+  "error": "note: note date"
+}

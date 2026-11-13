@@ -34,6 +34,15 @@ const UNDATED = '无日期';
 /** The entry template a day's log is written with. */
 const DAILY_TEMPLATE = 'daily-entry.md';
 
+/** The template a day's log is created from. */
+const DAILY_NOTE_TEMPLATE = 'daily-note.md';
+
+/** How new a log is that Templater is still filling. */
+const RECENT_MS = 60 * 1000;
+
+/** A tag formatCountryTag writes: two regional indicators, the flag. */
+const COUNTRY_TAG = /^[\u{1F1E6}-\u{1F1FF}]{2}/u;
+
 /**
  * The entry templates a timeline is written with, the first the vault has
  * winning: its own, then the timeline default, then the list of places'.
@@ -81,6 +90,7 @@ class DgsToolboxPlugin extends Plugin {
 		// rendered and placed by the engine too.
 		this.api = {
 			appendToDailyLog: (/** @type {DailyEntry} */ options) => this.appendToDailyLog(options),
+			dailyNote: (/** @type {any} */ date) => this.timelines.renderNote(date),
 		};
 		this.addCommand({
 			id: 'insert-timeline-entry',
@@ -93,6 +103,12 @@ class DgsToolboxPlugin extends Plugin {
 			callback: () => void this.tidyTimeline(),
 		});
 		this.addSettingTab(new DgsToolboxSettingTab(this.app, this));
+		// A log dgs capture made has where it was but not the weather, which
+		// needs the network only this side has: it is filled in when the log is
+		// first opened. Each log is tried once a session.
+		/** @type {Set<string>} */
+		this.backfilled = new Set();
+		this.registerEvent(this.app.workspace.on('file-open', (file) => void this.backfillDailyLog(file)));
 		// The daily log has no cssclass, so its places section is found by its
 		// heading: every block under the Log heading, up to the next heading of
 		// that level or higher, is drawn as a timeline.
@@ -119,6 +135,31 @@ class DgsToolboxPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Fills what a day's log still lacks — weather, temperature, the country's
+	 * flag tag, a place — without touching what it has. A log made in the last
+	 * minute is left alone: Templater's daily log template is filling it.
+	 *
+	 * @param {TFile | null} file
+	 * @param {number} [now] milliseconds, for the minute
+	 * @param {(text: string, format: string) => any} [parse] a strict moment parse
+	 */
+	async backfillDailyLog(file, now = Date.now(), parse = (text, format) => moment(text, format, true)) {
+		if (!(file instanceof TFile) || this.backfilled.has(file.path)) return;
+		const date = dailyLogDate(file.path, this.settings, parse);
+		// A day still to come has no weather to look up.
+		if (!date || date.isAfter(moment(now), 'day')) return;
+		if (now - (file.stat?.ctime ?? 0) < RECENT_MS) return;
+		if (!needsBackfill(this.app.metadataCache.getFileCache(file)?.frontmatter)) return;
+		this.backfilled.add(file.path);
+		try {
+			const tp = await this.vaultLib.tp();
+			await tp.user.backfillLocationWeather(tp, file.path, { dailyTemperature: true, countryTag: true, date });
+		} catch (error) {
+			console.warn('DGS Toolbox: backfill failed', error);
+		}
 	}
 
 	/**
@@ -282,21 +323,44 @@ class TimelineService {
 	 */
 	async render(names, entry) {
 		const engine = await this.engine();
+		return engine.call('entry', { ...(await this.template(engine, names)), input: entryInput(entry) });
+	}
+
+	/**
+	 * A day's log as daily-note.md makes it, the vault's else the plugin's own:
+	 * the template dgs capture creates a missing log with. Where this device is
+	 * is not known yet, so the place is left for the backfill.
+	 *
+	 * @param {any} date the day, a moment
+	 * @param {any} [now] when the log is made
+	 * @returns {Promise<string>}
+	 */
+	async renderNote(date, now = moment()) {
+		const engine = await this.engine();
+		return engine.call('note', {
+			...(await this.template(engine, [DAILY_NOTE_TEMPLATE])),
+			input: { date: date.format('YYYY-MM-DD'), now: now.format('YYYY-MM-DDTHH:mm:ssZ') },
+		});
+	}
+
+	/**
+	 * The first of the templates the vault's entry template folder has, with
+	 * its text, else the first the engine carries, with no text so the engine
+	 * uses its own.
+	 *
+	 * @param {{call: (op: string, args: unknown) => any}} engine
+	 * @param {string[]} names
+	 * @returns {Promise<{name: string, template: string}>}
+	 */
+	async template(engine, names) {
 		const folder = normalizePath(this.entriesFolder().trim());
-		let chosen = { name: '', template: '' };
 		for (const name of names) {
 			const file = folder ? this.app.vault.getAbstractFileByPath(normalizePath(`${folder}/${name}`)) : null;
-			if (file instanceof TFile) {
-				chosen = { name, template: await this.app.vault.read(file) };
-				break;
-			}
+			if (file instanceof TFile) return { name, template: await this.app.vault.read(file) };
 		}
-		if (!chosen.name) {
-			const builtin = names.find((name) => engine.call('builtin', { name }));
-			if (!builtin) throw new Error(`No entry template: ${names.join(', ')} are in neither ${folder || 'the vault'} nor the plugin.`);
-			chosen = { name: builtin, template: '' };
-		}
-		return engine.call('entry', { ...chosen, input: entryInput(entry) });
+		const builtin = names.find((name) => engine.call('builtin', { name }));
+		if (!builtin) throw new Error(`No entry template: ${names.join(', ')} are in neither ${folder || 'the vault'} nor the plugin.`);
+		return { name: builtin, template: '' };
 	}
 
 	/** The engine, started on first use: most sessions never need it. */
@@ -1147,6 +1211,34 @@ function parseWhen(input) {
  */
 function formatWhen(when) {
 	return `${when.format(WHEN_FORMAT)} ${formatOffset(when.utcOffset())}`;
+}
+
+/**
+ * The day a path is the log of, or null for any other file: inside the Log
+ * folder, named by the Log file name format.
+ *
+ * @param {string} path
+ * @param {Settings} settings
+ * @param {(text: string, format: string) => any} parse a strict moment parse
+ */
+function dailyLogDate(path, settings, parse) {
+	const folder = normalizePath(settings.dailyFolder.trim());
+	if (!folder || !path.startsWith(`${folder}/`) || !path.endsWith('.md')) return null;
+	const date = parse(path.slice(folder.length + 1, -'.md'.length), settings.dailyFormat);
+	return date?.isValid() ? date : null;
+}
+
+/**
+ * Whether a log's properties still lack something the backfill fills. A file
+ * without properties is not a log the templates made, and is left alone.
+ *
+ * @param {Record<string, unknown> | undefined} frontmatter
+ */
+function needsBackfill(frontmatter) {
+	if (!frontmatter) return false;
+	const blank = (/** @type {unknown} */ value) => value === undefined || value === null || String(value).trim() === '';
+	const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) : String(frontmatter.tags ?? '').split(/[,\s]+/);
+	return blank(frontmatter.weather) || blank(frontmatter.temperature) || !tags.some((tag) => COUNTRY_TAG.test(tag));
 }
 
 /**

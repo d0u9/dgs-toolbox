@@ -29,10 +29,9 @@ const (
 	// configured.
 	DailyEntryTemplate = "daily-entry.md"
 	// DailyNoteTemplate is the template a missing daily note is created from.
-	// It has no default: what a reader's note should hold is not something to
-	// invent, and an empty note among templated ones is one they have to
-	// repair by hand later.
-	DailyNoteTemplate = "daily-note.md"
+	// Its compiled-in default is the shape the Obsidian side creates a log
+	// with, so a log reads the same whichever side made it.
+	DailyNoteTemplate = entrytemplate.DailyNote
 	// LocationEntryTemplate is one Capture's entry in the running list of
 	// places. It has a compiled-in default too.
 	LocationEntryTemplate = "location-entry.md"
@@ -161,74 +160,42 @@ func templateText(dir, name string) (string, error) {
 	return text, nil
 }
 
-// NoteData is what a daily note's own template may name: the day it is for, and
-// what the Capture that prompted it knows about where it was taken.
-//
-// It exists because a vault's own daily template is usually written for a
-// plugin that asks the reader questions as it runs — country, region, weather —
-// and none of that can be answered without a person. Half of it need not be
-// asked at all: the date is the date, and the Capture already carries where it
-// was. What is genuinely unanswerable is left to the reader to fill in later.
-type NoteData struct {
-	Date      Value
-	Year      Value
-	Month     Value
-	Day       Value
-	Weekday   Value
-	DayOfYear Value
-	// Now is when the note is being created, which is not the day it is for: a
-	// note written today for last week records both.
-	Now Value
-	// Country, Region, City and Locality come from the Capture that prompted
-	// the note.
-	Country  Value
-	Region   Value
-	City     Value
-	Locality Value
-	// Place is the composed name, most specific first.
-	Place Value
-	// Latitude and Longitude are separate here too, for the same reason.
-	Latitude  Value
-	Longitude Value
-}
+// NoteData is what a daily note's template may name, from
+// internal/entrytemplate: the Obsidian plugin renders the same template with
+// the same data for Templater's daily log template.
+type NoteData = entrytemplate.NoteData
 
-// noteData collects what a daily note's template may write for one day.
+// noteData collects what a daily note's template may write for one day: the
+// day, and where the Capture that prompted it was taken.
 func noteData(ctx Context, day time.Time) NoteData {
-	place := ctx.place()
-	return NoteData{
-		Date:      Value(day.Format("2006-01-02")),
-		Year:      Value(day.Format("2006")),
-		Month:     Value(day.Format("01")),
-		Day:       Value(day.Format("02")),
-		Weekday:   Value(day.Format("Monday")),
-		DayOfYear: Value(fmt.Sprintf("%d", day.YearDay())),
-		Now:       Value(time.Now().Format(time.RFC3339)),
-		Country:   Value(strings.TrimSpace(place.Country)),
-		Region:    Value(strings.TrimSpace(place.Region)),
-		City:      Value(strings.TrimSpace(place.City)),
-		Locality:  Value(strings.TrimSpace(place.Locality)),
-		Place:     Value(address(ctx)),
-		Latitude:  Value(coordinate(ctx, FieldLatitude)),
-		Longitude: Value(coordinate(ctx, FieldLongitude)),
+	in := entrytemplate.NoteInput{
+		Date:  day.Format("2006-01-02"),
+		Now:   time.Now().Format(time.RFC3339),
+		Place: placeOf(ctx),
 	}
+	if position, ok := ctx.Position(); ok {
+		in.Position = &entrytemplate.Position{Latitude: position.Latitude, Longitude: position.Longitude}
+	}
+	data, _ := entrytemplate.NewNoteData(in)
+	return data
 }
 
-// LoadNoteTemplate reads the template a daily note is created from. Unlike the
-// entry template it has no compiled-in default, so a missing one names the file
-// that was expected rather than falling back to something invented here.
+// LoadNoteTemplate reads the template a daily note is created from: the
+// vault's daily-note.md, else the compiled-in one, which is the shape the
+// Obsidian side creates a log with too.
 func LoadNoteTemplate(dir string) (string, error) {
-	if strings.TrimSpace(dir) == "" {
-		return "", ErrNoDailyTemplate
-	}
-	path := filepath.Join(dir, DailyNoteTemplate)
-	text, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("%w: expected %s", ErrNoDailyTemplate, path)
+	if strings.TrimSpace(dir) != "" {
+		path := filepath.Join(dir, DailyNoteTemplate)
+		text, err := os.ReadFile(path)
+		if err == nil {
+			return string(text), nil
 		}
-		return "", fmt.Errorf("read %s: %w", path, err)
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("read %s: %w", path, err)
+		}
 	}
-	return string(text), nil
+	text, _ := entrytemplate.Builtin(DailyNoteTemplate)
+	return text, nil
 }
 
 // CheckNoteTemplate reports whether the daily note's template parses and
@@ -244,19 +211,16 @@ func CheckNoteTemplate(settings Settings) error {
 	return err
 }
 
-// renderNote fills a template read from a file. Unlike an entry, nothing is
-// pruned: a note is a document the reader will edit, and dropping lines out of
-// it because a value was unknown would leave them wondering what was removed.
+// renderNote fills a note template, nothing pruned.
 func renderNote(settings Settings, name, text string, data NoteData) (string, error) {
-	parsed, err := template.New(name).Funcs(templateFuncs(settings)).Option("missingkey=error").Parse(text)
+	parsed, err := entrytemplate.Parse(name, text, settings.Mappings)
+	if err != nil {
+		return "", err
+	}
+	rendered, err := entrytemplate.ExecuteNote(parsed, data)
 	if err != nil {
 		return "", fmt.Errorf("template %s: %w", name, err)
 	}
-	var out strings.Builder
-	if err := parsed.Execute(&out, data); err != nil {
-		return "", fmt.Errorf("template %s: %w", name, err)
-	}
-	rendered, _, _ := entrytemplate.StripMarkers(out.String())
 	return rendered, nil
 }
 

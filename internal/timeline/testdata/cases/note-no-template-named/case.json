@@ -1,0 +1,10 @@
+{
+  "op": "note",
+  "args": {
+    "name": "nothing.md",
+    "input": {
+      "date": "2026-01-05"
+    }
+  },
+  "error": "note: no template named \"nothing.md\""
+}

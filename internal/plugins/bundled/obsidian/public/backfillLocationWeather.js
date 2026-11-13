@@ -8,12 +8,19 @@
  * `processFrontMatter` —— **只改属性，不碰正文**，所以无论回填多晚落地，
  * 都不可能覆盖掉正文里的东西。
  *
+ * **只填空的**：已经有值的属性一律不动。dgs capture 建的日志带着 capture 记下的
+ * 坐标和地名，这里只补它补不了的天气、气温和国旗标签；已经有坐标就按这个坐标
+ * 查，不会换成这台设备此刻的位置。只有坐标也空着，才用设备的定位。
+ *
  * 调用方不要 await：让它在后台跑，笔记先出现。
  */
 
 // 文件是模板渲染完才落盘的，回填要等它出现。
 const FILE_WAIT_TIMEOUT_MS = 15000;
 const FILE_WAIT_POLL_MS = 200;
+
+// 由 formatCountryTag 生成的标签，开头是两个区域指示符组成的国旗。
+const COUNTRY_TAG = /^[\u{1F1E6}-\u{1F1FF}]{2}/u;
 
 const waitForFile = async (app, path) => {
     const deadline = Date.now() + FILE_WAIT_TIMEOUT_MS;
@@ -27,26 +34,64 @@ const waitForFile = async (app, path) => {
     return null;
 };
 
+const blank = (value) => value === undefined || value === null || String(value).trim() === "";
+
+const toTags = (tags) => {
+    if (Array.isArray(tags)) return tags.map((tag) => String(tag));
+    if (typeof tags === "string") return tags.split(/[,\s]+/).filter(Boolean);
+    return [];
+};
+
+const hasCountryTag = (tags) => toTags(tags).some((tag) => COUNTRY_TAG.test(tag));
+
 /**
- * 创建时还不知道在哪个国家，所以国家标签只能这时候加。已有的原地替换，
- * 没有的追加到末尾 —— 这跟事后修改位置的模板不同，那些不新增标签。
- *
- * 只有日志走到这里（调用方传 countryTag: true）：国旗标签是日志的结构性标签，
- * 普通笔记不该带。
+ * 属性里的坐标，按「纬度, 经度」读。读不出来就当没有 —— 不像手动的模板那样
+ * 问人，这里在后台跑。
  */
-const withCountryTag = (tp, tags, countryTag) => {
-    if (!countryTag) return null;
+const coordinatesOf = (value) => {
+    const parts = String(value ?? "").split(/[,，\s]+/).filter(Boolean).map(Number);
+    if (parts.length !== 2 || !parts.every(Number.isFinite)) return null;
+    const [latitude, longitude] = parts;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+};
 
-    const replaced = tp.user.updateCountryTag(tags, countryTag);
-    if (replaced) return replaced;
+/** 文件现在的属性。刚建好的文件可能还没进 metadataCache，所以直接读。 */
+const readFrontmatter = async (tp, file) => {
+    const text = await app.vault.read(file);
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+    if (!match) return {};
+    try {
+        return tp.obsidian.parseYaml(match[1]) ?? {};
+    } catch {
+        return {};
+    }
+};
 
-    const current = Array.isArray(tags)
-        ? tags.map((tag) => String(tag))
-        : typeof tags === "string"
-            ? tags.split(/[,\s]+/).filter(Boolean)
-            : [];
+/**
+ * 笔记在哪儿：已有坐标就用它，地名或国家代码缺了再按坐标反查；没有坐标才问设备。
+ * 返回的地名只是「查到的」，写不写由调用方按空不空决定。
+ */
+const locate = async (tp, existing, wantCountryCode) => {
+    const known = coordinatesOf(existing.coordinates);
+    if (!known) return tp.user.getLocation(tp, tp.user.requestJson);
 
-    return [...current, countryTag];
+    const named = ["country", "region", "city", "locality"].some((key) => !blank(existing[key]));
+    let place = null;
+    if (!named || wantCountryCode) {
+        try {
+            place = await tp.user.reverseGeocode(tp, tp.user.requestJson, known.latitude, known.longitude);
+        } catch (error) {
+            console.warn("Backfill reverse geocoding failed:", error);
+        }
+    }
+    return {
+        ...(place ?? {}),
+        ...(place ? { country: tp.user.countryName(place.countryCode, place.country) } : {}),
+        latitude: known.latitude,
+        longitude: known.longitude,
+        coordinates: existing.coordinates
+    };
 };
 
 module.exports = async function backfillLocationWeather(tp, path, options = {}) {
@@ -62,23 +107,33 @@ module.exports = async function backfillLocationWeather(tp, path, options = {}) 
     // date 是带时区的 moment（也收日期串），「那一天」按它自己的时区算。
     const { dailyTemperature = false, countryTag = false, date = moment() } = options;
 
+    const existing = await readFrontmatter(tp, file);
+    const wantsWeather = blank(existing.weather) || blank(existing.temperature);
+    const wantsTag = countryTag && !hasCountryTag(existing.tags);
+    const wantsPlace = ["coordinates", "country", "region", "city", "locality"].some((key) => blank(existing[key]));
+
+    if (!wantsWeather && !wantsTag && !wantsPlace) return;
+
     let location = null;
     let weather = null;
     let dayTemperature = null;
 
     try {
-        location = await tp.user.getLocation(tp, tp.user.requestJson);
-        if (dailyTemperature && location) {
-            // 日志一次请求取全天出现过的状态和最低最高温。
-            dayTemperature = await tp.user.getDailyTemperature(
-                tp,
-                tp.user.requestJson,
-                location,
-                date
-            );
-            weather = dayTemperature;
-        } else if (location?.city) {
-            weather = await tp.user.getWeather(tp, location, tp.user.requestJson);
+        location = await locate(tp, existing, wantsTag);
+
+        if (wantsWeather && location) {
+            if (dailyTemperature) {
+                // 日志一次请求取全天出现过的状态和最低最高温。
+                dayTemperature = await tp.user.getDailyTemperature(
+                    tp,
+                    tp.user.requestJson,
+                    location,
+                    date
+                );
+                weather = dayTemperature;
+            } else if (location.city || (location.latitude && location.longitude)) {
+                weather = await tp.user.getWeather(tp, location, tp.user.requestJson);
+            }
         }
     } catch (error) {
         console.warn("Backfill lookup failed:", error);
@@ -95,35 +150,38 @@ module.exports = async function backfillLocationWeather(tp, path, options = {}) 
     }
 
     await app.fileManager.processFrontMatter(file, (properties) => {
-        if (hasLocation) {
-            properties.country = location.country;
-            properties.region = location.region;
-            properties.city = location.city;
-            properties.locality = location.locality ?? "";
-            properties.coordinates = location.coordinates;
+        const fill = (key, value) => {
+            if (blank(properties[key]) && !blank(value)) properties[key] = value;
+        };
 
-            if (countryTag) {
-                const tag = tp.user.formatCountryTag(
-                    location.countryCode,
-                    location.country
-                );
-                const tags = withCountryTag(tp, properties.tags, tag);
-                if (tags) properties.tags = tags;
+        if (hasLocation) {
+            fill("coordinates", location.coordinates);
+            fill("country", location.country);
+            fill("region", location.region);
+            fill("city", location.city);
+            fill("locality", location.locality);
+
+            if (countryTag && !hasCountryTag(properties.tags)) {
+                // 国名取笔记里的（刚填上的或原本就有的），查不到国家代码时用得上。
+                const tag = tp.user.formatCountryTag(location.countryCode, properties.country || location.country);
+                // 没有国家代码时标签是国名，不是国旗：加过就不再加。
+                const tags = toTags(properties.tags);
+                if (tag && !tags.includes(tag)) properties.tags = [...tags, tag];
             }
         }
 
         if (weather) {
-            properties.weather = weather.condition;
-            if (!dailyTemperature) properties.temperature = weather.temperature;
+            fill("weather", weather.condition);
+            if (!dailyTemperature) fill("temperature", weather.temperature);
         }
 
         // 日志的 temperature 是「最低, 最高」一个字符串，不是此刻那个数。
-        if (dayTemperature) properties.temperature = dayTemperature.range;
+        if (dayTemperature) fill("temperature", dayTemperature.range);
 
         tp.user.orderFrontmatter(properties);
     });
 
-    if (!weather || (dailyTemperature && !dayTemperature)) {
+    if (wantsWeather && (!weather || (dailyTemperature && !dayTemperature))) {
         new Notice("天气没查全，缺的属性先留空 —— 可以用 52 Update Weather 手动补", 6000);
     }
 };

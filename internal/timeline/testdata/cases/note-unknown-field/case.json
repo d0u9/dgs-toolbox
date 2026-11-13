@@ -1,0 +1,11 @@
+{
+  "op": "note",
+  "args": {
+    "template": "{{.Weather}}",
+    "input": {
+      "date": "2026-01-05",
+      "now": "x"
+    }
+  },
+  "error": "can't evaluate field Weather"
+}

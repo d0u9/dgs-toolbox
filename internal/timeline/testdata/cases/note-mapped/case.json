@@ -1,0 +1,20 @@
+{
+  "op": "note",
+  "args": {
+    "template": "{{mapped \"country\" .Country}}|{{mapped \"country\" .Region}}",
+    "input": {
+      "date": "2026-01-05",
+      "now": "x",
+      "place": {
+        "country": "Australia",
+        "region": "NSW"
+      }
+    },
+    "mappings": {
+      "country": {
+        "Australia": "澳大利亚"
+      }
+    }
+  },
+  "want": "澳大利亚|NSW"
+}

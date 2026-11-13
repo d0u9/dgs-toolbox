@@ -332,31 +332,23 @@ func TestDailyAppendRefusesWithoutAConfiguredPathOrTemplate(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoDailyNote", results[0].Err)
 	}
 
-	// No template: appending to a note that exists is fine, but the day
-	// without one cannot be created.
+	// No template in the vault: the day is created from the compiled-in one,
+	// the shape the Obsidian side creates a log with.
 	settings = base
 	settings.TemplateDir = t.TempDir()
 	ctx = NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
 	plans = Build(ctx, recipe, recipe.Actions)
-	if results := Execute(ctx, plans); !errorsIs(results[0].Err, ErrNoDailyTemplate) {
-		t.Fatalf("err = %v, want ErrNoDailyTemplate", results[0].Err)
-	}
-	existing := filepath.Join(vault, plans[0].Target)
-	os.MkdirAll(filepath.Dir(existing), 0o755)
-	os.WriteFile(existing, []byte("# Captured\n"), 0o644)
 	if results := Execute(ctx, plans); !Executed(results) {
-		t.Fatalf("appending to a note that exists needs no template: %+v", results)
+		t.Fatalf("a missing template is the compiled-in one: %+v", results)
 	}
-
-	// A template directory without one names the file it expected.
-	settings = base
-	settings.TemplateDir = t.TempDir()
-	ctx = NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
-	os.RemoveAll(filepath.Join(vault, "Daily"))
-	os.RemoveAll(filepath.Join(vault, "00 Daily Log"))
-	results := Execute(ctx, Build(ctx, recipe, recipe.Actions))
-	if results[0].Err == nil || !strings.Contains(results[0].Err.Error(), DailyNoteTemplate) {
-		t.Fatalf("err = %v, want it to name the template", results[0].Err)
+	created, err := os.ReadFile(filepath.Join(vault, plans[0].Target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"date: 2026-09-09\n", "dayOfTheYear: 252\n", "coordinates: \"-33.76910, 151.08200\"\n", "weather: \"\"\n", "tags: [\"log\"]\n", "# 去过哪里\n"} {
+		if !strings.Contains(string(created), want) {
+			t.Errorf("created note lacks %q:\n%s", want, created)
+		}
 	}
 }
 

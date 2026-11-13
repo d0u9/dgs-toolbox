@@ -1,0 +1,14 @@
+{
+  "op": "note",
+  "args": {
+    "template": "region: {{.Region}}\nplace: {{.Place}}\n",
+    "input": {
+      "date": "2026-01-05",
+      "now": "x",
+      "place": {
+        "country": "Australia"
+      }
+    }
+  },
+  "want": "@want.md"
+}
