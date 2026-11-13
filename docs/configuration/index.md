@@ -165,6 +165,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [plugins](plugins.md) | `obsidian.folders.quickadd` | `99 Toolkit/91 Scripts/01 DGS/02 QuickAdd` |
 | [plugins](plugins.md) | `obsidian.folders.templates` | `99 Toolkit/01 Templater/01 DGS` |
 | [plugins](plugins.md) | `obsidian.timelines` | `99 Toolkit/timelines.json` |
+| [plugins](plugins.md) | `obsidian.entries` | `99 Toolkit/03 Entry Templates` |
 | [cred](cred.md) | `identities` | empty — no identities |
 | [cred](cred.md) | `recipients` | empty — no recipients |
 | [cred](cred.md) | `new_identity_dir` | `~/.config/age` |

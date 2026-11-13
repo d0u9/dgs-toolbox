@@ -10,8 +10,8 @@
 // The scripts and templates name the vault folders they are installed into —
 // a QuickAdd script loads the Public scripts from their folder — and those
 // folders are the reader's to choose. So a text file says {{dgs:public}},
-// {{dgs:quickadd}}, {{dgs:templates}} or {{dgs:timelines}} where it means one,
-// and install writes the configured path in its place.
+// {{dgs:quickadd}}, {{dgs:templates}}, {{dgs:timelines}} or {{dgs:entries}}
+// where it means one, and install writes the configured path in its place.
 package bundled
 
 import (
@@ -30,9 +30,10 @@ import (
 var sources embed.FS
 
 // Paths are the vault paths the Obsidian files are installed into, relative
-// to the vault: plugins/config.json's obsidian.folders and obsidian.timelines.
+// to the vault: plugins/config.json's obsidian.folders, obsidian.timelines and
+// obsidian.entries.
 type Paths struct {
-	Public, QuickAdd, Templates, Timelines string
+	Public, QuickAdd, Templates, Timelines, Entries string
 }
 
 func (p Paths) replacer() *strings.Replacer {
@@ -41,6 +42,7 @@ func (p Paths) replacer() *strings.Replacer {
 		"{{dgs:quickadd}}", p.QuickAdd,
 		"{{dgs:templates}}", p.Templates,
 		"{{dgs:timelines}}", p.Timelines,
+		"{{dgs:entries}}", p.Entries,
 	)
 }
 

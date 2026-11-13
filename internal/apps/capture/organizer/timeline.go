@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/cred/publish"
+	"dgs-toolbox/internal/entrytemplate"
 	"dgs-toolbox/internal/timeline"
 )
 
@@ -257,7 +258,7 @@ func firstTemplate(dir string, names []string) string {
 		}
 	}
 	for _, name := range names {
-		if _, err := builtinTemplates.ReadFile("templates/" + name); err == nil {
+		if _, ok := entrytemplate.Builtin(name); ok {
 			return name
 		}
 	}

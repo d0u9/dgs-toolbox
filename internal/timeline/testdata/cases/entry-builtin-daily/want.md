@@ -1,0 +1,7 @@
+- Date: 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620
+    - Content:
+        - Coffee under the bridge
+        - with alice
+    - ![[20260909-213122-1.jpg]]
+    - Coordinates: -33.86123, 151.21234, 12m
+    - Address: Australia, NSW, Sydney, The Rocks

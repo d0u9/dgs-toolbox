@@ -300,7 +300,8 @@ func TestBuiltinEntriesWithoutContent(t *testing.T) {
 }
 
 // A text written across lines keeps the entry a list: the first line follows
-// the clock, and every further line is an item of its own under it.
+// the clock, and every further line is an item of its own under it, before the
+// place.
 func TestBuiltinLocationEntryWithLinesOfText(t *testing.T) {
 	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "tea\n\nwith alice\nand bob"})
 	parsed, err := LoadTemplate(ctx.Settings, LocationEntryTemplate)
@@ -319,7 +320,8 @@ func TestBuiltinLocationEntryWithLinesOfText(t *testing.T) {
 			t.Errorf("line %q breaks the list", line)
 		}
 	}
-	if got := lines[len(lines)-2:]; got[0] != "    - with alice" || got[1] != "    - and bob" {
-		t.Errorf("last lines = %q", got)
+	// The text comes first, ahead of where it was written.
+	if len(lines) < 3 || lines[1] != "    - with alice" || lines[2] != "    - and bob" {
+		t.Errorf("lines = %q, want the text right under the first line", lines)
 	}
 }

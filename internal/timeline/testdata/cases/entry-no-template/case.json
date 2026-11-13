@@ -1,11 +1,11 @@
 {
   "op": "entry",
   "args": {
-    "name": "daily-entry.md",
+    "name": "nothing.md",
     "template": "  \n",
     "input": {
       "createdAt": "2026-03-01T08:05:09Z"
     }
   },
-  "error": "entry: no template"
+  "error": "entry: no template named \"nothing.md\""
 }

@@ -13,12 +13,28 @@
 package entrytemplate
 
 import (
+	"embed"
 	"fmt"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 )
+
+// builtin are the templates that work before a vault has any of its own: a
+// reader's file of the same name replaces one.
+//
+//go:embed templates/*.md
+var builtin embed.FS
+
+// Builtin is the compiled-in template of that name, if there is one.
+func Builtin(name string) (string, bool) {
+	data, err := builtin.ReadFile("templates/" + name)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
 
 // Value is a template field. It prints itself wrapped in markers the renderer
 // strips afterwards, which is how a line knows whether the blank on it came

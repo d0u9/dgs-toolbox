@@ -217,11 +217,14 @@ type Plugins struct {
 // PluginsObsidian lists the vaults the Obsidian plugins are checked and
 // installed in when a run names none. Each is a vault's own folder, the one
 // holding its configuration folders; a leading ~ is the home directory.
-// Folders and Timelines are paths inside every vault.
+// Folders, Timelines and Entries are paths inside every vault. Entries is the
+// entry template folder, which the plugin's settings point at; like the
+// timelines file it is the reader's, not a folder dgs owns.
 type PluginsObsidian struct {
 	Vaults    []string               `json:"vaults"`
 	Folders   PluginsObsidianFolders `json:"folders"`
 	Timelines string                 `json:"timelines"`
+	Entries   string                 `json:"entries"`
 }
 
 // PluginsObsidianFolders are the vault folders the scripts and templates dgs
@@ -244,6 +247,7 @@ const (
 	DefaultPluginsObsidianQuickAdd  = "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd"
 	DefaultPluginsObsidianTemplates = "99 Toolkit/01 Templater/01 DGS"
 	DefaultPluginsObsidianTimelines = "99 Toolkit/timelines.json"
+	DefaultPluginsObsidianEntries   = "99 Toolkit/03 Entry Templates"
 )
 
 // Conf configures dgs conf export: where the generator root and its secrets
@@ -353,6 +357,7 @@ func Default() Config {
 				Templates: DefaultPluginsObsidianTemplates,
 			},
 			Timelines: DefaultPluginsObsidianTimelines,
+			Entries:   DefaultPluginsObsidianEntries,
 		}}}
 }
 
@@ -811,6 +816,7 @@ func checkPlugins(c *Config) error {
 	for key, value := range map[string]string{
 		"obsidian.folders.public": obsidian.Folders.Public, "obsidian.folders.quickadd": obsidian.Folders.QuickAdd,
 		"obsidian.folders.templates": obsidian.Folders.Templates, "obsidian.timelines": obsidian.Timelines,
+		"obsidian.entries": obsidian.Entries,
 	} {
 		if err := checkVaultPath(value); err != nil {
 			return fmt.Errorf("%s: %w", key, err)

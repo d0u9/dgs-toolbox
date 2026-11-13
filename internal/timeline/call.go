@@ -30,7 +30,9 @@ const APIVersion = 1
 //	definitions {text}                      → [Definition], the timelines file read
 //	tidy    TidyInput                       → TidyResult
 //	pictures {content}                      → [string], the pictures it embeds
-//	entry   {name, template, input, mappings} → string, one entry rendered
+//	builtin {name}                          → string, a compiled-in template, or ""
+//	entry   {name, template, input, mappings} → string, one entry rendered;
+//	                                          no template is the compiled-in one
 //	section {content, section, entry}       → string, a daily note with the entry
 //	                                          at the end of its section
 func Call(op string, args []byte) (result []byte, err error) {
@@ -127,16 +129,26 @@ func Call(op string, args []byte) (result []byte, err error) {
 			return nil, err
 		}
 		if strings.TrimSpace(in.Template) == "" {
-			return nil, errors.New("entry: no template")
-		}
-		if in.Name == "" {
-			in.Name = "entry"
+			// A vault without a template of this name gets the compiled-in
+			// one, as dgs capture does.
+			builtin, ok := entrytemplate.Builtin(in.Name)
+			if !ok {
+				return nil, fmt.Errorf("entry: no template named %q", in.Name)
+			}
+			in.Template = builtin
 		}
 		lines, err := entrytemplate.Render(in.Name, in.Template, in.Input, in.Mappings)
 		if err != nil {
 			return nil, fmt.Errorf("entry: %w", err)
 		}
 		return json.Marshal(strings.Join(lines, "\n"))
+	case "builtin":
+		var in struct{ Name string }
+		if err := decode(args, &in); err != nil {
+			return nil, err
+		}
+		text, _ := entrytemplate.Builtin(in.Name)
+		return json.Marshal(text)
 	case "section":
 		var in struct{ Content, Section, Entry string }
 		if err := decode(args, &in); err != nil {

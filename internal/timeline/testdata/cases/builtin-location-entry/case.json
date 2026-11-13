@@ -1,0 +1,7 @@
+{
+  "op": "builtin",
+  "args": {
+    "name": "location-entry.md"
+  },
+  "want": "@want.md"
+}

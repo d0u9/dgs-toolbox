@@ -81,7 +81,7 @@ plugins:
 test-timeline: plugins
 	go test ./internal/timeline
 	GOOS=js GOARCH=wasm go test -exec="$(GOWASM_EXEC)" ./internal/timeline
-	node --test internal/plugins/bundled/engine.test.mjs internal/plugins/bundled/pictures.test.mjs
+	node --test internal/plugins/bundled/engine.test.mjs internal/plugins/bundled/pictures.test.mjs internal/plugins/bundled/entries.test.mjs
 
 # GPX interaction rules and filesystem-backed segment addition contracts.
 test-gpx-web:

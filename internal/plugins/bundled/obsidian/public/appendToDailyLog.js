@@ -15,6 +15,9 @@
  *   heading       写在哪个标题下，不含 # 号；建日志用的模板不在这里配，
  *                 那是 Templater 的文件夹模板管的事
  *   createIfMissing
+ *   insert        可选，(content) => 新内容：由调用方决定条目放在段落的哪里。
+ *                 DGS Toolbox 传的是 timeline 引擎的 section，和 dgs capture
+ *                 用同一份代码；不传就用这里自己的 appendToSection。
  */
 
 // 日志模板里要查天气、要定位，慢的时候好几秒；等不到就不等了，先把内容写下来。
@@ -41,9 +44,7 @@ module.exports = async function appendToDailyLog(params, options, makeBlock) {
 		return false;
 	}
 
-	await params.app.vault.process(file, (content) =>
-		appendToSection(content, options.heading, makeBlock),
-	);
+	await params.app.vault.process(file, (content) => insertInto(content, options, makeBlock));
 
 	// 保险：万一还有一次渲染在路上，把刚写的内容盖掉了，就再写一次。
 	await verifyAppend(params, file, options, makeBlock);
@@ -80,9 +81,7 @@ async function verifyAppend(params, file, options, makeBlock) {
 
 		rewrites += 1;
 		console.warn(`Appended entry vanished from ${file.path}, writing it again`);
-		await params.app.vault.process(file, (value) =>
-			appendToSection(value, options.heading, makeBlock),
-		);
+		await params.app.vault.process(file, (value) => insertInto(value, options, makeBlock));
 		new Notice(`日志被模板重写了一次，刚才那条已补回 ${file.path}`);
 	}
 }
@@ -158,6 +157,10 @@ async function waitForStableContent(app, file, heading) {
 
 	console.warn(`Timed out waiting for the daily log template to render ${file.path}`);
 	return false;
+}
+
+function insertInto(content, options, makeBlock) {
+	return options.insert ? options.insert(content) : appendToSection(content, options.heading, makeBlock);
 }
 
 function appendToSection(content, heading, makeLine) {

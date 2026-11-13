@@ -10,9 +10,13 @@
  * why startDgsTimeline is used here without being imported.
  *
  * Where this device is, and the address, come from the vault's own scripts
- * (the Templater user scripts folder, "Lib folder" in the settings), as do
- * the map links and the daily log append: one implementation of each in the
- * vault, whatever calls it. A Capture from dgs brings its own position.
+ * (the Templater user scripts folder, "Lib folder" in the settings), as does
+ * the daily log append: one implementation of each in the vault, whatever
+ * calls it. A Capture from dgs brings its own position.
+ *
+ * What an entry says is the engine's: it renders the vault's entry templates
+ * (the folder "Entry templates" names) with the same code dgs capture renders
+ * them with, so an entry reads the same whichever of them wrote it.
  */
 
 const obsidian = require('obsidian');
@@ -27,8 +31,15 @@ const WASM_FILE = 'timeline.wasm';
 /** The marker for entries tidying finds no date for. */
 const UNDATED = '无日期';
 
-/** Detail lines are indented four spaces, as the vault writes them by hand. */
-const INDENT = '    ';
+/** The entry template a day's log is written with. */
+const DAILY_TEMPLATE = 'daily-entry.md';
+
+/**
+ * The entry templates a timeline is written with, the first the vault has
+ * winning: its own, then the timeline default, then the list of places'.
+ * dgs capture picks by the same order.
+ */
+const TIMELINE_TEMPLATES = ['timeline-entry.md', 'location-entry.md'];
 
 const WHEN_FORMAT = 'YYYY-MM-DD HH:mm:ss';
 const WHEN = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?)(?:\s*([+-]\d{1,2}(?:[.:]\d{1,2})?))?$/;
@@ -40,8 +51,7 @@ const WHEN = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?)(?:\s*([+-]\d{1,
  *   dailyFolder: string,
  *   dailyFormat: string,
  *   dailyHeading: string,
- *   copyChoice: string,
- *   mapLinks: string,
+ *   entriesFolder: string,
  * }} Settings
  * @typedef {{name: string, note: string, archive?: string, split: string, cssclass: string, title: string, template?: string, contentRequired?: boolean}} Definition
  * @typedef {{country?: string, region?: string, city?: string, locality?: string, latitude?: string | number, longitude?: string | number}} Place
@@ -56,15 +66,14 @@ const DEFAULT_SETTINGS = {
 	dailyFolder: '00 Daily Log',
 	dailyFormat: 'YYYY/YYYY-MM-DD',
 	dailyHeading: '去过哪里',
-	copyChoice: 'Copy Coordinates (lng, lat)',
-	mapLinks: 'Apple, 高德, Google',
+	entriesFolder: '{{dgs:entries}}',
 };
 
 class DgsToolboxPlugin extends Plugin {
 	async onload() {
 		/** @type {Settings} */
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-		this.timelines = new TimelineService(this.app, this.manifest.dir ?? '', () => this.settings.timelinesFile);
+		this.timelines = new TimelineService(this.app, this.manifest.dir ?? '', () => this.settings.timelinesFile, () => this.settings.entriesFolder);
 		this.vaultLib = new VaultLib(this.app, () => this.settings);
 		this.addCommand({
 			id: 'insert-timeline-entry',
@@ -195,48 +204,25 @@ class VaultLib {
 	}
 
 	/**
-	 * The detail lines a place adds under an entry, as the locations timeline
-	 * has them: the address from coarse to fine, the coordinates as a link
-	 * copying them, and one link per map.
-	 *
-	 * @param {Place | null} place
-	 * @returns {Promise<string[]>}
-	 */
-	async placeLines(place) {
-		if (!place) return [];
-		const lines = [];
-		const address = [place.country, place.region, place.city, place.locality].filter(Boolean);
-		if (address.length) lines.push(address.join(', '));
-		if (place.latitude && place.longitude) {
-			const { copyChoice, mapLinks } = this.settings();
-			const shown = `(${place.latitude}, ${place.longitude})`;
-			const value = encodeURIComponent(`${place.latitude}, ${place.longitude}`);
-			lines.push(copyChoice
-				? `[${shown}](obsidian://quickadd?choice=${encodeURIComponent(copyChoice)}&value-coordinates=${value})`
-				: shown);
-			const tp = await this.tp();
-			const label = place.locality || place.city || place.region || place.country;
-			const links = tp.user.mapLinks(place.latitude, place.longitude, label, mapLinks);
-			lines.push(links.map((/** @type {{short: string, url: string}} */ link) => `[${link.short}](${link.url})`).join(' · '));
-		}
-		return lines;
-	}
-
-	/**
 	 * Appends a block under the day's heading in its log, creating the log
 	 * through Templater's folder template when there is none. 00 Public's
 	 * appendToDailyLog waits for the template to settle and checks afterwards
-	 * that nothing overwrote the block.
+	 * that nothing overwrote the block. Where in the section the block goes is
+	 * the engine's, as it is for dgs capture.
 	 *
 	 * @param {any} when
 	 * @param {string} block
+	 * @param {{call: (op: string, args: unknown) => any}} engine
 	 */
-	async appendToDailyLog(when, block) {
+	async appendToDailyLog(when, block, engine) {
 		const tp = await this.tp();
 		const { dailyFolder, dailyFormat, dailyHeading } = this.settings();
 		const written = await tp.user.appendToDailyLog(
 			this.params(),
-			{ date: when, logFolder: normalizePath(dailyFolder), logFormat: dailyFormat, heading: dailyHeading, createIfMissing: true },
+			{
+				date: when, logFolder: normalizePath(dailyFolder), logFormat: dailyFormat, heading: dailyHeading, createIfMissing: true,
+				insert: (/** @type {string} */ content) => engine.call('section', { content, section: dailyHeading, entry: block }),
+			},
 			() => block,
 		);
 		if (!written) throw new Error('the daily log could not be found or created');
@@ -255,11 +241,40 @@ class TimelineService {
 	 * @param {import('obsidian').App} app
 	 * @param {string} pluginDir
 	 * @param {() => string} timelinesFile
+	 * @param {() => string} entriesFolder
 	 */
-	constructor(app, pluginDir, timelinesFile) {
+	constructor(app, pluginDir, timelinesFile, entriesFolder) {
 		this.app = app;
 		this.pluginDir = pluginDir;
 		this.timelinesFile = timelinesFile;
+		this.entriesFolder = entriesFolder;
+	}
+
+	/**
+	 * One entry, rendered by the engine from the first of the templates the
+	 * vault's entry template folder has, else the first the engine carries.
+	 *
+	 * @param {string[]} names templates to try, in order
+	 * @param {NewEntry} entry
+	 * @returns {Promise<string>}
+	 */
+	async render(names, entry) {
+		const engine = await this.engine();
+		const folder = normalizePath(this.entriesFolder().trim());
+		let chosen = { name: '', template: '' };
+		for (const name of names) {
+			const file = folder ? this.app.vault.getAbstractFileByPath(normalizePath(`${folder}/${name}`)) : null;
+			if (file instanceof TFile) {
+				chosen = { name, template: await this.app.vault.read(file) };
+				break;
+			}
+		}
+		if (!chosen.name) {
+			const builtin = names.find((name) => engine.call('builtin', { name }));
+			if (!builtin) throw new Error(`No entry template: ${names.join(', ')} are in neither ${folder || 'the vault'} nor the plugin.`);
+			chosen = { name: builtin, template: '' };
+		}
+		return engine.call('entry', { ...chosen, input: entryInput(entry) });
 	}
 
 	/** The engine, started on first use: most sessions never need it. */
@@ -317,7 +332,7 @@ class TimelineService {
 	/**
 	 * @param {Definition} definition
 	 * @param {any} when the moment, in the offset it happened in
-	 * @param {string} block the entry's lines, as formatEntry writes them
+	 * @param {string} block the entry's lines, as render writes them
 	 * @returns {Promise<{kind: 'inserted', path: string, archived: string[]} | {kind: 'duplicate', path: string}>}
 	 */
 	async insert(definition, when, block) {
@@ -636,9 +651,10 @@ class InsertTimelineEntryModal extends Modal {
 		let failed = '';
 		try {
 			const place = this.located ? await this.place : null;
-			const block = formatEntry({ when, text, place }, await this.plugin.vaultLib.placeLines(place));
+			const entry = { when, text, place };
 			for (const timeline of chosen) {
 				failed = timeline.name;
+				const block = await this.plugin.timelines.render(timelineTemplates(timeline), entry);
 				const outcome = await this.plugin.timelines.insert(timeline, when, block);
 				if (outcome.kind === 'duplicate') {
 					done.push(`already in ${outcome.path}`);
@@ -649,7 +665,8 @@ class InsertTimelineEntryModal extends Modal {
 			}
 			if (this.daily) {
 				failed = 'the daily log';
-				done.push(`added to ${await this.plugin.vaultLib.appendToDailyLog(when, block)}`);
+				const block = await this.plugin.timelines.render([DAILY_TEMPLATE], entry);
+				done.push(`added to ${await this.plugin.vaultLib.appendToDailyLog(when, block, await this.plugin.timelines.engine())}`);
 			}
 		} catch (error) {
 			console.error('DGS Toolbox: insert failed', error);
@@ -874,8 +891,7 @@ class DgsToolboxSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName('Where').setHeading();
 		text('Lib folder', 'The vault scripts that find this device, name the place, link the maps and append to the daily log: the Templater user scripts folder.', 'libFolder');
-		text('Copy coordinates choice', 'The QuickAdd choice the coordinates link to, which copies them. Empty writes them without a link.', 'copyChoice');
-		text('Map links', 'Which maps to link, comma separated: Apple, 高德, Google, 百度, OSM.', 'mapLinks');
+		text('Entry templates', 'Vault-relative folder of the templates an entry is written with: daily-entry.md, location-entry.md, timeline-entry.md. dgs capture reads the same folder; a template it lacks is the plugin\'s own.', 'entriesFolder');
 	}
 
 	hide() {
@@ -1113,20 +1129,35 @@ function formatWhen(when) {
 }
 
 /**
- * One entry as the timeline and the daily log write it: the clock and its
- * offset in backticks, then the text; under it the place's lines, then any
- * further lines of text.
+ * The templates a timeline's entry is tried with, its own first.
+ *
+ * @param {Definition} definition
+ */
+function timelineTemplates(definition) {
+	const own = definition.template?.trim();
+	return own ? [own, ...TIMELINE_TEMPLATES] : [...TIMELINE_TEMPLATES];
+}
+
+/**
+ * An entry as the engine's templates take it: the moment in the offset it
+ * happened in, the text, and the place when there is one. It carries no block
+ * id: an entry written here is not one dgs has to find again.
  *
  * @param {NewEntry} entry
- * @param {string[]} placeLines
  */
-function formatEntry(entry, placeLines) {
-	const [first = '', ...rest] = entry.text.trim().split('\n').map((line) => line.trim());
-	const clock = `\`${entry.when.format('HH:mm:ss')} ${formatOffset(entry.when.utcOffset())}\``;
-	return [
-		first ? `- ${clock} · ${first}` : `- ${clock}`,
-		...[...placeLines, ...rest.filter(Boolean)].map((line) => `${INDENT}- ${line}`),
-	].join('\n');
+function entryInput(entry) {
+	const place = entry.place;
+	/** @type {Record<string, unknown>} */
+	const input = { createdAt: entry.when.format('YYYY-MM-DDTHH:mm:ssZ'), content: entry.text.trim() };
+	if (!place) return input;
+	const latitude = Number(place.latitude);
+	const longitude = Number(place.longitude);
+	if (place.latitude !== '' && place.longitude !== '' && place.latitude != null && place.longitude != null
+		&& Number.isFinite(latitude) && Number.isFinite(longitude)) {
+		input.position = { latitude, longitude };
+	}
+	input.place = { country: place.country ?? '', region: place.region ?? '', city: place.city ?? '', locality: place.locality ?? '' };
+	return input;
 }
 
 /**

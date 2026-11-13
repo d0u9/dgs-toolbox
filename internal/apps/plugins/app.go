@@ -140,6 +140,7 @@ func pathsOf(global config.Config) bundled.Paths {
 	return bundled.Paths{
 		Public: obsidian.Folders.Public, QuickAdd: obsidian.Folders.QuickAdd,
 		Templates: obsidian.Folders.Templates, Timelines: obsidian.Timelines,
+		Entries: obsidian.Entries,
 	}
 }
 

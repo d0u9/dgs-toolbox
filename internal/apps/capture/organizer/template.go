@@ -1,7 +1,6 @@
 package organizer
 
 import (
-	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,9 +20,8 @@ import (
 // The defaults are compiled in, so the tool works before anything is
 // configured. The vault's entry template folder overrides them by filename,
 // which is how a template becomes the reader's without becoming a prerequisite.
-//
-//go:embed templates/*.md
-var builtinTemplates embed.FS
+// They live in internal/entrytemplate, so the Obsidian plugin falls back to
+// the same ones through the timeline engine.
 
 const (
 	// DailyEntryTemplate is the template one Capture is written with. It has a
@@ -156,11 +154,11 @@ func templateText(dir, name string) (string, error) {
 			return "", fmt.Errorf("read template %s: %w", name, err)
 		}
 	}
-	data, err := builtinTemplates.ReadFile("templates/" + name)
-	if err != nil {
+	text, ok := entrytemplate.Builtin(name)
+	if !ok {
 		return "", fmt.Errorf("no template named %s", name)
 	}
-	return string(data), nil
+	return text, nil
 }
 
 // NoteData is what a daily note's own template may name: the day it is for, and

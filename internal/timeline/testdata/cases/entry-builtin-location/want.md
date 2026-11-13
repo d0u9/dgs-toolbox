@@ -1,0 +1,6 @@
+- `21:31:22 +10` · Coffee under the bridge ^dgs-20260909213122900-4620
+    - with alice
+    - Australia, NSW, Sydney, The Rocks
+    - (-33.86123, 151.21234)
+    - [Apple](https://maps.apple.com/place?coordinate=-33.86123,151.21234&name=The%20Rocks) · [高德](https://uri.amap.com/marker?position=151.21234,-33.86123&coordinate=wgs84&name=The%20Rocks) · [Google](https://www.google.com/maps/search/?api=1&query=-33.86123,151.21234) · [百度](https://api.map.baidu.com/marker?location=-33.86123,151.21234&coord_type=wgs84&output=html&title=The%20Rocks) · [OSM](https://www.openstreetmap.org/?mlat=-33.86123&mlon=151.21234#map=17/-33.86123/151.21234)
+    - ![[20260909-213122-1.jpg]]

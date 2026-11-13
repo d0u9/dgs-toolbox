@@ -1,0 +1,161 @@
+/*
+ * The Obsidian plugin writing an entry: which template it renders with, what it
+ * hands the engine, and how a daily log's section is filled. The vault is held
+ * in memory and the engine is the real one, loaded as engine.test.mjs loads it,
+ * so what the plugin writes is what dgs capture writes for the same input.
+ *
+ * Run with make test-timeline, which builds the module first.
+ */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+
+const here = fileURLToPath(new URL('.', import.meta.url));
+const plugin = join(here, 'obsidian', 'dgs-toolbox');
+
+vm.runInThisContext(
+	[join(plugin, 'generated', 'wasm_exec.js'), join(plugin, 'engine.js')]
+		.map((path) => readFileSync(path, 'utf8'))
+		.join('\n'),
+);
+const engine = await globalThis.startDgsTimeline(readFileSync(join(plugin, 'generated', 'timeline.wasm')));
+
+class TFile {
+	/** @param {string} path */
+	constructor(path) {
+		this.path = path;
+	}
+}
+class Stub {}
+const obsidian = {
+	AbstractInputSuggest: Stub, Modal: Stub, Plugin: Stub, PluginSettingTab: Stub, Setting: Stub, TFolder: Stub, TFile,
+	Notice: Stub,
+	moment: () => ({}),
+	normalizePath: (/** @type {string} */ path) => path.replace(/\/+/g, '/').replace(/^\/|\/$/g, ''),
+};
+const { TimelineService, VaultLib, entryInput, timelineTemplates } = vm.runInNewContext(
+	`${readFileSync(join(plugin, 'main.js'), 'utf8')}\n;({ TimelineService, VaultLib, entryInput, timelineTemplates })`,
+	{ require: () => obsidian, module: {}, console },
+);
+
+const folder = '99 Toolkit/03 Entry Templates';
+
+/**
+ * A vault holding these files, by path.
+ *
+ * @param {Record<string, string>} files
+ */
+function service(files) {
+	const app = {
+		vault: {
+			getAbstractFileByPath: (/** @type {string} */ path) => (path in files ? new TFile(path) : null),
+			read: async (/** @type {TFile} */ file) => files[file.path],
+		},
+	};
+	const timelines = new TimelineService(app, '', () => '', () => folder);
+	timelines.engine = async () => engine;
+	return timelines;
+}
+
+/** A moment as parseWhen gives one: its wall clock in the offset it happened in. */
+const when = { format: (/** @type {string} */ layout) => (layout === 'YYYY-MM-DDTHH:mm:ssZ' ? '2026-11-08T11:35:44+11:00' : '') };
+
+/** A place as the vault's getLocation gives one: coordinates as strings, to eight decimals. */
+const place = {
+	country: 'Australia', region: 'New South Wales', city: 'Sydney', locality: 'The Rocks',
+	latitude: '-33.86123400', longitude: '151.21234500',
+};
+
+const daily = '- `{{.Clock}} {{.Offset}}`{{with .ContentLines}} · {{index . 0}}{{end}} {{.ID}}\n'
+	+ '    - {{.Address}}\n'
+	+ '{{- if .Latitude}}\n'
+	+ '    - {{.CopyLink "Copy Position"}}{{with .Altitude}}, {{.}}{{end}}\n'
+	+ '    - {{.MapLinks "Apple, Google"}}\n'
+	+ '{{- end}}\n'
+	+ '{{- range $index, $line := .ContentLines}}{{if $index}}\n'
+	+ '    - {{$line}}{{end}}{{end}}\n';
+
+test('an entry is what the vault template says, written by the engine', async () => {
+	const block = await service({ [`${folder}/daily-entry.md`]: daily }).render(['daily-entry.md'], {
+		when, text: '可能因为前一天攀岩\n  手指出血了  \n', place,
+	});
+	assert.equal(block, [
+		'- `11:35:44 +11` · 可能因为前一天攀岩',
+		'    - Australia, New South Wales, Sydney, The Rocks',
+		'    - [(-33.86123, 151.21234)](obsidian://quickadd?choice=Copy%20Position&value-coordinates=-33.86123%2C%20151.21234)',
+		'    - [Apple](https://maps.apple.com/place?coordinate=-33.86123,151.21234&name=The%20Rocks) · [Google](https://www.google.com/maps/search/?api=1&query=-33.86123,151.21234)',
+		'    - 手指出血了',
+	].join('\n'));
+});
+
+test('an entry written without a place has no place lines and no trailing space', async () => {
+	const block = await service({ [`${folder}/daily-entry.md`]: daily }).render(['daily-entry.md'], { when, text: 'here', place: null });
+	assert.equal(block, '- `11:35:44 +11` · here');
+});
+
+test('a vault without the template gets the engine’s own, the one dgs capture falls back to', async () => {
+	const block = await service({}).render(['daily-entry.md'], { when, text: 'here', place: null });
+	assert.equal(block, engine.call('entry', { name: 'daily-entry.md', input: { createdAt: '2026-11-08T11:35:44+11:00', content: 'here' } }));
+	assert.match(block, /^- Date: 2026-11-08 11:35:44 \+11$/m);
+});
+
+test('a timeline tries its own template, then timeline-entry.md, then location-entry.md', async () => {
+	const own = { name: 'family', note: 'Family.md', template: 'family-entry.md' };
+	assert.deepEqual([...timelineTemplates(own)], ['family-entry.md', 'timeline-entry.md', 'location-entry.md']);
+	assert.deepEqual([...timelineTemplates({ name: 'places', note: 'Places.md' })], ['timeline-entry.md', 'location-entry.md']);
+	assert.deepEqual([...timelineTemplates({ name: 'places', note: 'Places.md', template: '  ' })], ['timeline-entry.md', 'location-entry.md']);
+
+	const entry = { when, text: 'here', place: null };
+	const names = timelineTemplates(own);
+	assert.equal(await service({ [`${folder}/family-entry.md`]: '- own {{.Content}}', [`${folder}/location-entry.md`]: '- place {{.Content}}' })
+		.render(names, entry), '- own here');
+	assert.equal(await service({ [`${folder}/location-entry.md`]: '- place {{.Content}}' }).render(names, entry), '- place here');
+	// None in the vault: the first the engine carries, which is location-entry.md.
+	assert.equal(await service({}).render(names, entry), '- `11:35:44 +11` · here');
+});
+
+test('no template anywhere is said, naming what was looked for', async () => {
+	await assert.rejects(service({}).render(['nothing.md'], { when, text: '', place: null }), /nothing\.md/);
+});
+
+test('a template the engine cannot read is an error, not a broken entry', async () => {
+	await assert.rejects(service({ [`${folder}/daily-entry.md`]: '{{.Clock' }).render(['daily-entry.md'], { when, text: '', place: null }), /template daily-entry\.md/);
+	await assert.rejects(service({ [`${folder}/daily-entry.md`]: '{{.Nope}}' }).render(['daily-entry.md'], { when, text: '', place: null }), /Nope/);
+});
+
+test('the input carries the place only when it has one, and coordinates only when both are numbers', () => {
+	assert.deepEqual(JSON.parse(JSON.stringify(entryInput({ when, text: '  x  ', place: null }))), { createdAt: '2026-11-08T11:35:44+11:00', content: 'x' });
+	const placed = JSON.parse(JSON.stringify(entryInput({ when, text: '', place })));
+	assert.deepEqual(placed.position, { latitude: -33.861234, longitude: 151.212345 });
+	assert.equal(placed.place.locality, 'The Rocks');
+	assert.equal(placed.id, undefined, 'an entry written here carries no block id');
+	const nameless = JSON.parse(JSON.stringify(entryInput({ when, text: '', place: { ...place, latitude: '', longitude: '' } })));
+	assert.equal(nameless.position, undefined);
+	const broken = JSON.parse(JSON.stringify(entryInput({ when, text: '', place: { ...place, latitude: 'n/a' } })));
+	assert.equal(broken.position, undefined);
+});
+
+test('the daily log gets the entry where the engine puts it, under its heading at any level', async () => {
+	/** @type {any} */
+	let options;
+	const lib = new VaultLib({}, () => ({ dailyFolder: '00 Daily Log', dailyFormat: 'YYYY/YYYY-MM-DD', dailyHeading: '去过哪里' }));
+	lib.tp = async () => ({
+		user: {
+			appendToDailyLog: async (/** @type {unknown} */ _params, /** @type {any} */ given) => {
+				options = given;
+				return true;
+			},
+		},
+	});
+	const day = { format: () => '2026/2026-11-08' };
+	const path = await lib.appendToDailyLog(day, '- `11:35:44 +11` · here', engine);
+	assert.equal(path, '00 Daily Log/2026/2026-11-08.md');
+	assert.equal(options.heading, '去过哪里');
+	assert.equal(
+		options.insert('# 速记\n\n## 去过哪里\n\n1. 无\n\n# 今日活动\n'),
+		'# 速记\n\n## 去过哪里\n\n- `11:35:44 +11` · here\n\n# 今日活动\n',
+	);
+});

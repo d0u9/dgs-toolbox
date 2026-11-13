@@ -13,7 +13,8 @@
       "quickadd": "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd",
       "templates": "99 Toolkit/01 Templater/01 DGS"
     },
-    "timelines": "99 Toolkit/timelines.json"
+    "timelines": "99 Toolkit/timelines.json",
+    "entries": "99 Toolkit/03 Entry Templates"
   }
 }
 ```
@@ -25,13 +26,16 @@
 | `obsidian.folders.quickadd` | The vault folder the QuickAdd scripts go into. | `99 Toolkit/91 Scripts/01 DGS/02 QuickAdd` |
 | `obsidian.folders.templates` | The vault folder the Templater templates go into. It must be Templater's template folder or inside it, or the templates are not offered. | `99 Toolkit/01 Templater/01 DGS` |
 | `obsidian.timelines` | Where `bootstrap` writes the timelines file when the vault has none, and what the plugin's settings point at. | `99 Toolkit/timelines.json` |
+| `obsidian.entries` | The entry template folder the plugin's settings point at: the one `dgs capture` reads at [`obsidian.templates`](capture.md#entry-templates), so both write an entry from the same file. Keep the two the same. | `99 Toolkit/03 Entry Templates` |
 
-The three folders and the timelines file are paths inside the vault, written
-with `/`: relative, not climbing out of the vault and not into a hidden folder.
-No folder may hold another. dgs owns the files it writes into them and nothing
-else, so a script of your own can sit beside them — but not under a name dgs
-also uses. Changing a folder moves nothing: install into the new one, then
-remove the old one yourself.
+The three folders, the timelines file and the entry template folder are paths
+inside the vault, written with `/`: relative, not climbing out of the vault and
+not into a hidden folder. None of the three folders may hold another. dgs owns
+the files it writes into them and nothing else, so a script of your own can sit
+beside them — but not under a name dgs also uses. The timelines file and the
+entry templates are yours: `bootstrap` writes the timelines file only when the vault has none.
+Changing a folder moves nothing: install into the new one, then remove the old
+one yourself.
 
 `obsidian.vaults` paths follow the same rules as [`cred`](cred.md#paths): a leading `~` is the
 home directory, `$NAME` and `${NAME}` are environment variables, and the
