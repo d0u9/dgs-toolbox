@@ -283,7 +283,9 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	obsidian := global.CaptureObsidian()
 	settings := organizer.DefaultSettings()
 	settings.ObsidianVault = expandHome(obsidian.Vault)
-	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
+	if settings.ObsidianVault != "" && obsidian.Templates != "" {
+		settings.TemplateDir = filepath.Join(settings.ObsidianVault, obsidian.Templates)
+	}
 	settings.DailyNote = obsidian.Daily.Note
 	settings.Mappings = organizer.LoadMappings(expandHome(global.CaptureMappingsDir())).Tables
 	settings.Sources = loadWorkflows(global).Sources

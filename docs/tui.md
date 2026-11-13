@@ -80,7 +80,6 @@ The configuration is a directory: `--config` / `-c <dir>`, else `DGS_TOOLBOX_CON
   shell/config.json
   capture/config.json
   capture/recipes/
-  capture/templates/
   geo/config.json
   geo/gpx/tiles.json
   photo/config.json

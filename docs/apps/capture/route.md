@@ -461,9 +461,10 @@ lays down the ones this version ships:
 
 `daily.note` is where a day's note lives, relative to the vault, as a template
 over the date. The files Route reads live under the configuration directory in
-Capture's own corner of it — `capture/recipes/`, `capture/workflows/` and
-`capture/templates/` — and none of them is named here or anywhere else; see
-[`tui.md`](../../tui.md).
+Capture's own corner of it — `capture/recipes/` and `capture/workflows/` —
+and neither is named here or anywhere else; see [`tui.md`](../../tui.md). The
+entry templates are in the vault, at
+[`obsidian.templates`](../../configuration/capture.md#entry-templates).
 
 An installation whose Recipe directory is empty offers no Recipe at all, and
 Route shows an empty `RECIPES` column rather than an error.

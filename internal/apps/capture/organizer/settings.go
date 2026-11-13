@@ -60,8 +60,9 @@ type Settings struct {
 	// falls back to what the toolbox knows about its own workflows.
 	Sources map[string]map[FieldID][]string
 	// TemplateDir holds every template that is not compiled in, by filename:
-	// the daily note's, and any that replaces a compiled-in default. One place
-	// to look, rather than a path in the configuration for each.
+	// the daily note's, and any that replaces a compiled-in default. It is the
+	// vault's entry template folder, which the Obsidian plugin reads too, so
+	// both write an entry from the same file.
 	TemplateDir string
 	// ReminderList is the Reminders list the reminder Actions write into by
 	// default. Empty is the list Reminders files new reminders in.

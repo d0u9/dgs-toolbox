@@ -63,5 +63,5 @@ other than `1`, is refused rather than ignored, by both programs.
 | `timelines.<name>.split` | What stays in the running note. `year` keeps the current year and archives the rest; it is the only value so far. | `year` |
 | `timelines.<name>.cssclass` | The class written into a year's archive, for the vault's stylesheet. `dgs-timeline` is the one the plugin's `styles.css` draws as a timeline. | empty |
 | `timelines.<name>.title` | What the list is called in an archive's introduction: `2026 年的<title>`. | empty |
-| `timelines.<name>.template` | The entry template `dgs capture` renders a Capture with, by filename in its template directory. The plugin does not use it. | empty — `timeline-entry.md`, else `location-entry.md` |
+| `timelines.<name>.template` | The entry template this timeline's entries are written with, by filename in the vault's entry template folder ([`obsidian.templates`](capture.md#entry-templates)). | empty — `timeline-entry.md`, else `location-entry.md` |
 | `timelines.<name>.contentRequired` | Whether an entry needs text. A place is worth recording unannotated; an event is not. | `false` |

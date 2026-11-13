@@ -79,7 +79,15 @@ type CaptureObsidian struct {
 	// Timelines is the file defining every timeline, relative to the vault.
 	// It is in the vault because the Obsidian plugin reads the same file.
 	Timelines string `json:"timelines"`
+	// Templates is the folder of entry templates, relative to the vault. It is
+	// in the vault for the same reason: the plugin renders its entries with the
+	// same files, so an entry reads the same whoever wrote it.
+	Templates string `json:"templates"`
 }
+
+// DefaultCaptureObsidianTemplates is where the entry templates are looked for
+// when obsidian.templates is not set.
+const DefaultCaptureObsidianTemplates = "99 Toolkit/03 Entry Templates"
 
 // CaptureObsidianDaily is the day's note. Note is where it lives, relative to
 // the vault, written as a template over the date: "00 Daily Log/{{.Year}}/
@@ -334,7 +342,8 @@ func Default() Config {
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
 	}}, Photo: Photo{Import: PhotoImport{StateFile: "_dgs-state"}, Encode: DefaultPhotoEncode()}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
-		Scan: CaptureScan{IndexFile: "index.json"},
+		Scan:     CaptureScan{IndexFile: "index.json"},
+		Obsidian: CaptureObsidian{Templates: DefaultCaptureObsidianTemplates},
 	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}},
 		Plugins: Plugins{Obsidian: PluginsObsidian{
 			Vaults: []string{},
@@ -397,17 +406,14 @@ func (c Config) AppDir(app string) string {
 	return filepath.Join(dir, app)
 }
 
-// CaptureTemplatesDir is where Capture reads every template that is not
-// compiled in, CaptureWorkflowsDir where it reads what a workflow keeps where,
-// and CaptureRecipesDir where it reads the Recipes.
+// CaptureWorkflowsDir is where Capture reads what a workflow keeps where, and
+// CaptureRecipesDir where it reads the Recipes. The entry templates are not
+// here: they are in the vault, at obsidian.templates, where the Obsidian
+// plugin reads them too.
 //
-// None of the three is configurable. The layout is the answer to "where does
-// this installation keep its Capture configuration?", and a path for each
-// would make that answer three paths to go and look up. --config moves the
-// whole thing, and a directory that genuinely belongs elsewhere — a vault's
-// templates kept with the vault — is a symlink.
-func (c Config) CaptureTemplatesDir() string { return c.captureDir("templates") }
-
+// Neither is configurable. The layout is the answer to "where does this
+// installation keep its Capture configuration?", and a path for each would make
+// that answer several paths to go and look up. --config moves the whole thing.
 func (c Config) CaptureWorkflowsDir() string { return c.captureDir("workflows") }
 
 func (c Config) CaptureRecipesDir() string { return c.captureDir("recipes") }

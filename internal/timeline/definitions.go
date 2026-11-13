@@ -33,8 +33,9 @@ type Definition struct {
 	CSSClass string `json:"cssclass"`
 	// Title names the list in an archive's callout: "2026 年的<Title>".
 	Title string `json:"title"`
-	// Template is the entry template a program writing Captures uses, by
-	// filename in its own template directory. Empty is that program's default.
+	// Template is the entry template this timeline's entries are written
+	// with, by filename in the vault's entry template folder. Empty is the
+	// writer's default.
 	Template string `json:"template,omitempty"`
 	// ContentRequired says an entry is nothing without its text. A place is
 	// worth recording unannotated; an event is not.

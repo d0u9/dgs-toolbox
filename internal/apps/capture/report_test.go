@@ -129,8 +129,11 @@ func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
 		if workflows := organizer.LoadWorkflows(global.CaptureWorkflowsDir()); len(workflows.Failures) > 0 {
 			t.Errorf("examples/%s: %v", entry.Name(), workflows.Failures)
 		}
+		// An example's entry templates are where its vault would keep them,
+		// under vault/ beside the configuration.
 		settings := obsidianSettings(global)
-		if settings.TemplateDir == "" {
+		settings.TemplateDir = filepath.Join(root, entry.Name(), "vault", global.CaptureObsidian().Templates)
+		if _, err := os.Stat(settings.TemplateDir); err != nil {
 			continue
 		}
 		for _, name := range []string{organizer.DailyEntryTemplate, organizer.LocationEntryTemplate, organizer.TimelineEntryTemplate} {
@@ -146,5 +149,46 @@ func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
 				t.Errorf("examples/%s/%s: %v", entry.Name(), organizer.DailyNoteTemplate, err)
 			}
 		}
+	}
+}
+
+// The entry templates are read from the vault's folder for them, the one the
+// Obsidian plugin renders with, and never from the configuration directory: a
+// copy kept there would drift from the plugin's.
+func TestObsidianSettingsReadTemplatesFromTheVault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "capture", "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) config.Config {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "capture", config.PartFile), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		global, err := config.LoadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return global
+	}
+
+	vault := t.TempDir()
+	settings := obsidianSettings(write(`{"obsidian": {"vault": "` + vault + `"}}`))
+	if want := filepath.Join(vault, config.DefaultCaptureObsidianTemplates); settings.TemplateDir != want {
+		t.Errorf("default TemplateDir = %q, want %q", settings.TemplateDir, want)
+	}
+	settings = obsidianSettings(write(`{"obsidian": {"vault": "` + vault + `", "templates": "Entries"}}`))
+	if want := filepath.Join(vault, "Entries"); settings.TemplateDir != want {
+		t.Errorf("configured TemplateDir = %q, want %q", settings.TemplateDir, want)
+	}
+	// Without a vault there is nowhere to read them from, and the compiled-in
+	// defaults are all there is; the old configuration folder is not read.
+	settings = obsidianSettings(write(`{"obsidian": {}}`))
+	if settings.TemplateDir != "" {
+		t.Errorf("TemplateDir without a vault = %q", settings.TemplateDir)
+	}
+	settings = obsidianSettings(write(`{"obsidian": {"vault": "` + vault + `", "templates": ""}}`))
+	if settings.TemplateDir != "" {
+		t.Errorf("TemplateDir with templates emptied = %q", settings.TemplateDir)
 	}
 }

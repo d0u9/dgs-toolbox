@@ -220,7 +220,6 @@ func TestTheConfigurationIsLaidOutByCommand(t *testing.T) {
 	}
 	for got, want := range map[string]string{
 		loaded.CaptureRecipesDir():   filepath.Join(dir, "capture", "recipes"),
-		loaded.CaptureTemplatesDir(): filepath.Join(dir, "capture", "templates"),
 		loaded.CaptureWorkflowsDir(): filepath.Join(dir, "capture", "workflows"),
 		loaded.AppDir("photo"):       filepath.Join(dir, "photo"),
 		loaded.CredentialsPath():     filepath.Join(dir, "cred", PartFile),
@@ -444,5 +443,24 @@ func TestPhotoImportProfilesAreChecked(t *testing.T) {
 	c.Photo.Import.Profiles = map[string]PhotoImportProfile{"card_1": valid}
 	if err := checkPhoto(&c); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The entry templates are in the vault, where the Obsidian plugin reads them
+// too, at a folder that has a default and can be moved.
+func TestCaptureEntryTemplatesAreInTheVault(t *testing.T) {
+	loaded, err := LoadPath(writeConfig(t, `{"capture": {"obsidian": {"vault": "/v"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.CaptureObsidian().Templates; got != DefaultCaptureObsidianTemplates {
+		t.Errorf("default templates = %q", got)
+	}
+	loaded, err = LoadPath(writeConfig(t, `{"capture": {"obsidian": {"vault": "/v", "templates": "Elsewhere/Entries"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.CaptureObsidian().Templates; got != "Elsewhere/Entries" {
+		t.Errorf("configured templates = %q", got)
 	}
 }

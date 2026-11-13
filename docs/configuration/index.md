@@ -56,7 +56,6 @@ editing?" should not have an answer that depends on which files exist.
   capture/recipes/     # dgs capture --init writes the shipped ones here
   capture/workflows/   # one file per workflow: where it keeps each field
   capture/mappings/    # one file per translation table
-  capture/templates/
   photo/config.json
   doc/config.json
   geo/config.json
@@ -117,6 +116,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [capture](capture.md#pictures-in-the-daily-note) | `obsidian.daily.images.max_side` | `2048` |
 | [capture](capture.md#pictures-in-the-daily-note) | `obsidian.daily.images.quality` | `80` |
 | [capture](capture.md#timelines) | `obsidian.timelines` | empty — the timeline Actions refuse to run |
+| [capture](capture.md#entry-templates) | `obsidian.templates` | `99 Toolkit/03 Entry Templates` |
 | [timelines](timelines.md) | `version` | none — must be `1` |
 | [timelines](timelines.md) | `timelines.<name>.note` | none — required |
 | [timelines](timelines.md) | `timelines.<name>.archive` | empty — the note's own folder |

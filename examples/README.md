@@ -55,7 +55,8 @@ capture-obsidian/
     config.json
     recipes/       # one YAML file per Recipe
     workflows/     # one file per workflow: where it keeps each field
-    templates/     # daily-note.md, and any compiled-in template you replace
+  vault/
+    99 Toolkit/03 Entry Templates/   # the entry templates, kept in the vault
 ```
 
 `capture-obsidian/` shows both. The Recipes this version ships are written into

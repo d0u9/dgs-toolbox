@@ -94,16 +94,26 @@ Capture reads three directories, and none of them is configurable:
   recipes/     one file per Recipe
   workflows/   one file per workflow: where it keeps each field
   mappings/    one file per translation table
-  templates/   daily-note.md, and any compiled-in template you replace
 ```
 
 The layout is the answer to "where does this installation keep its Capture
 configuration?", and a path for each would make that answer three paths to go
-and look up. `--config` moves the whole configuration at once, and a directory that
-genuinely belongs elsewhere — a vault's templates kept with the vault — is a
-symlink.
+and look up. `--config` moves the whole configuration at once.
 
-The filenames the templates directory is read by:
+## Entry templates
+
+The templates an entry is written with are not in the configuration directory
+but in the vault, in the folder `obsidian.templates` names. The Obsidian
+plugin renders its entries from the same files, through the same engine, so an
+entry reads the same whether `dgs capture` or the plugin wrote it. A
+`capture/templates/` folder left in the configuration directory is no longer
+read.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `obsidian.templates` | The entry template folder, relative to the vault. Empty reads none, and only the compiled-in defaults are used. | `99 Toolkit/03 Entry Templates` |
+
+The filenames the folder is read by:
 
 | Filename | What it shapes | Compiled-in default |
 | --- | --- | --- |

@@ -559,8 +559,8 @@ daily note for the day it was taken:
   duplicate — but a vault says where the plugin in use puts notes, which is not
   the same question as where this tool should write, and a wrong guess files a
   Capture where nobody is looking. What is not configured is an error.
-- **What a missing note is created from** is `daily-note.md` in the template
-  directory. A note is never created from nothing — an empty note among
+- **What a missing note is created from** is `daily-note.md` in the vault's
+  entry template folder, `capture.obsidian.templates`. A note is never created from nothing — an empty note among
   templated ones is one the reader has to repair later — so a directory without
   one is an error naming the file it expected, rather than a bare note.
   Appending to a note that already exists needs no template.

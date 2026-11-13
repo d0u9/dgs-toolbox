@@ -19,8 +19,8 @@ import (
 // of a private language that has to grow one feature at a time.
 //
 // The defaults are compiled in, so the tool works before anything is
-// configured. A configured template directory overrides them by filename, which
-// is how a template becomes the reader's without becoming a prerequisite.
+// configured. The vault's entry template folder overrides them by filename,
+// which is how a template becomes the reader's without becoming a prerequisite.
 //
 //go:embed templates/*.md
 var builtinTemplates embed.FS
