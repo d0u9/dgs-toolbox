@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"dgs-toolbox/internal/entrytemplate"
 	"dgs-toolbox/internal/timeline"
 )
 
@@ -307,16 +308,7 @@ func LookupAction(id ActionID) (ActionDefinition, bool) {
 
 // dayOf takes the date half of an RFC 3339 timestamp without converting it to
 // local time, matching how Capture renders timestamps elsewhere.
-func dayOf(createdAt string) string {
-	if len(createdAt) < 10 {
-		return ""
-	}
-	day := createdAt[:10]
-	if strings.Count(day, "-") != 2 {
-		return ""
-	}
-	return day
-}
+func dayOf(createdAt string) string { return entrytemplate.DayOf(createdAt) }
 
 func (p ActionPlan) String() string {
 	return fmt.Sprintf("%s -> %s", p.Action, p.Target)

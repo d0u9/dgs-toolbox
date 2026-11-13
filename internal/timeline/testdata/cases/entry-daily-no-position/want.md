@@ -1,0 +1,6 @@
+- `21:31:22 +10` · Coffee under the bridge ^dgs-20260909213122900-4620
+    - Australia, NSW, Sydney, The Rocks
+    - with alice
+    - and bob
+    - ![[20260909-213122-1.jpg]]
+    - ![[20260909-213122-2.jpg]]

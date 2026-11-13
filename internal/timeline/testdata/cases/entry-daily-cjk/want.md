@@ -1,0 +1,5 @@
+- `21:31:22 +10` · 在桥下喝咖啡 ^dgs-20260909213122900-4620
+    - 中国, 上海, 上海市, 外滩
+    - [(31.23040, 121.47370)](obsidian://quickadd?choice=Copy%20Position&value-coordinates=31.23040%2C%20121.47370)
+    - [Apple](https://maps.apple.com/place?coordinate=31.23040,121.47370&name=%E5%A4%96%E6%BB%A9) · [高德](https://uri.amap.com/marker?position=121.47370,31.23040&coordinate=wgs84&name=%E5%A4%96%E6%BB%A9) · [Google](https://www.google.com/maps/search/?api=1&query=31.23040,121.47370)
+    - 和朋友一起

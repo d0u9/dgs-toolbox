@@ -1,0 +1,11 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09+09:30"
+    }
+  },
+  "want": "08:05:09 +9.5 2026-03-01 08:05:09 +9:30 2026-03-01 08:05"
+}

@@ -1,0 +1,23 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-09-09T21:31:22+10:00",
+      "id": "^dgs-20260909213122900-4620",
+      "content": "在桥下喝咖啡\n和朋友一起",
+      "position": {
+        "latitude": 31.2304,
+        "longitude": 121.4737
+      },
+      "place": {
+        "country": "中国",
+        "region": "上海",
+        "city": "上海市",
+        "locality": "外滩"
+      }
+    }
+  },
+  "want": "@want.md"
+}

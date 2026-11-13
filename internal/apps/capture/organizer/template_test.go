@@ -298,3 +298,28 @@ func TestBuiltinEntriesWithoutContent(t *testing.T) {
 		t.Errorf("location entry with content = %q", lines[0])
 	}
 }
+
+// A text written across lines keeps the entry a list: the first line follows
+// the clock, and every further line is an item of its own under it.
+func TestBuiltinLocationEntryWithLinesOfText(t *testing.T) {
+	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "tea\n\nwith alice\nand bob"})
+	parsed, err := LoadTemplate(ctx.Settings, LocationEntryTemplate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := renderEntry(parsed, entryData(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines[0] != "- `21:31:22 +10` · tea ^dgs-20260909213122900-4620" {
+		t.Errorf("first line = %q", lines[0])
+	}
+	for _, line := range lines[1:] {
+		if !strings.HasPrefix(line, "    - ") {
+			t.Errorf("line %q breaks the list", line)
+		}
+	}
+	if got := lines[len(lines)-2:]; got[0] != "    - with alice" || got[1] != "    - and bob" {
+		t.Errorf("last lines = %q", got)
+	}
+}

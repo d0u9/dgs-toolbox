@@ -1,0 +1,15 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21
+      }
+    }
+  },
+  "want": "[(-33.86000, 151.21000)](obsidian://quickadd?choice=Copy%20(lng%2C%20lat)%20%26%20go\u0026value-coordinates=-33.86000%2C%20151.21000)"
+}

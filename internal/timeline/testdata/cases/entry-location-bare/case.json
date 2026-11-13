@@ -1,0 +1,11 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "location-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-09-09T21:31:22+10:00"
+    }
+  },
+  "want": "- `21:31:22 +10`"
+}

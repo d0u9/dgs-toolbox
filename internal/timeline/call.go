@@ -2,8 +2,12 @@ package timeline
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"dgs-toolbox/internal/entrytemplate"
 )
 
 // APIVersion names the shape of Call: its operations, their arguments and
@@ -26,6 +30,9 @@ const APIVersion = 1
 //	definitions {text}                      → [Definition], the timelines file read
 //	tidy    TidyInput                       → TidyResult
 //	pictures {content}                      → [string], the pictures it embeds
+//	entry   {name, template, input, mappings} → string, one entry rendered
+//	section {content, section, entry}       → string, a daily note with the entry
+//	                                          at the end of its section
 func Call(op string, args []byte) (result []byte, err error) {
 	switch op {
 	case "marker":
@@ -109,6 +116,40 @@ func Call(op string, args []byte) (result []byte, err error) {
 			return nil, err
 		}
 		return json.Marshal(Pictures(in.Content))
+	case "entry":
+		var in struct {
+			Name     string
+			Template string
+			Input    entrytemplate.Input
+			Mappings entrytemplate.Mappings
+		}
+		if err := decode(args, &in); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(in.Template) == "" {
+			return nil, errors.New("entry: no template")
+		}
+		if in.Name == "" {
+			in.Name = "entry"
+		}
+		lines, err := entrytemplate.Render(in.Name, in.Template, in.Input, in.Mappings)
+		if err != nil {
+			return nil, fmt.Errorf("entry: %w", err)
+		}
+		return json.Marshal(strings.Join(lines, "\n"))
+	case "section":
+		var in struct{ Content, Section, Entry string }
+		if err := decode(args, &in); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(in.Section) == "" {
+			return nil, errors.New("section: no section heading")
+		}
+		entry := strings.Split(strings.Trim(in.Entry, "\n"), "\n")
+		if strings.TrimSpace(in.Entry) == "" {
+			return nil, errors.New("section: nothing to insert")
+		}
+		return json.Marshal(InsertUnderSection(in.Content, in.Section, entry))
 	}
 	return nil, fmt.Errorf("unknown operation %q", op)
 }

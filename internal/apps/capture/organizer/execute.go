@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"dgs-toolbox/internal/cred/publish"
+	"dgs-toolbox/internal/entrytemplate"
+	"dgs-toolbox/internal/timeline"
 )
 
 // ErrNotImplemented is what an Action that has only been declared returns. It
@@ -164,7 +165,7 @@ func appendEntry(ctx Context, images []string) (skipped string, err error) {
 	if err != nil {
 		return "", err
 	}
-	updated := insertUnderSection(string(existing), section, entry)
+	updated := timeline.InsertUnderSection(string(existing), section, entry)
 	if workflow := ctx.Capture.Workflow(); workflow != "" {
 		updated = addToListProperty(updated, WorkflowProperty, workflow)
 	}
@@ -190,83 +191,6 @@ func containsMark(note, mark string) bool {
 	return false
 }
 
-// insertUnderSection puts the entry at the end of the named section, adding the
-// section at the end of the note when it has none. A section that already holds
-// entries keeps them: the new one goes after the last line of that section,
-// before whatever heading follows it.
-func insertUnderSection(note, section string, entry []string) string {
-	heading, level := sectionHeading(section)
-	block := strings.Join(entry, "\n")
-	if strings.TrimSpace(note) == "" {
-		return heading + "\n\n" + block + "\n"
-	}
-	lines := strings.Split(strings.TrimRight(note, "\n"), "\n")
-
-	start := -1
-	for index, line := range lines {
-		if strings.TrimSpace(line) == heading {
-			start = index
-			break
-		}
-	}
-	if start < 0 {
-		return strings.Join(lines, "\n") + "\n\n" + heading + "\n\n" + block + "\n"
-	}
-
-	end := len(lines)
-	for index := start + 1; index < len(lines); index++ {
-		// The section ends at the next heading that is not inside it: one of
-		// the same level or shallower. A deeper heading is part of what this
-		// section holds, so an entry still goes after it.
-		if next := headingLevel(lines[index]); next > 0 && next <= level {
-			end = index
-			break
-		}
-	}
-	// Trailing blank lines belong to the gap before the next heading rather
-	// than to the section, so the entry goes above them.
-	for end > start+1 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	// A section holding only the daily note template's placeholder, "1. 无",
-	// is empty: the first entry takes the placeholder's place rather than
-	// following it.
-	body := lines[start+1 : end]
-	if holdsOnlyPlaceholders(body) {
-		lines = append(append(append([]string{}, lines[:start+1]...), ""), lines[end:]...)
-		end = start + 2
-	}
-	updated := append([]string{}, lines[:end]...)
-	if end == start+1 {
-		// A blank line between the heading and the list, as one written by
-		// hand has.
-		updated = append(updated, "")
-	}
-	updated = append(updated, entry...)
-	updated = append(updated, lines[end:]...)
-	return strings.Join(updated, "\n") + "\n"
-}
-
-// placeholderLine is a line a template writes into a section with nothing in
-// it yet: "无", "None", "N/A" or a dash, as a list item or alone.
-var placeholderLine = regexp.MustCompile(`^\s*(?:\d+[.)]|[-*+])?\s*(?:无|None|N/A|-|—)\s*$`)
-
-// holdsOnlyPlaceholders reports whether lines have something in them and all
-// of it is placeholders.
-func holdsOnlyPlaceholders(lines []string) bool {
-	found := false
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		if !placeholderLine.MatchString(line) {
-			return false
-		}
-		found = true
-	}
-	return found
-}
-
 // sectionFor is the heading this Capture is written under, rendered against the
 // Capture itself: a heading naming the app or the device tells a reader months
 // later where the entries under it came from.
@@ -280,28 +204,6 @@ func sectionFor(ctx Context) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(rendered), nil
-}
-
-// sectionHeading is the heading a Capture is written under, and its level. A
-// configured section may carry its own hashes — "## Captured" asks for a
-// second-level heading — and otherwise it is a first-level one.
-func sectionHeading(section string) (heading string, level int) {
-	section = strings.TrimSpace(section)
-	if level := headingLevel(section); level > 0 {
-		return section, level
-	}
-	return "# " + section, 1
-}
-
-// headingLevel is the number of leading hashes of a Markdown heading, or 0 for
-// a line that is not one.
-func headingLevel(line string) int {
-	trimmed := strings.TrimLeft(line, " ")
-	level := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
-	if level == 0 || level > 6 || !strings.HasPrefix(trimmed[level:], " ") {
-		return 0
-	}
-	return level
 }
 
 // dailyEntry is what one Capture becomes in a daily note. The shape comes from
@@ -402,55 +304,13 @@ func createDailyNote(ctx Context, path string) error {
 	return os.WriteFile(path, []byte(rendered), 0o644)
 }
 
-// timeOf takes the wall clock the Capture recorded, without converting it: the
-// entry belongs to the day the Capture was taken, in the offset it was taken
-// in.
-func timeOf(createdAt string) string {
-	if len(createdAt) < 16 || createdAt[10] != 'T' {
-		return ""
-	}
-	return createdAt[11:16]
-}
+// timeOf takes the wall clock the Capture recorded, without converting it.
+func timeOf(createdAt string) string { return entrytemplate.TimeOf(createdAt) }
 
 // FormatTimestamp renders an RFC 3339 timestamp as a compact wall clock keeping
-// the offset it was written with: 2026-09-09 21:31:22 +10. Whole-hour offsets
-// drop their minutes and UTC reads as Z. A value that is not RFC 3339 is
-// returned unchanged, so a malformed index stays visible rather than being
-// hidden behind a blank.
-func FormatTimestamp(value string) string {
-	if value == "" {
-		return ""
-	}
-	created, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return value
-	}
-	return created.Format("2006-01-02 15:04:05") + " " + timestampOffset(created)
-}
+// the offset it was written with: 2026-09-09 21:31:22 +10.
+func FormatTimestamp(value string) string { return entrytemplate.FormatTimestamp(value) }
 
 // FormatTimestampDay is FormatTimestamp with the day of the week after the
-// date, in English as the TUI is: 2026-09-09 Wed 21:31:22 +10. A list of
-// Captures is read by day as much as by date.
-func FormatTimestampDay(value string) string {
-	created, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return FormatTimestamp(value)
-	}
-	return created.Format("2006-01-02 Mon 15:04:05") + " " + timestampOffset(created)
-}
-
-func timestampOffset(created time.Time) string {
-	_, seconds := created.Zone()
-	if seconds == 0 {
-		return "Z"
-	}
-	sign := "+"
-	if seconds < 0 {
-		sign, seconds = "-", -seconds
-	}
-	hours, minutes := seconds/3600, (seconds%3600)/60
-	if minutes == 0 {
-		return fmt.Sprintf("%s%d", sign, hours)
-	}
-	return fmt.Sprintf("%s%d:%02d", sign, hours, minutes)
-}
+// date: 2026-09-09 Wed 21:31:22 +10.
+func FormatTimestampDay(value string) string { return entrytemplate.FormatTimestampDay(value) }

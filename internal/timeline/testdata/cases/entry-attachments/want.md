@@ -1,0 +1,2 @@
+- image: a.jpg
+- audio: c.m4a

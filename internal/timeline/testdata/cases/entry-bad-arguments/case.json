@@ -1,0 +1,8 @@
+{
+  "op": "entry",
+  "args": {
+    "template": "x",
+    "input": "not an object"
+  },
+  "error": "arguments"
+}

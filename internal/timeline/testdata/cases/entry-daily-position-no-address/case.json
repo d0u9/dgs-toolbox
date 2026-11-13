@@ -1,0 +1,22 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-09-09T21:31:22+10:00",
+      "id": "^dgs-20260909213122900-4620",
+      "content": "Coffee under the bridge\n\nwith alice\nand bob",
+      "position": {
+        "latitude": -33.861234,
+        "longitude": 151.212345,
+        "altitude": 12.44
+      },
+      "images": [
+        "20260909-213122-1.jpg",
+        "20260909-213122-2.jpg"
+      ]
+    }
+  },
+  "want": "@want.md"
+}

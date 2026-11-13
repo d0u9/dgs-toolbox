@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"text/template"
 	"time"
+
+	"dgs-toolbox/internal/entrytemplate"
 )
 
 // Templates are Go text/template rather than a shape invented here. The entry
@@ -43,215 +44,96 @@ const (
 	TimelineEntryTemplate = "timeline-entry.md"
 )
 
-// Value is a template field. It prints itself wrapped in markers the renderer
-// strips afterwards, which is how a line knows whether the blank on it came
-// from a placeholder that resolved to nothing or was written there on purpose:
-// a literal "- Content:" heading is kept, while "- address:" whose address is
-// unknown is dropped. Its underlying kind is still a string, so {{if .Place}}
-// and {{range}} behave as a template author expects.
-type Value string
-
-const (
-	valueOpen  = "\x01"
-	valueClose = "\x02"
+// Value, EntryData and Attachment are the entry template's own, from
+// internal/entrytemplate: the Obsidian plugin renders with the same package
+// through the timeline engine, so an entry reads the same whoever wrote it.
+// What lives here is only how a Capture becomes that package's plain input.
+type (
+	Value      = entrytemplate.Value
+	EntryData  = entrytemplate.Data
+	Attachment = entrytemplate.Attachment
 )
-
-func (v Value) String() string { return valueOpen + string(v) + valueClose }
-
-// EntryData is what a template may name. It is a declared struct rather than a
-// map so an unknown field is an error the reader sees when the template is
-// parsed, not a blank in a note discovered later.
-type EntryData struct {
-	// When is the full timestamp with the offset the Capture recorded.
-	When Value
-	Date Value
-	Time Value
-	// ID is the Obsidian block reference identifying this entry.
-	ID Value
-	// Content is the Capture's own text, and ContentLines is the same text with
-	// blank lines dropped, for a template writing one item per line.
-	Content      Value
-	ContentLines []string
-	// Latitude and Longitude are separate rather than one position string, so
-	// a template decides the order and the punctuation between them.
-	Latitude  Value
-	Longitude Value
-	// Clock is the time of day the Capture records, and Offset the zone it was
-	// recorded in, written as hours: "+10", "+9.5". Separate from When so a
-	// template can put them where it wants.
-	Clock  Value
-	Offset Value
-	// copyLink and mapLinks are what the CopyLink and MapLinks methods render.
-	// They are methods rather than values because which services an entry
-	// carries and which vault command a coordinate links to are decisions about
-	// how the line reads, and the line is the template's: a configuration key
-	// deciding them would be the configuration doing the template's job.
-	copyLink func(choice string) string
-	mapLinks func(services string) string
-	// Altitude is metres above sea level, as the Capture recorded it. It is
-	// separate from Coordinates because a template may want the position
-	// without it.
-	Altitude Value
-	// Address is the place from its structured parts, most specific first.
-	Address  Value
-	Place    Value
-	Workflow Value
-	App      Value
-	// Device is the device the Capture was taken on.
-	Device      Value
-	Capture     Value
-	Attachments []Attachment
-	// Images are the pictures written beside the note for this entry, by the
-	// filename the vault knows them by, for "![[{{.}}]]". Empty for an Action
-	// that writes no pictures.
-	Images []string
-}
-
-// Attachment is what a template can say about one of a Capture's files.
-type Attachment struct {
-	Name string
-	Kind string
-}
 
 // templateFuncs are bound to the settings the template is rendered against,
 // because one of them reads the configured mappings.
 func templateFuncs(settings Settings) template.FuncMap {
-	return template.FuncMap{
-		"indent": func(spaces int, value string) string {
-			pad := strings.Repeat(" ", spaces)
-			return strings.ReplaceAll(value, "\n", "\n"+pad)
-		},
-		"join": strings.Join,
-		"trim": strings.TrimSpace,
-		// firstLine and afterFirstLine split a text into a title and a body,
-		// for a workflow that asks for one text and means both.
-		"firstLine":      firstLine,
-		"afterFirstLine": afterFirstLine,
-		"default":        func(fallback, value string) string { return orDefault(value, fallback) },
-		// mapped translates a value through a named table. A value the table
-		// does not mention comes back as it was: a mapping says how some names
-		// are written in this vault, not which names are allowed, and dropping
-		// the rest would lose data the Capture actually carried.
-		"mapped": func(table string, value Value) Value {
-			if replacement, ok := settings.Mappings[table][string(value)]; ok {
-				return Value(replacement)
-			}
-			return value
-		},
-	}
-}
-
-// CopyLink is the position, shown as it is read and linked to the vault command
-// that copies it. The command is named by the template because it is that
-// vault's command: "{{.CopyLink "Copy Coordinates (lng, lat)"}}". Called with
-// nothing, the position is written unlinked.
-func (d EntryData) CopyLink(choice ...string) Value {
-	if d.copyLink == nil {
-		return ""
-	}
-	return Value(d.copyLink(strings.Join(choice, "")))
-}
-
-// MapLinks is the map services' links, joined. The services are named by the
-// template, by name or short name, in the order they are written:
-// "{{.MapLinks "Apple, 高德"}}". Called with nothing, every service is written.
-func (d EntryData) MapLinks(services ...string) Value {
-	if d.mapLinks == nil {
-		return ""
-	}
-	return Value(d.mapLinks(strings.Join(services, ", ")))
+	return entrytemplate.Funcs(settings.Mappings)
 }
 
 // entryData collects what a template may write about one Capture.
 func entryData(ctx Context) EntryData {
-	created := ctx.String(FieldCreatedAt)
-	content := strings.TrimSpace(ctx.String(FieldContent))
-	latitude, longitude := coordinate(ctx, FieldLatitude), coordinate(ctx, FieldLongitude)
-	data := EntryData{
-		When:         Value(FormatTimestamp(created)),
-		Date:         Value(dayOf(created)),
-		Time:         Value(timeOf(created)),
-		ID:           Value(captureMark(ctx.Capture)),
-		Content:      Value(content),
-		ContentLines: contentLines(content),
-		Latitude:     Value(latitude),
-		Longitude:    Value(longitude),
-		Clock:        Value(clockOf(created)),
-		Offset:       Value(offsetOf(created)),
-		copyLink:     func(choice string) string { return copyLink(ctx, latitude, longitude, choice) },
-		mapLinks:     func(services string) string { return mapLinksLine(ctx, latitude, longitude, services) },
-		Altitude:     Value(altitude(ctx)),
-		Address:      Value(address(ctx)),
-		Place:        Value(ctx.String(FieldPlaceName)),
-		Workflow:     Value(ctx.Capture.Workflow()),
-		App:          Value(ctx.Capture.Index.Source.App),
-		Device:       Value(ctx.Capture.Index.Source.Device.Name),
-		Capture:      Value(ctx.Capture.Name),
+	return entrytemplate.NewData(entryInput(ctx))
+}
+
+// entryInput is the Capture as the entry template takes it. The position is
+// the resolved one — typed, sourced or the index's — while its altitude and
+// address are the index's only when the position is too: a city named for
+// where the phone was is wrong about a place the payload names.
+func entryInput(ctx Context) entrytemplate.Input {
+	in := entrytemplate.Input{
+		CreatedAt: ctx.String(FieldCreatedAt),
+		ID:        captureMark(ctx.Capture),
+		Content:   ctx.String(FieldContent),
+		Place:     placeOf(ctx),
+		PlaceName: ctx.String(FieldPlaceName),
+		Workflow:  ctx.Capture.Workflow(),
+		App:       ctx.Capture.Index.Source.App,
+		Device:    ctx.Capture.Index.Source.Device.Name,
+		Capture:   ctx.Capture.Name,
+	}
+	if position, ok := ctx.Position(); ok {
+		in.Position = &entrytemplate.Position{Latitude: position.Latitude, Longitude: position.Longitude}
+		if index := ctx.Capture.Index.Coordinates; index != nil && !position.Sourced {
+			metres := index.Altitude
+			in.Position.Altitude = &metres
+		}
 	}
 	for _, attachment := range ctx.Capture.Index.Attachments {
-		if attachment.Kind == "null" || attachment.Name == "" {
-			continue
-		}
-		data.Attachments = append(data.Attachments, Attachment{Name: attachment.Name, Kind: attachment.Kind})
+		in.Attachments = append(in.Attachments, Attachment{Name: attachment.Name, Kind: attachment.Kind})
 	}
-	return data
+	return in
 }
 
-// contentLines splits a Capture's text one line per item, dropping blank ones.
-// A note written across several lines is several things worth reading, and a
-// blank line between them is spacing rather than content.
-func contentLines(content string) []string {
-	var lines []string
-	for _, line := range strings.Split(content, "\n") {
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
-			lines = append(lines, trimmed)
-		}
-	}
-	return lines
-}
-
-// address names the place from its structured parts, coarsest first — country,
-// region, city, locality. That is the order the vault's own entries use, and it
-// reads as a place being narrowed down rather than as an address on an
-// envelope. The composed place *name* goes the other way, most specific first,
-// because a name is what you would call the spot.
-func address(ctx Context) string {
+// placeOf is the Capture's place in the entry template's terms.
+func placeOf(ctx Context) entrytemplate.Place {
 	place := ctx.place()
-	parts := make([]string, 0, 4)
-	for _, part := range []string{place.Country, place.Region, place.City, place.Locality} {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			parts = append(parts, trimmed)
-		}
-	}
-	return strings.Join(parts, ", ")
+	return entrytemplate.Place{Country: place.Country, Region: place.Region, City: place.City, Locality: place.Locality}
 }
 
-// coordinate is one half of a position, to five decimals: enough to identify a
-// doorway, short enough to read. A Capture with no position has neither half,
-// so a template naming both drops the line rather than writing half of one.
+// address names the Capture's place, coarsest first.
+func address(ctx Context) string { return entrytemplate.Address(placeOf(ctx)) }
+
+// coordinate is one half of the resolved position, to five decimals.
 func coordinate(ctx Context, field FieldID) string {
 	position, ok := ctx.Position()
 	if !ok {
 		return ""
 	}
+	latitude, longitude := entrytemplate.Coordinates(&entrytemplate.Position{Latitude: position.Latitude, Longitude: position.Longitude})
 	if field == FieldLongitude {
-		return fmt.Sprintf("%.5f", position.Longitude)
+		return longitude
 	}
-	return fmt.Sprintf("%.5f", position.Latitude)
+	return latitude
 }
 
-// altitude is metres above sea level, rounded: a Capture's altitude is accurate
-// to nothing like a metre, and the decimals only make the line harder to read.
-// A Capture with no coordinates has none, and neither does one whose position
-// came from somewhere other than the index: the index's altitude is where the
-// phone was.
-func altitude(ctx Context) string {
-	position := ctx.Capture.Index.Coordinates
-	if position == nil || ctx.positionSourced() {
-		return ""
-	}
-	return fmt.Sprintf("%.0fm", position.Altitude)
+// altitude is the entry's altitude as a template writes it.
+func altitude(ctx Context) string { return string(entryData(ctx).Altitude) }
+
+// mapLinksLine is the map services' links on one line, the pin named by the
+// most specific part of the Capture's place.
+func mapLinksLine(ctx Context, latitude, longitude, services string) string {
+	return entrytemplate.MapLinksLine(latitude, longitude, entrytemplate.Label(placeOf(ctx)), services)
 }
+
+// renderEntry writes one Capture through a template, dropping empty lines.
+func renderEntry(parsed *template.Template, data EntryData) ([]string, error) {
+	return entrytemplate.Execute(parsed, data)
+}
+
+var (
+	firstLine      = entrytemplate.FirstLine
+	afterFirstLine = entrytemplate.AfterFirstLine
+)
 
 // LoadTemplate reads a template by name, preferring the configured directory
 // over the compiled-in default so a reader can replace one without having to
@@ -261,18 +143,7 @@ func LoadTemplate(settings Settings, name string) (*template.Template, error) {
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := template.New(name).Funcs(templateFuncs(settings)).Option("missingkey=error").Parse(text)
-	if err != nil {
-		return nil, fmt.Errorf("template %s: %w", name, err)
-	}
-	return parsed, nil
-}
-
-func orDefault(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
+	return entrytemplate.Parse(name, text, settings.Mappings)
 }
 
 func templateText(dir, name string) (string, error) {
@@ -290,57 +161,6 @@ func templateText(dir, name string) (string, error) {
 		return "", fmt.Errorf("no template named %s", name)
 	}
 	return string(data), nil
-}
-
-// renderEntry writes one Capture through a template and drops the lines that
-// came out with nothing on them. Pruning rather than making every template
-// write its own conditionals: the common case is a line per value, and a line
-// whose value the Capture does not have should simply not be there.
-func renderEntry(parsed *template.Template, data EntryData) ([]string, error) {
-	var out strings.Builder
-	if err := parsed.Execute(&out, data); err != nil {
-		return nil, err
-	}
-	var lines []string
-	for _, line := range strings.Split(out.String(), "\n") {
-		text, named, empty := stripMarkers(line)
-		if named > 0 && named == empty {
-			// Every placeholder on this line resolved to nothing, so the line
-			// is a label with no value rather than something to write.
-			continue
-		}
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		lines = append(lines, strings.TrimRight(text, " "))
-	}
-	return lines, nil
-}
-
-// stripMarkers removes the markers a Value prints itself with, reporting how
-// many placeholders the line held and how many of them were empty.
-func stripMarkers(line string) (text string, named, empty int) {
-	var out strings.Builder
-	for {
-		start := strings.Index(line, valueOpen)
-		if start < 0 {
-			out.WriteString(line)
-			return out.String(), named, empty
-		}
-		end := strings.Index(line[start:], valueClose)
-		if end < 0 {
-			out.WriteString(line)
-			return out.String(), named, empty
-		}
-		value := line[start+len(valueOpen) : start+end]
-		named++
-		if value == "" {
-			empty++
-		}
-		out.WriteString(line[:start])
-		out.WriteString(value)
-		line = line[start+end+len(valueClose):]
-	}
 }
 
 // NoteData is what a daily note's own template may name: the day it is for, and
@@ -438,7 +258,7 @@ func renderNote(settings Settings, name, text string, data NoteData) (string, er
 	if err := parsed.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("template %s: %w", name, err)
 	}
-	rendered, _, _ := stripMarkers(out.String())
+	rendered, _, _ := entrytemplate.StripMarkers(out.String())
 	return rendered, nil
 }
 
@@ -454,85 +274,6 @@ func renderSection(ctx Context, section string) (string, error) {
 	if err := parsed.Execute(&out, entryData(ctx)); err != nil {
 		return "", fmt.Errorf("section: %w", err)
 	}
-	rendered, _, _ := stripMarkers(out.String())
+	rendered, _, _ := entrytemplate.StripMarkers(out.String())
 	return rendered, nil
-}
-
-// clockOf is the time of day the Capture recorded, to the second: the running
-// list is a timeline, and two entries a minute apart should not read as one.
-func clockOf(createdAt string) string {
-	if len(createdAt) < 19 || createdAt[10] != 'T' {
-		return ""
-	}
-	return createdAt[11:19]
-}
-
-// offsetOf writes the zone as hours — "+10", "+9.5", "+5.75" — rather than as
-// "+10:00". It is shorter, and how many hours away it was is the thing a reader
-// is actually asking when they see it.
-func offsetOf(createdAt string) string {
-	created, err := time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return ""
-	}
-	_, seconds := created.Zone()
-	sign := "+"
-	if seconds < 0 {
-		sign, seconds = "-", -seconds
-	}
-	hours := strconv.FormatFloat(float64(seconds)/3600, 'f', -1, 64)
-	return sign + hours
-}
-
-// mapLinksLine is the map services' links on one line. The pin is named by the
-// most specific part of the address; the whole of it in a URL is too long to
-// read and no more accurate, since the position comes from the coordinates.
-func mapLinksLine(ctx Context, latitude, longitude, services string) string {
-	place := ctx.place()
-	label := ""
-	for _, part := range []string{place.Locality, place.City, place.Region, place.Country} {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			label = trimmed
-			break
-		}
-	}
-	links := MapLinks(latitude, longitude, label, services)
-	parts := make([]string, 0, len(links))
-	for _, link := range links {
-		parts = append(parts, fmt.Sprintf("[%s](%s)", link.Short, link.URL))
-	}
-	return strings.Join(parts, " · ")
-}
-
-// firstLine is the first line of a text that has anything on it, trimmed:
-// blank lines before it are spacing rather than a title.
-func firstLine(text string) string {
-	title, _ := splitFirstLine(text)
-	return title
-}
-
-// afterFirstLine is everything after that line, with the blank lines at either
-// end removed and the blank lines inside kept, since they separate paragraphs.
-func afterFirstLine(text string) string {
-	_, body := splitFirstLine(text)
-	return body
-}
-
-func splitFirstLine(text string) (first, rest string) {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	start := 0
-	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
-		start++
-	}
-	if start == len(lines) {
-		return "", ""
-	}
-	body := lines[start+1:]
-	for len(body) > 0 && strings.TrimSpace(body[0]) == "" {
-		body = body[1:]
-	}
-	for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {
-		body = body[:len(body)-1]
-	}
-	return strings.TrimSpace(lines[start]), strings.Join(body, "\n")
 }

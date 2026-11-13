@@ -1,0 +1,15 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "position": {
+        "latitude": -33.123456789,
+        "longitude": -4e-06
+      }
+    }
+  },
+  "want": "-33.12346|-0.00000"
+}

@@ -1,4 +1,4 @@
-package organizer
+package entrytemplate
 
 import "testing"
 

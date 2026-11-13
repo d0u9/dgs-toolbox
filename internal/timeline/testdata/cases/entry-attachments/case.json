@@ -1,0 +1,29 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "attachments": [
+        {
+          "name": "a.jpg",
+          "kind": "image"
+        },
+        {
+          "name": "",
+          "kind": "image"
+        },
+        {
+          "name": "b.m4a",
+          "kind": "null"
+        },
+        {
+          "name": "c.m4a",
+          "kind": "audio"
+        }
+      ]
+    }
+  },
+  "want": "@want.md"
+}

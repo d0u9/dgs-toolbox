@@ -1,0 +1,12 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "content": "only text"
+    }
+  },
+  "want": "@want.md"
+}

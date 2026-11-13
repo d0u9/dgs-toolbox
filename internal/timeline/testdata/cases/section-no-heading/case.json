@@ -1,0 +1,9 @@
+{
+  "op": "section",
+  "args": {
+    "content": "@in.md",
+    "section": "  ",
+    "entry": "- `09:00:00 +10` · here\n    - Australia"
+  },
+  "error": "section: no section heading"
+}

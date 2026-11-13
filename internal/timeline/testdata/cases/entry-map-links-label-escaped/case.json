@@ -1,0 +1,19 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "place": {
+        "country": "Australia",
+        "locality": "St Mary's \u0026 Co"
+      }
+    }
+  },
+  "want": "[Apple](https://maps.apple.com/place?coordinate=-33.86000,151.21000\u0026name=St%20Mary's%20%26%20Co) · [百度](https://api.map.baidu.com/marker?location=-33.86000,151.21000\u0026coord_type=wgs84\u0026output=html\u0026title=St%20Mary's%20%26%20Co)"
+}

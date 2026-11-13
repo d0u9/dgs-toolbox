@@ -1,0 +1,15 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21
+      }
+    }
+  },
+  "want": "[Google](https://www.google.com/maps/search/?api=1\u0026query=-33.86000,151.21000) · [OSM](https://www.openstreetmap.org/?mlat=-33.86000\u0026mlon=151.21000#map=17/-33.86000/151.21000)"
+}

@@ -7,6 +7,7 @@ import (
 
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/desktop"
+	"dgs-toolbox/internal/entrytemplate"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -75,8 +76,8 @@ func (m routeModel) openMap() routeModel {
 	return m
 }
 
-func mapLinks(position organizer.Position, label, services string) []organizer.MapLink {
-	return organizer.MapLinks(
+func mapLinks(position organizer.Position, label, services string) []entrytemplate.MapLink {
+	return entrytemplate.MapLinks(
 		fmt.Sprintf("%.6f", position.Latitude),
 		fmt.Sprintf("%.6f", position.Longitude),
 		label, services,

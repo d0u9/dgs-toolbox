@@ -1,0 +1,21 @@
+{
+  "op": "entry",
+  "args": {
+    "name": "daily-entry.md",
+    "template": "@template.md",
+    "input": {
+      "createdAt": "2026-03-01T08:05:09Z",
+      "placeName": "Australia",
+      "workflow": "been_here",
+      "app": "Shortcuts",
+      "device": "phone-a",
+      "capture": "20260301-080509"
+    },
+    "mappings": {
+      "country": {
+        "Australia": "澳大利亚"
+      }
+    }
+  },
+  "want": "澳大利亚 Australia been_here Shortcuts phone-a 20260301-080509"
+}
