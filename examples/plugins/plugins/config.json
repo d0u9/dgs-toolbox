@@ -6,7 +6,7 @@
     "folders": {
       "public": "99 Toolkit/91 Scripts/01 DGS/00 Public",
       "quickadd": "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd",
-      "templates": "99 Toolkit/01 Templates/01 DGS"
+      "templates": "99 Toolkit/01 Templater/01 DGS"
     },
     "timelines": "99 Toolkit/timelines.json"
   }

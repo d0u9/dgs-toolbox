@@ -11,7 +11,7 @@
     "folders": {
       "public": "99 Toolkit/91 Scripts/01 DGS/00 Public",
       "quickadd": "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd",
-      "templates": "99 Toolkit/01 Templates/01 DGS"
+      "templates": "99 Toolkit/01 Templater/01 DGS"
     },
     "timelines": "99 Toolkit/timelines.json"
   }
@@ -23,7 +23,7 @@
 | `obsidian.vaults` | The Obsidian vaults `dgs plugins` checks and installs into when a run names none with `--vault`. Each is a vault's own folder, the one holding `.obsidian/`. | empty — every run must name a vault with `--vault` |
 | `obsidian.folders.public` | The vault folder the shared scripts go into: location, weather, the daily log. Templater's script files folder must be this one, since `tp.user` reads only that folder; the QuickAdd scripts and the dgs-toolbox plugin load them from it too. | `99 Toolkit/91 Scripts/01 DGS/00 Public` |
 | `obsidian.folders.quickadd` | The vault folder the QuickAdd scripts go into. | `99 Toolkit/91 Scripts/01 DGS/02 QuickAdd` |
-| `obsidian.folders.templates` | The vault folder the Templater templates go into. It must be Templater's template folder or inside it, or the templates are not offered. | `99 Toolkit/01 Templates/01 DGS` |
+| `obsidian.folders.templates` | The vault folder the Templater templates go into. It must be Templater's template folder or inside it, or the templates are not offered. | `99 Toolkit/01 Templater/01 DGS` |
 | `obsidian.timelines` | Where `bootstrap` writes the timelines file when the vault has none, and what the plugin's settings point at. | `99 Toolkit/timelines.json` |
 
 The three folders and the timelines file are paths inside the vault, written

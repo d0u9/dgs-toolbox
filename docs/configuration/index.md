@@ -163,7 +163,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [plugins](plugins.md) | `obsidian.vaults` | empty — every run names a vault with `--vault` |
 | [plugins](plugins.md) | `obsidian.folders.public` | `99 Toolkit/91 Scripts/01 DGS/00 Public` |
 | [plugins](plugins.md) | `obsidian.folders.quickadd` | `99 Toolkit/91 Scripts/01 DGS/02 QuickAdd` |
-| [plugins](plugins.md) | `obsidian.folders.templates` | `99 Toolkit/01 Templates/01 DGS` |
+| [plugins](plugins.md) | `obsidian.folders.templates` | `99 Toolkit/01 Templater/01 DGS` |
 | [plugins](plugins.md) | `obsidian.timelines` | `99 Toolkit/timelines.json` |
 | [cred](cred.md) | `identities` | empty — no identities |
 | [cred](cred.md) | `recipients` | empty — no recipients |

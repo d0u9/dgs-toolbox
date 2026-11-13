@@ -234,7 +234,7 @@ type PluginsObsidianFolders struct {
 const (
 	DefaultPluginsObsidianPublic    = "99 Toolkit/91 Scripts/01 DGS/00 Public"
 	DefaultPluginsObsidianQuickAdd  = "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd"
-	DefaultPluginsObsidianTemplates = "99 Toolkit/01 Templates/01 DGS"
+	DefaultPluginsObsidianTemplates = "99 Toolkit/01 Templater/01 DGS"
 	DefaultPluginsObsidianTimelines = "99 Toolkit/timelines.json"
 )
 
