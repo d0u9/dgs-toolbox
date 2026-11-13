@@ -196,6 +196,7 @@ test('the plugin’s API writes a quick note under its own heading, with the bui
 	assert.equal(path, '00 Daily Log/2026/2026-11-13.md');
 	assert.equal(seen.options.heading, '速记');
 	assert.equal(seen.options.createIfMissing, true);
+	assert.equal(seen.options.quiet, true, 'the caller says what went wrong, not the script');
 	assert.equal(
 		seen.options.insert('# 速记\n\n- 手写的一条\n\n# 去过哪里\n\n1. 无\n'),
 		'# 速记\n\n- 手写的一条\n- `09:05:00 +11` · 买牛奶\n    - 还有面包\n\n# 去过哪里\n\n1. 无\n',
@@ -243,7 +244,7 @@ const logSettings = { dailyFolder: '00 Daily Log', dailyFormat: 'YYYY/YYYY-MM-DD
 const parse = (/** @type {string} */ text, /** @type {string} */ format) => {
 	const valid = format === 'YYYY/YYYY-MM-DD' && /^(\d{4})\/\1-\d{2}-\d{2}$/.test(text);
 	// Only 2026-12-xx is after "now" in these tests.
-	return { isValid: () => valid, text, isAfter: () => text.includes('-12-') };
+	return { isValid: () => valid, text, isAfter: () => text.includes('-12-'), isSame: () => text.endsWith('-11-13') };
 };
 
 test('a path is a day’s log only inside the Log folder, named by the Log file name format', () => {
@@ -273,13 +274,19 @@ test('opening a log dgs made fills it once a session, and leaves alone what it s
 	/** @type {Record<string, any>} */
 	const frontmatter = { weather: '', temperature: '', tags: ['log'] };
 	plugin.app = { metadataCache: { getFileCache: () => ({ frontmatter }) } };
-	plugin.vaultLib = { tp: async () => ({ user: { backfillLocationWeather: async (/** @type {unknown} */ _tp, /** @type {string} */ path) => runs.push(path) } }) };
+	/** @type {Record<string, unknown>} */
+	const options = {};
+	plugin.vaultLib = { tp: async () => ({ user: { backfillLocationWeather: async (/** @type {unknown} */ _tp, /** @type {string} */ path, /** @type {any} */ given) => { runs.push(path); options[path] = given.locateDevice; } } }) };
 	const log = Object.assign(new TFile('00 Daily Log/2026/2026-11-08.md'), { stat: { ctime: 0 } });
 	const later = 10 * 60 * 1000;
 
 	await plugin.backfillDailyLog(log, later, parse);
 	await plugin.backfillDailyLog(log, later, parse);
 	assert.deepEqual(runs, ['00 Daily Log/2026/2026-11-08.md'], 'not once, or more than once');
+	assert.equal(options['00 Daily Log/2026/2026-11-08.md'], false, 'a past log may not ask where the device is');
+	await plugin.backfillDailyLog(Object.assign(new TFile('00 Daily Log/2026/2026-11-13.md'), { stat: { ctime: 0 } }), later, parse);
+	assert.equal(options['00 Daily Log/2026/2026-11-13.md'], true, 'today’s log may');
+	runs.pop();
 
 	const fresh = Object.assign(new TFile('00 Daily Log/2026/2026-11-09.md'), { stat: { ctime: later - 5000 } });
 	await plugin.backfillDailyLog(fresh, later, parse);

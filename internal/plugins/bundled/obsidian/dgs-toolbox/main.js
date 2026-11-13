@@ -176,12 +176,14 @@ class DgsToolboxPlugin extends Plugin {
 		const date = dailyLogDate(file.path, this.settings, parse);
 		// A day still to come has no weather to look up.
 		if (!date || date.isAfter(moment(now), 'day')) return;
+		// Where this device is now says where a log was only if the log is today's.
+		const locateDevice = date.isSame(moment(now), 'day');
 		if (now - (file.stat?.ctime ?? 0) < RECENT_MS) return;
 		if (!needsBackfill(this.app.metadataCache.getFileCache(file)?.frontmatter)) return;
 		this.backfilled.add(file.path);
 		try {
 			const tp = await this.vaultLib.tp();
-			await tp.user.backfillLocationWeather(tp, file.path, { dailyTemperature: true, countryTag: true, date });
+			await tp.user.backfillLocationWeather(tp, file.path, { dailyTemperature: true, countryTag: true, date, locateDevice });
 		} catch (error) {
 			console.warn('DGS Toolbox: backfill failed', error);
 		}
@@ -309,6 +311,8 @@ class VaultLib {
 			this.params(),
 			{
 				date: when, logFolder: normalizePath(dailyFolder), logFormat: dailyFormat, heading: section, createIfMissing,
+				// The caller says what went wrong; the script need not say it too.
+				quiet: true,
 				insert: (/** @type {string} */ content) => engine.call('section', { content, section, entry: block }),
 			},
 			() => block,

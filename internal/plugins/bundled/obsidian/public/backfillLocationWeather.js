@@ -10,7 +10,9 @@
  *
  * **只填空的**：已经有值的属性一律不动。dgs capture 建的日志带着 capture 记下的
  * 坐标和地名，这里只补它补不了的天气、气温和国旗标签；已经有坐标就按这个坐标
- * 查，不会换成这台设备此刻的位置。只有坐标也空着，才用设备的定位。
+ * 查，不会换成这台设备此刻的位置。只有坐标也空着，才用设备的定位 —— 而且只在
+ * 调用方说可以的时候（locateDevice，默认可以）：补一篇过去的日志时，设备此刻在
+ * 哪儿跟那一天无关，宁可留空。
  *
  * 调用方不要 await：让它在后台跑，笔记先出现。
  */
@@ -72,9 +74,9 @@ const readFrontmatter = async (tp, file) => {
  * 笔记在哪儿：已有坐标就用它，地名或国家代码缺了再按坐标反查；没有坐标才问设备。
  * 返回的地名只是「查到的」，写不写由调用方按空不空决定。
  */
-const locate = async (tp, existing, wantCountryCode) => {
+const locate = async (tp, existing, wantCountryCode, locateDevice) => {
     const known = coordinatesOf(existing.coordinates);
-    if (!known) return tp.user.getLocation(tp, tp.user.requestJson);
+    if (!known) return locateDevice ? tp.user.getLocation(tp, tp.user.requestJson) : null;
 
     const named = ["country", "region", "city", "locality"].some((key) => !blank(existing[key]));
     let place = null;
@@ -105,7 +107,7 @@ module.exports = async function backfillLocationWeather(tp, path, options = {}) 
 
     // 日志记的是一整天的最高最低气温，别的笔记记此刻的那一个数。
     // date 是带时区的 moment（也收日期串），「那一天」按它自己的时区算。
-    const { dailyTemperature = false, countryTag = false, date = moment() } = options;
+    const { dailyTemperature = false, countryTag = false, date = moment(), locateDevice = true } = options;
 
     const existing = await readFrontmatter(tp, file);
     const wantsWeather = blank(existing.weather) || blank(existing.temperature);
@@ -113,13 +115,15 @@ module.exports = async function backfillLocationWeather(tp, path, options = {}) 
     const wantsPlace = ["coordinates", "country", "region", "city", "locality"].some((key) => blank(existing[key]));
 
     if (!wantsWeather && !wantsTag && !wantsPlace) return;
+    // 没坐标、又不让问设备：查不了任何东西，安静地留空。
+    if (!locateDevice && !coordinatesOf(existing.coordinates)) return;
 
     let location = null;
     let weather = null;
     let dayTemperature = null;
 
     try {
-        location = await locate(tp, existing, wantsTag);
+        location = await locate(tp, existing, wantsTag, locateDevice);
 
         if (wantsWeather && location) {
             if (dailyTemperature) {

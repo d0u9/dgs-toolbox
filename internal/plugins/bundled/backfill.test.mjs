@@ -98,7 +98,7 @@ function setup(properties, answers = {}) {
 	};
 	const module = { exports: /** @type {any} */ ({}) };
 	vm.runInNewContext(source, { module, app, moment: () => 'today', console: { warn() {} }, setTimeout });
-	const run = () => module.exports(tp, path, { dailyTemperature: true, countryTag: true, date: '2026-11-08' });
+	const run = (/** @type {Record<string, unknown>} */ extra = {}) => module.exports(tp, path, { dailyTemperature: true, countryTag: true, date: '2026-11-08', ...extra });
 	return { run, store, asked, notices };
 }
 
@@ -194,4 +194,20 @@ test('weather that could not be found is said, the place still written', async (
 	assert.equal(store.properties.city, 'Sydney');
 	assert.equal(store.properties.weather, '');
 	assert.match(notices[0], /天气没查全/);
+});
+
+test('a past log without coordinates is not given where this device is now', async () => {
+	const { run, store, asked, notices } = setup(blankLog);
+	await run({ locateDevice: false });
+	assert.deepEqual(asked, [], 'something was looked up');
+	assert.deepEqual(store.properties, blankLog);
+	assert.deepEqual(notices, [], 'a log that cannot be filled is left quietly');
+});
+
+test('a past log with coordinates is still filled at its own place', async () => {
+	const { run, store, asked } = setup({ ...blankLog, coordinates: '31.23040, 121.47370' });
+	await run({ locateDevice: false });
+	assert.ok(!asked.includes('device'));
+	assert.equal(store.properties.weather, 'Cloudy, Clear');
+	assert.equal(store.properties.city, 'Shanghai');
 });

@@ -15,6 +15,7 @@
  *   heading       写在哪个标题下，不含 # 号；建日志用的模板不在这里配，
  *                 那是 Templater 的文件夹模板管的事
  *   createIfMissing
+ *   quiet         可选，true 时找不到日志不弹提示，由调用方自己说
  *   insert        可选，(content) => 新内容：由调用方决定条目放在段落的哪里。
  *                 DGS Toolbox 传的是 timeline 引擎的 section，和 dgs capture
  *                 用同一份代码；不传就用这里自己的 appendToSection。
@@ -40,7 +41,7 @@ module.exports = async function appendToDailyLog(params, options, makeBlock) {
 
 	const file = await resolveDailyLog(params, logPath, options);
 	if (!file) {
-		new Notice(`QuickAdd: ${logPath} not found`);
+		if (!options.quiet) new Notice(`QuickAdd: ${logPath} not found`);
 		return false;
 	}
 
