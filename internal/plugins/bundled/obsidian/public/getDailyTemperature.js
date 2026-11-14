@@ -7,8 +7,10 @@
  * 日志写的是一整天，某个时刻的气温说明不了那天冷不冷 —— 所以日志记这两个
  * 值；别的笔记写的是某个时刻，用 `getWeather` 那个单独的 `temperature`。
  *
- * 今天和以后查预报，过去查档案：档案里没有今天。日期给带时区的 moment，
- * 「今天」才是那个地方的今天。没有坐标或者查不到返回 null。
+ * 今天和以后先查预报，过去先查档案；先查的那个不应答或没有数，就换另一个
+ * 再查一次 —— 预报服务整个停过，档案也有当天的数，预报也能往回查几个月。
+ * 日期给带时区的 moment，「今天」才是那个地方的今天。没有坐标或者两个都
+ * 查不到返回 null。
  */
 module.exports = async function getDailyTemperature(tp, requestJson, location, date) {
     if (!location?.latitude || !location?.longitude) return null;
@@ -22,9 +24,9 @@ module.exports = async function getDailyTemperature(tp, requestJson, location, d
     const nowThere = moment().utcOffset(zoned.utcOffset());
 
     const isPast = zoned.isBefore(nowThere, "day");
-    const endpoint = isPast
-        ? "https://archive-api.open-meteo.com/v1/archive"
-        : "https://api.open-meteo.com/v1/forecast";
+    const endpoints = isPast
+        ? ["https://archive-api.open-meteo.com/v1/archive", "https://api.open-meteo.com/v1/forecast"]
+        : ["https://api.open-meteo.com/v1/forecast", "https://archive-api.open-meteo.com/v1/archive"];
 
     const descriptions = location.countryCode === "CN"
         ? {
@@ -43,7 +45,7 @@ module.exports = async function getDailyTemperature(tp, requestJson, location, d
             96: "Thunderstorm", 99: "Thunderstorm"
         };
 
-    const url = [
+    const urlFor = (endpoint) => [
         endpoint,
         `?latitude=${location.latitude}`,
         `&longitude=${location.longitude}`,
@@ -55,48 +57,56 @@ module.exports = async function getDailyTemperature(tp, requestJson, location, d
         "&timezone=auto"
     ].join("");
 
-    try {
-        const data = await requestJson(tp, url, 8000);
-        const max = Number(data?.daily?.temperature_2m_max?.[0]);
-        const min = Number(data?.daily?.temperature_2m_min?.[0]);
-        const times = data?.hourly?.time;
-        const codes = data?.hourly?.weather_code;
+    for (const endpoint of endpoints) {
+        const result = await lookup(urlFor(endpoint));
+        if (result) return result;
+    }
+    return null;
 
-        if (
-            !Number.isFinite(max)
-            || !Number.isFinite(min)
-            || !Array.isArray(times)
-            || !Array.isArray(codes)
-        ) return null;
+    async function lookup(url) {
+        try {
+            const data = await requestJson(tp, url, 8000);
+            const max = Number(data?.daily?.temperature_2m_max?.[0]);
+            const min = Number(data?.daily?.temperature_2m_min?.[0]);
+            const times = data?.hourly?.time;
+            const codes = data?.hourly?.weather_code;
 
-        // 今天只记截至现在已经出现过的状态，不把今天余下时段的预报写成事实。
-        // 响应的小时是地点当地时间，用响应里的 UTC 偏移换成绝对时刻再比较。
-        const offsetMinutes = Number(data.utc_offset_seconds ?? 0) / 60;
-        const isToday = zoned.isSame(nowThere, "day");
-        const now = moment().valueOf();
-        const conditions = [];
+            if (
+                !Number.isFinite(max)
+                || !Number.isFinite(min)
+                || !Array.isArray(times)
+                || !Array.isArray(codes)
+            ) return null;
 
-        times.forEach((time, index) => {
-            const instant = moment.utc(time, "YYYY-MM-DDTHH:mm")
-                .subtract(offsetMinutes, "minutes")
-                .valueOf();
-            if (isToday && instant > now) return;
+            // 今天只记截至现在已经出现过的状态，不把今天余下时段的预报写成事实。
+            // 响应的小时是地点当地时间，用响应里的 UTC 偏移换成绝对时刻再比较。
+            const offsetMinutes = Number(data.utc_offset_seconds ?? 0) / 60;
+            const isToday = zoned.isSame(nowThere, "day");
+            const now = moment().valueOf();
+            const conditions = [];
 
-            const condition = descriptions[Number(codes[index])];
-            if (condition && !conditions.includes(condition)) conditions.push(condition);
-        });
+            times.forEach((time, index) => {
+                const instant = moment.utc(time, "YYYY-MM-DDTHH:mm")
+                    .subtract(offsetMinutes, "minutes")
+                    .valueOf();
+                if (isToday && instant > now) return;
 
-        if (!conditions.length) return null;
+                const condition = descriptions[Number(codes[index])];
+                if (condition && !conditions.includes(condition)) conditions.push(condition);
+            });
 
-        return {
-            condition: conditions.join(", "),
-            conditions,
-            min: Number(min.toFixed(1)),
-            max: Number(max.toFixed(1)),
-            range: `${min.toFixed(1)}, ${max.toFixed(1)}`
-        };
-    } catch (error) {
-        console.warn("Daily temperature lookup failed:", error);
-        return null;
+            if (!conditions.length) return null;
+
+            return {
+                condition: conditions.join(", "),
+                conditions,
+                min: Number(min.toFixed(1)),
+                max: Number(max.toFixed(1)),
+                range: `${min.toFixed(1)}, ${max.toFixed(1)}`
+            };
+        } catch (error) {
+            console.warn("Daily temperature lookup failed:", url, error);
+            return null;
+        }
     }
 };

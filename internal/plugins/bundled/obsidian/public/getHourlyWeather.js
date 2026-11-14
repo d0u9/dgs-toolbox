@@ -9,8 +9,8 @@
  * 排的，两边时区不同就会差好几个小时 —— 所以这里不比字符串，一律换算成
  * UTC 时刻再找最近的那个点。响应里的 `utc_offset_seconds` 就是为此要的。
  *
- * 过去查档案、今天和以后查预报，和 `getDailyTemperature` 一条规矩。查不到
- * 返回 null。
+ * 过去先查档案、今天和以后先查预报，先查的不应答或没有数就换另一个，和
+ * `getDailyTemperature` 一条规矩。两个都查不到返回 null。
  */
 
 // 和 getHistoricalWeather 同一套映射：档案那条链上的状态一律英文。
@@ -32,12 +32,12 @@ module.exports = async function getHourlyWeather(tp, requestJson, location, date
 
     const nowThere = moment().utcOffset(date.utcOffset());
     const isPast = date.isBefore(nowThere, "day");
-    const endpoint = isPast
-        ? "https://archive-api.open-meteo.com/v1/archive"
-        : "https://api.open-meteo.com/v1/forecast";
+    const endpoints = isPast
+        ? ["https://archive-api.open-meteo.com/v1/archive", "https://api.open-meteo.com/v1/forecast"]
+        : ["https://api.open-meteo.com/v1/forecast", "https://archive-api.open-meteo.com/v1/archive"];
 
     // 那个时刻在气象源当地可能落在前一天或后一天，所以前后各多要一天。
-    const url = [
+    const urlFor = (endpoint) => [
         endpoint,
         `?latitude=${location.latitude}`,
         `&longitude=${location.longitude}`,
@@ -48,41 +48,49 @@ module.exports = async function getHourlyWeather(tp, requestJson, location, date
         "&timezone=auto"
     ].join("");
 
-    try {
-        const data = await requestJson(tp, url, 8000);
-        const times = data?.hourly?.time;
-        if (!Array.isArray(times) || !times.length) return null;
+    for (const endpoint of endpoints) {
+        const result = await lookup(urlFor(endpoint));
+        if (result) return result;
+    }
+    return null;
 
-        const offsetMinutes = Number(data.utc_offset_seconds ?? 0) / 60;
-        const target = date.valueOf();
+    async function lookup(url) {
+        try {
+            const data = await requestJson(tp, url, 8000);
+            const times = data?.hourly?.time;
+            if (!Array.isArray(times) || !times.length) return null;
 
-        let index = -1;
-        let closest = Infinity;
+            const offsetMinutes = Number(data.utc_offset_seconds ?? 0) / 60;
+            const target = date.valueOf();
 
-        times.forEach((time, i) => {
-            const instant = moment.utc(time, "YYYY-MM-DDTHH:mm").subtract(offsetMinutes, "minutes");
-            const distance = Math.abs(instant.valueOf() - target);
-            if (distance < closest) {
-                closest = distance;
-                index = i;
-            }
-        });
+            let index = -1;
+            let closest = Infinity;
 
-        // 差出一个多小时说明这个时刻不在返回的范围里（预报只到十几天后），
-        // 与其给一个隔天的数字，不如说没有。
-        if (index === -1 || closest > 90 * 60 * 1000) return null;
+            times.forEach((time, i) => {
+                const instant = moment.utc(time, "YYYY-MM-DDTHH:mm").subtract(offsetMinutes, "minutes");
+                const distance = Math.abs(instant.valueOf() - target);
+                if (distance < closest) {
+                    closest = distance;
+                    index = i;
+                }
+            });
 
-        const temperature = Number(data.hourly.temperature_2m?.[index]);
-        const code = Number(data.hourly.weather_code?.[index]);
+            // 差出一个多小时说明这个时刻不在返回的范围里（预报只到十几天后），
+            // 与其给一个隔天的数字，不如说没有。
+            if (index === -1 || closest > 90 * 60 * 1000) return null;
 
-        if (!Number.isFinite(temperature) || !Number.isFinite(code)) return null;
+            const temperature = Number(data.hourly.temperature_2m?.[index]);
+            const code = Number(data.hourly.weather_code?.[index]);
 
-        return {
-            condition: weatherDescription(code),
-            temperature: Number(temperature.toFixed(1))
-        };
-    } catch (error) {
-        console.warn("Hourly weather lookup failed:", error);
-        return null;
+            if (!Number.isFinite(temperature) || !Number.isFinite(code)) return null;
+
+            return {
+                condition: weatherDescription(code),
+                temperature: Number(temperature.toFixed(1))
+            };
+        } catch (error) {
+            console.warn("Hourly weather lookup failed:", url, error);
+            return null;
+        }
     }
 };

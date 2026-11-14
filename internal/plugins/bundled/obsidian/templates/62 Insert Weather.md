@@ -201,7 +201,7 @@ if (!weather) {
     new tp.obsidian.Notice(
         isNow
             ? "Weather unavailable."
-            : "No weather for that time. The archive lags a few days."
+            : "No weather for that time: the weather service did not answer, or has no data for it yet."
     );
     return;
 }

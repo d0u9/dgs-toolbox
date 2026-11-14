@@ -3,8 +3,8 @@
  * 更新当前笔记 frontmatter 里的天气 —— 只有 `weather` 和 `temperature`
  * 这两个属性，位置一概不动（那是 `51 Update Location` 的事）。
  *
- * 日期留空就是现在；过去查档案，今天和未来查预报。档案有几天延迟，太近的
- * 日期查不到，这时会明说是延迟而不是笼统的失败。
+ * 日期留空就是现在；过去先查档案，今天和未来先查预报，查不到再换另一个。
+ * 两个都没有数时明说是服务没应答或还没有数据。
  *
  * 日期可以带时刻：选「此刻的气温」时问的就是那一个钟点，按小时查。
  *
@@ -188,7 +188,7 @@ if (!weather) {
     new tp.obsidian.Notice(
         isNow
             ? "Weather unavailable."
-            : "No weather for that time. The archive lags a few days."
+            : "No weather for that time: the weather service did not answer, or has no data for it yet."
     );
     return;
 }
