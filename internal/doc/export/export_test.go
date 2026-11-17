@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -321,5 +322,74 @@ func TestByDigestPrefersHead(t *testing.T) {
 	it.Head = "other"
 	if got := byDigest(it, "pdf").Ref(); got != "c" {
 		t.Fatalf("got %s, want newest c", got)
+	}
+}
+
+// A run that stops at a new file leaves the files it would remove in place.
+func TestFailedAddKeepsOldFiles(t *testing.T) {
+	root, target := t.TempDir(), t.TempDir()
+	a := stored(t, root, "A", "trip one")
+	b := stored(t, root, "B", "ticket")
+	items := []tree.Item{{ID: "A"}, {ID: "B"}}
+	export(t, root, target, []view.File{{Path: "trip-a/plan.pdf", Item: "A", Digest: a, Revision: 1}}, items)
+
+	files := []view.File{{Path: "trip-b/ticket.pdf", Item: "B", Digest: b, Revision: 1, View: "v"}}
+	plan, err := Compute(context.Background(), target, []string{"v"}, files)
+	if err != nil || len(plan.Add) != 1 || len(plan.Remove) != 1 {
+		t.Fatalf("plan: %v %+v", err, plan)
+	}
+	// Something else takes the new name before Apply publishes it.
+	if err := os.MkdirAll(filepath.Join(target, "trip-b/ticket.pdf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), testStore(t, root), target, []string{"v"}, plan, items, nil, nil); err == nil {
+		t.Fatal("publishing over a folder succeeded")
+	}
+	if read(t, filepath.Join(target, "trip-a/plan.pdf")) != "trip one" {
+		t.Fatal("old file removed although the new one was not written")
+	}
+	if m, err := ReadManifest(target); err != nil || len(m.Files) != 1 || m.Files[0].Path != "trip-a/plan.pdf" {
+		t.Fatalf("manifest: %v %+v", err, m)
+	}
+}
+
+// On a case-insensitive filesystem a path renamed only in case, of a file or
+// a folder, with new content or the same, ends up under the new name.
+func TestCaseRename(t *testing.T) {
+	probe := t.TempDir()
+	if err := os.WriteFile(filepath.Join(probe, "a"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(probe, "A")); err != nil {
+		t.Skip("case-sensitive filesystem")
+	}
+	for _, c := range []struct{ name, path, item string }{
+		{"new content", "trip-a/Plan.pdf", "B"},
+		{"same content", "trip-a/Plan.pdf", "A"},
+		{"folder", "Trip-A/plan.pdf", "A"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root, target := t.TempDir(), t.TempDir()
+			digests := map[string]string{"A": stored(t, root, "A", "trip one"), "B": stored(t, root, "B", "trip two")}
+			items := []tree.Item{{ID: "A"}, {ID: "B"}}
+			export(t, root, target, []view.File{{Path: "trip-a/plan.pdf", Item: "A", Digest: digests["A"], Revision: 1}}, items)
+			export(t, root, target, []view.File{{Path: c.path, Item: c.item, Digest: digests[c.item], Revision: 1}}, items)
+
+			for dir, rest := target, c.path; rest != ""; {
+				part, after, _ := strings.Cut(rest, "/")
+				names, err := os.ReadDir(dir)
+				if err != nil || !slices.ContainsFunc(names, func(e os.DirEntry) bool { return e.Name() == part }) {
+					t.Fatalf("%s holds no %s: %v %v", dir, part, err, names)
+				}
+				dir, rest = filepath.Join(dir, part), after
+			}
+			want := map[string]string{"A": "trip one", "B": "trip two"}[c.item]
+			if got := read(t, filepath.Join(target, c.path)); got != want {
+				t.Fatalf("content %q, want %q", got, want)
+			}
+			if m, err := ReadManifest(target); err != nil || len(m.Files) != 1 || m.Files[0].Path != c.path {
+				t.Fatalf("manifest: %v %+v", err, m)
+			}
+		})
 	}
 }

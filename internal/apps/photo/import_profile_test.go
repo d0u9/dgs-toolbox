@@ -128,7 +128,7 @@ func TestAllowCheckRenameLocksEveryDestinationUntilReleased(t *testing.T) {
 	}
 	// A second run on a shared destination is refused and leaves no lock of its own.
 	c := t.TempDir()
-	if _, err := allowCheckRename(&out, []string{c, b}); err == nil || !strings.Contains(err.Error(), "held by another import") {
+	if _, err := allowCheckRename(&out, []string{c, b}); err == nil || !strings.Contains(err.Error(), "held by another dgs run") {
 		t.Fatalf("second run: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(c, verifiedcopy.LockName)); !os.IsNotExist(err) {

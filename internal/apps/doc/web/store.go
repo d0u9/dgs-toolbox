@@ -4,7 +4,6 @@ import (
 	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/verifiedcopy"
-	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -18,10 +17,7 @@ import (
 // Without the lock, as when another host holds it, publication is refused
 // as before.
 func allowCheckRename(root string) {
-	if err := verifiedcopy.CheckPublication(root); !errors.Is(err, verifiedcopy.ErrUnsafePublication) {
-		return
-	}
-	if _, err := verifiedcopy.AllowCheckRename(root); err != nil {
+	if _, err := verifiedcopy.AllowCheckRenameWhereUnsafe(root); err != nil {
 		log.Printf("doc: %s: check-then-rename unavailable: %v", root, err)
 	}
 }

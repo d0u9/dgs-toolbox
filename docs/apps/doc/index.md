@@ -1287,8 +1287,11 @@ renaming: when the server opens such a tree it takes `_dgs-lock` in the
 tree's root and holds it while it runs. Only dgs writes a tree, so the
 remaining risk, another program writing the same name between the check
 and the rename, is accepted. A lock held by another host or live process
-leaves the tree refusing such writes, as without it. Export destinations
-outside a tree never fall back.
+leaves the tree refusing such writes, as without it. An export folder on
+such a filesystem does the same for the length of the export: it takes
+`_dgs-lock` in the folder before any change and removes it at the end. Only
+dgs writes an export folder's recorded files, and a held lock stops the export
+before it changes anything.
 
 Export removes only files it wrote itself, recorded in a manifest at the
 root of the folder; anything else under it is never touched.
@@ -1325,6 +1328,12 @@ check finds anything.
 - A recorded file changed since it was exported is never replaced or removed.
   Wanted, it blocks the export; no longer wanted, it is left where it is and
   the manifest forgets it.
+- New files are written first, then replaced ones, then removals, so an
+  export that stops early leaves the files it would remove in place. A
+  replacement removes the old file just before it writes the new one.
+- A path renamed only in case, of a file or a folder, is one name on a
+  case-insensitive filesystem: its old file is removed before the new one is
+  written, even when the content is the same.
 - Folders a removal leaves empty are removed.
 - The manifest is rewritten at the end, and also when an export stops early,
   so the next export only does what is left.

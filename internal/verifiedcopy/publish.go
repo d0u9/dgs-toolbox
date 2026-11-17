@@ -115,7 +115,7 @@ func takeLock(lock, owner string) error {
 		}
 		held, _ := os.ReadFile(lock)
 		if attempt > 0 || !staleOwner(string(held)) {
-			return fmt.Errorf("%s is held by another import (%s); remove it if none is running", lock, strings.TrimSpace(string(held)))
+			return fmt.Errorf("%s is held by another dgs run (%s); remove it if none is running", lock, strings.TrimSpace(string(held)))
 		}
 		// Unchanged since read: removing it does not remove a newer owner's.
 		if again, _ := os.ReadFile(lock); string(again) != string(held) {
@@ -170,6 +170,16 @@ var ErrNoExclusiveRename = errors.New("exclusive rename is not available on this
 // ErrUnsafePublication says a directory can neither refuse an existing name
 // on rename nor hard-link, so Publish would refuse every file there.
 var ErrUnsafePublication = errors.New("this filesystem cannot refuse an existing name (no exclusive rename or hard link)")
+
+// AllowCheckRenameWhereUnsafe opts dir in with AllowCheckRename only when
+// CheckPublication finds it unsafe; elsewhere release does nothing. A failed
+// probe is left to the publication that follows to report.
+func AllowCheckRenameWhereUnsafe(dir string) (release func(), err error) {
+	if err := CheckPublication(dir); !errors.Is(err, ErrUnsafePublication) {
+		return func() {}, nil
+	}
+	return AllowCheckRename(dir)
+}
 
 // CheckPublication tries Publish's safe operations on two scratch files in
 // dir, before any long copy, so a destination that would refuse every file

@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -168,7 +169,7 @@ func Compute(ctx context.Context, target string, views []string, files []view.Fi
 		exporting[v] = true
 	}
 	owned := map[string]Entry{}
-	ownedFold := map[string]bool{}
+	ownedFold := map[string]Entry{}
 	others := map[string]Entry{}
 	for _, e := range m.Files {
 		if !exporting[e.View] {
@@ -176,7 +177,7 @@ func Compute(ctx context.Context, target string, views []string, files []view.Fi
 			continue
 		}
 		owned[e.Path] = e
-		ownedFold[strings.ToLower(e.Path)] = true
+		ownedFold[strings.ToLower(e.Path)] = e
 	}
 	wanted := map[string]bool{}
 	for _, f := range files {
@@ -200,16 +201,23 @@ func Compute(ctx context.Context, target string, views []string, files []view.Fi
 			return plan, err
 		}
 		e, ours := owned[f.Path]
+		// A recorded file whose path differs only in case is this very file
+		// on a case-insensitive filesystem. It is renamed: Apply removes it
+		// before writing this one, even when the content is the same.
+		folded, renamed := ownedFold[strings.ToLower(f.Path)]
+		renamed = renamed && !ours && onDisk != "" && sameFile(target, f.Path, folded.Path)
 		switch {
-		case onDisk == f.Digest:
-			plan.Keep = append(plan.Keep, a)
 		case onDisk == "":
 			plan.Add = append(plan.Add, a)
+		case renamed && onDisk == folded.Digest:
+			plan.Add = append(plan.Add, a)
+		case renamed:
+			a.Reason = "changed since it was exported as " + folded.Path
+			plan.Blocked = append(plan.Blocked, a)
+		case onDisk == f.Digest:
+			plan.Keep = append(plan.Keep, a)
 		case ours && onDisk == e.Digest:
 			plan.Replace = append(plan.Replace, a)
-		case !ours && ownedFold[strings.ToLower(f.Path)]:
-			// The same path in other case, which this export removes first.
-			plan.Add = append(plan.Add, a)
 		case ours:
 			a.Reason = "changed since it was exported"
 			plan.Blocked = append(plan.Blocked, a)
@@ -238,6 +246,16 @@ func Compute(ctx context.Context, target string, views []string, files []view.Fi
 		}
 	}
 	return plan, nil
+}
+
+// sameFile says whether a and b, relative to target, name one file.
+func sameFile(target, a, b string) bool {
+	x, err := os.Lstat(filepath.Join(target, filepath.FromSlash(a)))
+	if err != nil {
+		return false
+	}
+	y, err := os.Lstat(filepath.Join(target, filepath.FromSlash(b)))
+	return err == nil && os.SameFile(x, y)
 }
 
 // digestOf is the SHA-256 of the regular file at path, or "" when nothing
@@ -279,9 +297,13 @@ func (c ctxReader) Read(p []byte) (int, error) {
 
 func readerWith(ctx context.Context, r io.Reader) io.Reader { return ctxReader{ctx, r} }
 
-// Apply carries out plan, computed for views: removals first, then
-// replacements, then new files, each checked again just before it is
-// touched. The manifest is rewritten at the end with every file the Target
+// Apply carries out plan, computed for views: new files first, then
+// replacements, then removals, each checked again just before it is
+// touched, so a run that stops early leaves the files it would remove in
+// place. A replacement removes the old file just before writing the new one.
+// A removal whose path, or a folder of it, differs from a new file's only in
+// case goes first: a case-insensitive filesystem holds both under one name.
+// The manifest is rewritten at the end with every file the Target
 // then holds for those Views, and the other Views' entries as they were;
 // also when Apply stops early, so what was done is recorded. Progress, when
 // set, is called after each file. Published, when set, is called for each
@@ -294,6 +316,15 @@ func Apply(ctx context.Context, st *tree.Store, target string, views []string, p
 	if err := CheckTarget(st, target); err != nil {
 		return result, err
 	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return result, err
+	}
+	// Only dgs writes an export Target's recorded files, as a tree's.
+	release, err := verifiedcopy.AllowCheckRenameWhereUnsafe(target)
+	if err != nil {
+		return result, err
+	}
+	defer release()
 	// Check every selected source before any target removal or publication.
 	{
 		actions := append(append(append([]Action{}, plan.Add...), plan.Replace...), plan.Keep...)
@@ -308,9 +339,6 @@ func Apply(ctx context.Context, st *tree.Store, target string, views []string, p
 			if !filepath.IsLocal(filepath.FromSlash(dir)) || dir == "." || strings.ContainsAny(dir, "\\\x00") {
 				return result, fmt.Errorf("invalid skeleton directory")
 			}
-		}
-		if err := os.MkdirAll(target, 0755); err != nil {
-			return result, err
 		}
 		root, err := os.OpenRoot(target)
 		if err != nil {
@@ -406,12 +434,34 @@ func Apply(ctx context.Context, st *tree.Store, target string, views []string, p
 			progress(step, total)
 		}
 	}
-	for _, a := range plan.Remove {
+	remove := func(a Action) error {
 		if err := removeOwned(ctx, target, a.Path, a.Digest); err != nil {
-			return finish(err)
+			return err
 		}
 		delete(pending, a.Path)
 		result.Removed++
+		tick()
+		return nil
+	}
+	// ponytail: compares every removal with every new file; index by folded
+	// path if a Target holds tens of thousands of files.
+	var late []Action
+	for _, r := range plan.Remove {
+		if !slices.ContainsFunc(plan.Add, func(a Action) bool { return caseClash(r.Path, a.Path) }) {
+			late = append(late, r)
+		} else if err := remove(r); err != nil {
+			return finish(err)
+		}
+	}
+	for _, a := range plan.Add {
+		if err := publish(ctx, st, target, a); err != nil {
+			return finish(err)
+		}
+		done = append(done, entry(a))
+		result.Written++
+		if published != nil {
+			published(a)
+		}
 		tick()
 	}
 	for _, a := range plan.Replace {
@@ -429,18 +479,25 @@ func Apply(ctx context.Context, st *tree.Store, target string, views []string, p
 		}
 		tick()
 	}
-	for _, a := range plan.Add {
-		if err := publish(ctx, st, target, a); err != nil {
+	for _, a := range late {
+		if err := remove(a); err != nil {
 			return finish(err)
 		}
-		done = append(done, entry(a))
-		result.Written++
-		if published != nil {
-			published(a)
-		}
-		tick()
 	}
 	return finish(nil)
+}
+
+// caseClash says whether slash paths a and b name one file or folder on a
+// case-insensitive filesystem without being equal: the first part where
+// they differ differs only in case.
+func caseClash(a, b string) bool {
+	x, y := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := range min(len(x), len(y)) {
+		if x[i] != y[i] {
+			return strings.EqualFold(x[i], y[i])
+		}
+	}
+	return false
 }
 
 // removeOwned removes the file at rel when it still hashes to digest, then
