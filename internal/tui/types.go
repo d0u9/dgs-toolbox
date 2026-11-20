@@ -99,6 +99,10 @@ type Report struct {
 // Action is a CLI-only subcommand such as `dgs photo organize <folder>`. It
 // reads answers from in and writes progress to out instead of opening the TUI.
 type Action struct {
+	// Aliases are alternative CLI names for the same action.
+	Aliases []string
+	// Actions groups CLI subcommands; a group does not run an action itself.
+	Actions []Action
 	// Help explains examples, argument defaults and effects of this CLI action.
 	Help        string
 	ID          string
@@ -129,6 +133,9 @@ type Action struct {
 const GivenFlags = "-given"
 
 type ActionFlag struct {
+	// Complete returns value candidates for shell completion using active configuration.
+	// It must be read-only; errors suppress filename fallback.
+	Complete  func(prefix string, global config.Config) ([]string, error)
 	Name      string
 	Shorthand string
 	Usage     string

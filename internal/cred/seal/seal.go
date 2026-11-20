@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -145,7 +146,9 @@ func Seal(request Request) (Result, error) {
 
 	part := request.Destination + PartSuffix
 	if err := writePart(part, plaintext, recipients); err != nil {
-		os.Remove(part)
+		if !errors.Is(err, fs.ErrExist) {
+			os.Remove(part)
+		}
 		return Result{}, err
 	}
 	defer os.Remove(part)
@@ -325,17 +328,34 @@ func Count(folder string, patterns []string) (names []string, err error) {
 // DefaultSkip; an empty one skips nothing. A symbolic link or other
 // non-regular entry refuses the folder.
 func Archive(folder string, maxSize int64, patterns []string) ([]byte, int, error) {
+	var buffer bytes.Buffer
+	skips, err := writeArchive(context.Background(), &buffer, folder, maxSize, patterns)
+	if err != nil {
+		clear(buffer.Bytes())
+		return nil, 0, err
+	}
+	if int64(buffer.Len()) > maxSize {
+		clear(buffer.Bytes())
+		return nil, 0, fmt.Errorf("%s archived is larger than %d MiB", folder, maxSize>>20)
+	}
+	return buffer.Bytes(), skips, nil
+}
+
+// writeArchive uses bounded copying; maxSize <= 0 streams without a size limit.
+func writeArchive(ctx context.Context, dst io.Writer, folder string, maxSize int64, patterns []string) (int, error) {
 	if patterns == nil {
 		patterns = DefaultSkip
 	}
 	folder = filepath.Clean(folder)
 	base := filepath.Base(folder)
 	var skips int
-	var buffer bytes.Buffer
-	gz := gzip.NewWriter(&buffer)
+	gz := gzip.NewWriter(dst)
 	tw := tar.NewWriter(gz)
 	var total int64
 	err := filepath.WalkDir(folder, func(path string, entry fs.DirEntry, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return err
 		}
@@ -363,19 +383,28 @@ func Archive(folder string, maxSize int64, patterns []string) ([]byte, int, erro
 			return fmt.Errorf("%s is not a regular file or folder (%s); it is not archived", path, info.Mode().Type())
 		}
 		total += info.Size()
-		if total > maxSize {
+		if maxSize > 0 && total > maxSize {
 			return fmt.Errorf("%s is larger than %d MiB", folder, maxSize>>20)
 		}
 		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: name, Mode: int64(info.Mode().Perm()), Size: info.Size(), ModTime: info.ModTime()}); err != nil {
 			return err
 		}
-		data, err := readLimited(path, info.Size())
+		file, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		_, err = tw.Write(data)
-		clear(data)
-		return err
+		n, copyErr := io.Copy(&streamContextWriter{ctx: ctx, dst: tw}, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if n != info.Size() {
+			return fmt.Errorf("%s changed size while archiving", path)
+		}
+		return nil
 	})
 	if err == nil {
 		err = tw.Close()
@@ -383,15 +412,7 @@ func Archive(folder string, maxSize int64, patterns []string) ([]byte, int, erro
 	if err == nil {
 		err = gz.Close()
 	}
-	if err != nil {
-		clear(buffer.Bytes())
-		return nil, 0, err
-	}
-	if int64(buffer.Len()) > maxSize {
-		clear(buffer.Bytes())
-		return nil, 0, fmt.Errorf("%s archived is larger than %d MiB", folder, maxSize>>20)
-	}
-	return buffer.Bytes(), skips, nil
+	return skips, err
 }
 
 func writePart(part string, plaintext []byte, recipients []age.Recipient) error {
@@ -431,6 +452,10 @@ func writePartFormat(part string, plaintext []byte, recipients []age.Recipient, 
 // verify decrypts the part file independently of what was written and compares
 // the plaintext's hash.
 func verify(part string, want [32]byte, identities []age.Identity) error {
+	return verifyContext(context.Background(), part, want, identities)
+}
+
+func verifyContext(ctx context.Context, part string, want [32]byte, identities []age.Identity) error {
 	file, err := os.Open(part)
 	if err != nil {
 		return err
@@ -441,7 +466,7 @@ func verify(part string, want [32]byte, identities []age.Identity) error {
 		return fmt.Errorf("the written file does not decrypt back: %w", err)
 	}
 	hash := sha256.New()
-	if _, err := io.Copy(hash, decrypted); err != nil {
+	if _, err := io.Copy(&streamContextWriter{ctx: ctx, dst: hash}, decrypted); err != nil {
 		return fmt.Errorf("the written file does not decrypt: %w", err)
 	}
 	var got [32]byte

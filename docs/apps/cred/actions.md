@@ -1,5 +1,120 @@
 # Credentials: Actions
 
+## CLI listing
+
+- `dgs cred key hosts` lists recipient host names and their public-key counts.
+- `dgs cred key groups` lists recipient group names and their resolved host members.
+
+Both read `recipients` from `cred/config.json`, respect the global `--config`
+option, print to stdout and return without opening a TUI, vault or private key.
+An empty folder prints only the column headings. Missing configuration or an
+unreadable folder fails. Folder errors return a nonzero exit status with
+diagnostics on stderr after printing the loaded entries; the listing may be
+incomplete. Warnings are printed on stdout after the table and do not change
+the successful exit status. These commands change nothing.
+
+## Standalone encryption and decryption
+
+```sh
+dgs cred e notes.txt -H host-a -G g-team
+dgs cred d notes.txt.age -o restored.txt
+```
+
+`e` (alias `encrypt`) accepts one regular file or folder. Repeat
+`-H` / `--host` and `-G` / `--group`
+to select recipients from the configured recipient folder; each host contributes
+all its public keys and duplicate keys are used once. Names are matched without
+case sensitivity; groups use their full `g-` name. Empty selections, unknown
+names, empty selected hosts/groups and recipient-folder errors refuse encryption.
+Warnings (such as a public key shared by hosts) are printed but do not block
+encryption or completion.
+A folder becomes a gzip-compressed tar archive, using the configured
+`archive_skip` rules. The command reports the skipped entry count.
+
+`d` is the short command for `decrypt`; both long spellings remain aliases.
+Like filename-oriented compression tools, output names are inferred: encryption
+adds `.age` (directories add `.tar.gz.age`); decryption removes a final `.age`.
+Without that suffix, decryption requires `-o`. Use `--output` (`-o`) to choose a
+different file, rather than an output directory. Both commands respect the
+global `--config` option. `-h` remains help; hosts use uppercase `-H`.
+Missing/extra source arguments, unknown options, missing option values and empty
+host/group/output values fail. Use `--` before a source name beginning with `-`:
+
+```sh
+dgs cred e -G g-team -- -notes.txt
+```
+
+Source symbolic links and special files are refused. An existing output file,
+directory or symbolic link (including a dangling link) refuses the operation.
+Encryption requires an existing output parent directory. Decryption may create
+missing parents as described below. Neither stdin nor stdout streaming is
+supported. Unknown recipient names report the corresponding listing command;
+recipient-folder problems and unavailable identities include diagnostics.
+They do not use the configured vault or write a recipient record. Existing
+outputs are never replaced and sources are unchanged. Output inside a source
+directory is refused, including through a symlinked parent. Both commands use
+exclusive same-directory `.dgs-part` files and streamed SHA-256 readback before
+publication. File identity and version are checked before readback and
+publication, which reuses the platform exclusive-publish primitive. Pre-existing
+parts and replacements created by another writer are never removed. When a selected key has an unlocked local
+identity, the ciphertext is decrypted back and checked by SHA-256 before
+publication; otherwise the command explicitly reports it as unverified.
+
+`d` accepts binary or armored age files and uses unlocked identities from
+`cred/config.json`. Plaintext is streamed into a `0600` temporary file; only
+after complete authenticated decryption and independent SHA-256 disk readback
+succeed is its final name published. Failures and ordinary Ctrl+C/SIGTERM interruptions remove this operation's
+own part file; forced termination or a crash can leave an unpublished part. Newly created parent directories are `0700`. `d` explicitly requests writing plaintext, at the inferred or chosen path. Archives remain archives: decrypt a folder's ciphertext to a
+`.tar.gz` file, then extract separately. No entries are automatically extracted.
+
+The CLI has no application file-size limit. File copying, directory archiving,
+encryption, decryption and verification use bounded buffers rather than loading
+whole files or archives into memory. Available disk space and filesystem limits
+still apply. The vault TUI retains its separate 64 MiB limit.
+
+Configured private identities are read into memory only; the CLI never writes
+extra key files or invokes an external encryption helper. Temporary raw key
+buffers are cleared after parsing. Go and the operating system may retain
+internal copies; this is not a guarantee against memory swapping.
+
+Passphrase encryption and unlocking protected identities are not supported by these CLI commands; use the
+vault TUI for those workflows. No secrets are accepted in command-line flags.
+
+## Help, examples and shell completion
+
+`dgs cred --help`, `dgs cred e --help` and `dgs cred d --help` explain the
+commands without opening a workspace. See the [worked examples](../../../examples/cred/README.md).
+
+Enable completion in the current Bash session:
+
+```bash
+source <(dgs completion bash)
+```
+
+For Zsh, initialize completion once, then load dgs completion:
+
+```zsh
+autoload -Uz compinit && compinit
+source <(dgs completion zsh)
+```
+
+For future sessions, add the corresponding line(s) to your `.bashrc` or
+`.zshrc`; if Zsh already initializes `compinit`, keep only the `source` line.
+Alternatively, `dgs completion bash` / `dgs completion zsh` prints a script
+that can be saved and sourced. No helper executable is needed.
+
+Press Tab after `dgs cred ` for commands, after an option prefix for flags,
+and in the source or `-o` value for filesystem paths. After `-H` / `--host` or
+`-G` / `--group`, candidates come from the active recipient folder and are
+filtered by the typed prefix. Repeated recipient flags and long command aliases
+work the same way. A supplied `--config` selects the completion configuration,
+just as it does when running the command. Once the source is supplied, completion
+does not suggest a second source. Host/group completion never falls back to
+filenames, including when configuration is missing or invalid. Completion reads
+public recipient definitions only and never executes a file operation.
+
+## Vault entry Actions
+
 What can be done with an entry of an opened vault file — see
 [`vault.md`](vault.md#actions-d). Actions are the only way decrypted content
 leaves memory, so each says exactly where it puts it. A test checks that this

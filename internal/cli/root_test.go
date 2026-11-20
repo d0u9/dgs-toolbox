@@ -242,6 +242,9 @@ func TestEveryRegisteredCommandHasUsageHelp(t *testing.T) {
 		}
 		for _, action := range app.Actions {
 			paths = append(paths, []string{app.ID, action.ID})
+			for _, child := range action.Actions {
+				paths = append(paths, []string{app.ID, action.ID, child.ID})
+			}
 		}
 	}
 	for _, path := range paths {

@@ -120,11 +120,18 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 func addActions(command *cobra.Command, part string, actions []tui.Action, configPath *string) {
 	for _, action := range actions {
 		action := action
+		if len(action.Actions) > 0 {
+			group := &cobra.Command{Use: action.ID, Short: action.Description, Long: action.Help}
+			addActions(group, part, action.Actions, configPath)
+			command.AddCommand(group)
+			continue
+		}
 		sub := &cobra.Command{
-			Use:   action.ID + " " + action.Usage,
-			Short: action.Description,
-			Long:  action.Help,
-			Args:  actionArgs(action),
+			Use:     action.ID + " " + action.Usage,
+			Aliases: action.Aliases,
+			Short:   action.Description,
+			Long:    action.Help,
+			Args:    actionArgs(action),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				flags := make(map[string]string, len(action.Flags)+1)
 				var givenNames []string
@@ -160,6 +167,18 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 				return action.Run(cmd.InOrStdin(), cmd.OutOrStdout(), args, flags)
 			},
 		}
+		sub.ValidArgsFunction = func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+			max := action.Args
+			if action.MaxArgs > 0 {
+				max = action.MaxArgs
+			} else if action.MinArgs > 0 {
+				return nil, cobra.ShellCompDirectiveDefault
+			}
+			if len(args) >= max {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveDefault
+		}
 		for _, flag := range action.Flags {
 			if flag.Repeatable {
 				sub.Flags().StringArrayP(flag.Name, flag.Shorthand, nil, flag.Usage)
@@ -170,6 +189,27 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 				sub.Flags().Lookup(flag.Name).NoOptDefVal = flag.Bare
 			}
 		}
+		for _, flag := range action.Flags {
+			if flag.Complete == nil {
+				continue
+			}
+			complete := flag.Complete
+			err := sub.RegisterFlagCompletionFunc(flag.Name, func(_ *cobra.Command, _ []string, prefix string) ([]string, cobra.ShellCompDirective) {
+				global, err := loadConfig(*configPath, part)
+				if err != nil {
+					return nil, cobra.ShellCompDirectiveError | cobra.ShellCompDirectiveNoFileComp
+				}
+				values, err := complete(prefix, global)
+				if err != nil {
+					return nil, cobra.ShellCompDirectiveError | cobra.ShellCompDirectiveNoFileComp
+				}
+				return values, cobra.ShellCompDirectiveNoFileComp
+			})
+			if err != nil {
+				panic(err)
+			}
+		}
+
 		// An action may share a workspace's name: positional arguments run
 		// the action; no arguments or action flags retain the TUI entry point.
 		for _, workspace := range command.Commands() {
@@ -301,6 +341,8 @@ Examples:
   dgs photo import            Open a workspace directly.
   dgs conf --check            Run a CLI report, print results, and return.
   dgs photo encode --help     Read help without starting a workspace.
+  dgs completion bash         Generate Bash completion.
+  dgs completion zsh          Generate Zsh completion.
   dgs --export-config /path/to/config-directory
 
 --export-config writes a default <part>/config.json for each app. With no

@@ -16,6 +16,7 @@ func New() tui.App {
 		Help:        appHelp,
 		Name:        "Credentials",
 		Description: "age identities, recipients and encrypted files",
+		Actions:     []tui.Action{cryptAction("encrypt"), cryptAction("decrypt"), {ID: "key", Description: "List recipient hosts and groups.", Help: "List public recipients without opening a vault.\nExamples:\n  dgs cred key hosts\n  dgs cred key groups", Actions: []tui.Action{listAction("hosts"), listAction("groups")}}},
 		Commands: []tui.Command{{
 			ID:          "keys",
 			Help:        keysHelp,

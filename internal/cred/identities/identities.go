@@ -132,6 +132,7 @@ func Discover(dirs []string, options Options) Scan {
 				return nil
 			}
 			found := Parse(data)
+			clear(data)
 			if len(found) == 0 {
 				return nil
 			}
@@ -315,6 +316,7 @@ func Open(identity Identity) (age.Identity, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer clear(data)
 	if identity.Line == 0 {
 		return agessh.ParseIdentity(data)
 	}
