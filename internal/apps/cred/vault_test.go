@@ -424,3 +424,43 @@ func vaultMoveType(t *testing.T, m vaultModel, text string) vaultModel {
 	}
 	return m
 }
+
+func TestVaultEmptyDirectoriesAreAddTargets(t *testing.T) {
+	root := t.TempDir()
+	vaultDir := filepath.Join(root, "vault")
+	for _, dir := range []string{"empty", "nested/empty", ".hidden"} {
+		if err := os.MkdirAll(filepath.Join(vaultDir, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configPath := filepath.Join(root, "config.json")
+	writeFile(t, configPath, `{"vault":"`+filepath.ToSlash(vaultDir)+`"}`, 0600)
+	m := newVaultModel()
+	m.path = configPath
+	m = runVault(t, m)
+	if message := m.message(); message != "" {
+		t.Fatalf("directory tree hidden: %s", message)
+	}
+	for _, name := range []string{"empty/", "nested/"} {
+		if !strings.Contains(stripVault(m), name) {
+			t.Fatalf("missing directory %s", name)
+		}
+	}
+	if strings.Contains(stripVault(m), ".hidden") {
+		t.Fatal("hidden directory shown")
+	}
+	if got := strings.Join(m.vaultFolders(), ","); got != "empty,nested,nested/empty" {
+		t.Fatalf("move targets: %s", got)
+	}
+	m.list.SelectID("dir:nested")
+	m = vaultKeys(t, m, "enter")
+	if _, _, ok := m.selected(); !ok || !m.collapsed["nested"] {
+		t.Fatal("folder did not collapse")
+	}
+	m = vaultKeys(t, m, "enter")
+	m.list.SelectID("dir:nested/empty")
+	m = vaultKeys(t, m, "a")
+	if m.add == nil || m.add.directory != filepath.Join(vaultDir, "nested", "empty") {
+		t.Fatal("add did not target selected empty directory")
+	}
+}

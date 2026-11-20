@@ -553,10 +553,9 @@ func (m *vaultModel) rebuild() {
 		files []int
 	}
 	root := &node{dirs: map[string]*node{}}
-	for index, file := range m.listing.Files {
+	directory := func(parts []string) *node {
 		current := root
-		parts := strings.Split(file.Path, "/")
-		for _, part := range parts[:len(parts)-1] {
+		for _, part := range parts {
 			next, ok := current.dirs[part]
 			if !ok {
 				next = &node{dirs: map[string]*node{}}
@@ -564,6 +563,14 @@ func (m *vaultModel) rebuild() {
 			}
 			current = next
 		}
+		return current
+	}
+	for _, dir := range m.listing.Directories {
+		directory(strings.Split(dir, "/"))
+	}
+	for index, file := range m.listing.Files {
+		parts := strings.Split(file.Path, "/")
+		current := directory(parts[:len(parts)-1])
 		current.files = append(current.files, index)
 	}
 	var items []scrolllist.Item
@@ -757,7 +764,7 @@ func (m vaultModel) message() string {
 		return "· No vault folder. Press o to choose one, or set vault in cred/config.json."
 	case m.listErr != nil:
 		return "! " + m.listErr.Error()
-	case len(m.listing.Files) == 0 && len(m.problems()) == 0:
+	case len(m.listing.Files) == 0 && len(m.listing.Directories) == 0 && len(m.problems()) == 0:
 		return "· No .age files in " + tilde(m.root)
 	}
 	return ""

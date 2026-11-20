@@ -18,7 +18,9 @@ page opens with no folder and asks for one.
 
 ### Which files are listed
 
-- The folder is searched recursively.
+- The folder is searched recursively. All visible real subdirectories are
+  listed, including empty ones and those containing no `.age` files. Select a
+  directory and press `a` to add an encrypted file there.
 - Hidden files and directories (a name starting with `.`, such as `.git`) are
   skipped.
 - A symbolic link to a directory is not followed.
@@ -71,7 +73,7 @@ Nothing is cached between scans.
 ### Layout
 
 Two columns, leading narrow. The left is the folder as a tree, directories
-expandable and collapsible, each file with its status mark. The right is the
+expandable and collapsible (including empty directories), each file with its status mark. The right is the
 selected file: its path, size and modification time, status and the identity
 that opens it, the recipient stanzas in its header by kind and count, and the
 SSH hints above.

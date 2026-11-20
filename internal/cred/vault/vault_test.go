@@ -198,3 +198,28 @@ func TestList(t *testing.T) {
 		t.Error("listed a missing folder")
 	}
 }
+
+func TestListIncludesEmptyDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"empty", "nested/empty", "notes-only", ".hidden/empty", "visible/.hidden"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes-only", "README.txt"), []byte("synthetic"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "linked-dir")); err != nil {
+		t.Fatal(err)
+	}
+	listing, err := List(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(listing.Directories, ","); got != "empty,nested,nested/empty,notes-only,visible" {
+		t.Fatalf("directories: %s", got)
+	}
+	if len(listing.Files) != 0 {
+		t.Fatal("listed non-age files")
+	}
+}

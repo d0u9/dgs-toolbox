@@ -201,6 +201,9 @@ func sentence(err error) error {
 // vaultFolders are the folders the vault already has, for the form to list.
 func (m vaultModel) vaultFolders() []string {
 	seen := map[string]bool{}
+	for _, dir := range m.listing.Directories {
+		seen[dir] = true
+	}
 	for _, file := range m.listing.Files {
 		for dir := path.Dir(file.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
 			seen[dir] = true

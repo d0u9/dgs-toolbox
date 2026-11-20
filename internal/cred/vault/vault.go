@@ -49,12 +49,14 @@ type Problem struct {
 
 // Listing is the result of List.
 type Listing struct {
-	Root     string
-	Files    []File
-	Problems []Problem
+	Root string
+	// Directories are visible real subdirectories, relative to Root, including empty ones.
+	Directories []string
+	Files       []File
+	Problems    []Problem
 }
 
-// List finds the .age files under root. Hidden files and directories are
+// List finds visible directories and .age files under root. Hidden files and directories are
 // skipped, and links to directories are not followed; links to files are.
 // The error is only for a root that cannot be read.
 func List(root string) (Listing, error) {
@@ -88,7 +90,11 @@ func List(root string) (Listing, error) {
 			}
 			return nil
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), Suffix) {
+		if entry.IsDir() {
+			listing.Directories = append(listing.Directories, filepath.ToSlash(rel))
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), Suffix) {
 			return nil
 		}
 		info, err := os.Stat(path)
@@ -105,6 +111,7 @@ func List(root string) (Listing, error) {
 	if err != nil {
 		return Listing{}, fmt.Errorf("vault folder: %w", err)
 	}
+	sort.Strings(listing.Directories)
 	sort.Slice(listing.Files, func(i, j int) bool { return listing.Files[i].Path < listing.Files[j].Path })
 	return listing, nil
 }
